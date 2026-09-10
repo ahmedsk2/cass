@@ -29,6 +29,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PROTO,
         );
         $middleware->trustHosts(at: fn (): array => [parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'localhost'], subdomains: false);
+
+        // Filament's own Authenticate middleware redirects panel routes to
+        // that panel's login page. Plain `auth` routes (the conference
+        // asset downloads) need an explicit target because the app has no
+        // route named "login".
+        $middleware->redirectGuestsTo(fn (): string => route('filament.organizer.auth.login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
