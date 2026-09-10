@@ -30,6 +30,12 @@ it('hangs tracks and custom fields off a conference in sort order', function () 
         'required' => true,
     ]);
 
+    // Read the row back: the in-memory attributes the factory just built would
+    // satisfy the assertions below even with every cast removed (the driver
+    // binds a BackedEnum as its value on insert), so only a database round trip
+    // actually exercises CustomField::casts().
+    $field->refresh();
+
     expect($field->key)->toBe('funding_source')
         ->and($field->type)->toBe(CustomFieldType::Select)
         ->and($field->options)->toBe(['None', 'Institutional', 'Industry'])
@@ -78,14 +84,19 @@ it('stores a likert question with its scale and weight', function () {
         'weight' => '1.50',
     ]);
 
-    // Read the weight back from storage: SQLite gives a decimal column NUMERIC
-    // affinity and hands back int(1) / float(1.5), so only the `decimal:2` cast
-    // makes this a two-decimal string on both drivers.
-    expect($question->type)->toBe(ReviewQuestionType::Likert)
-        ->and($question->scale_min)->toBe(1)
-        ->and($question->scale_max)->toBe(5)
-        ->and($question->fresh()?->weight)->toBe('1.50')
-        ->and($question->isScored())->toBeTrue();
+    // Assert on the stored row, never on the factory's in-memory model: without
+    // the `type` cast a row loaded from the database hands back the string
+    // "likert" and isScored() fatals, yet every in-memory assertion still
+    // passes. SQLite also gives a decimal column NUMERIC affinity and hands
+    // back int(1) / float(1.5), so only the `decimal:2` cast makes the weight a
+    // two-decimal string on both drivers.
+    $stored = $question->fresh();
+
+    expect($stored?->type)->toBe(ReviewQuestionType::Likert)
+        ->and($stored?->scale_min)->toBe(1)
+        ->and($stored?->scale_max)->toBe(5)
+        ->and($stored?->weight)->toBe('1.50')
+        ->and($stored?->isScored())->toBeTrue();
 });
 
 it('locks existing questions once the form is locked but still allows new ones', function () {
