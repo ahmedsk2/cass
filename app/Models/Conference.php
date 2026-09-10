@@ -12,6 +12,9 @@ use Database\Factories\ConferenceFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -106,6 +109,43 @@ class Conference extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /** @return HasMany<Track, $this> */
+    public function tracks(): HasMany
+    {
+        return $this->hasMany(Track::class)->orderBy('sort')->orderBy('id');
+    }
+
+    /** @return HasMany<CustomField, $this> */
+    public function customFields(): HasMany
+    {
+        return $this->hasMany(CustomField::class)->orderBy('sort')->orderBy('id');
+    }
+
+    /** @return HasMany<ReviewForm, $this> */
+    public function reviewForms(): HasMany
+    {
+        return $this->hasMany(ReviewForm::class);
+    }
+
+    /** A conference has exactly one active review form (spec section 3). */
+    /** @return HasOne<ReviewForm, $this> */
+    public function reviewForm(): HasOne
+    {
+        return $this->hasOne(ReviewForm::class)->where('is_active', true);
+    }
+
+    /**
+     * Read-only path to every question of every form on this conference. It
+     * exists so Filament's relation-manager authorization can resolve the
+     * related model class; writes always go through the active form.
+     *
+     * @return HasManyThrough<ReviewQuestion, ReviewForm, $this>
+     */
+    public function reviewQuestions(): HasManyThrough
+    {
+        return $this->hasManyThrough(ReviewQuestion::class, ReviewForm::class);
     }
 
     public function isPubliclyVisible(): bool
