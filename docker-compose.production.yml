@@ -1,0 +1,100 @@
+# Deployed by Coolify (Docker Compose build pack) behind the existing coolify-proxy Traefik.
+# Set the domain in the Coolify UI as https://cass.towardpcc.com:8080 - do not add router labels here.
+# All ${...} values come from Coolify's Environment Variables screen.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: '1.5'
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      APP_NAME: CASS
+      APP_ENV: production
+      APP_DEBUG: 'false'
+      APP_URL: https://cass.towardpcc.com
+      APP_KEY: ${APP_KEY}
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: warning
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: cass
+      DB_USERNAME: cass
+      DB_PASSWORD: ${DB_PASSWORD}
+      QUEUE_CONNECTION: database
+      CACHE_STORE: database
+      SESSION_DRIVER: database
+      SESSION_SECURE_COOKIE: 'true'
+      MAIL_MAILER: smtp
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_ENCRYPTION: ${MAIL_ENCRYPTION}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
+      MAIL_FROM_NAME: CASS
+      CASS_CONTACT_EMAIL: ${CASS_CONTACT_EMAIL}
+      CASS_ADMIN_EMAIL: ${CASS_ADMIN_EMAIL}
+      CASS_ADMIN_PASSWORD: ${CASS_ADMIN_PASSWORD}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    volumes:
+      - cass-storage:/var/www/html/storage/app
+    networks:
+      - coolify
+      - internal
+    labels:
+      - traefik.docker.network=coolify
+    healthcheck:
+      # CMD-SHELL (not CMD) so $APP_URL is expanded - the Host header must
+      # match APP_URL's host or Laravel's TrustHosts middleware 400s the
+      # request, see the matching note on the Dockerfile's HEALTHCHECK.
+      test: ["CMD-SHELL", "wget -qO- --header=\"Host: $${APP_URL#*://}\" http://127.0.0.1:8080/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    command: ["mysqld", "--innodb-buffer-pool-size=256M", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci", "--performance-schema=OFF"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: cass
+      MYSQL_USER: cass
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - cass-mysql:/var/lib/mysql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysqladmin ping -h 127.0.0.1 -ucass"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+networks:
+  coolify:
+    external: true
+  internal:
+    internal: true
+
+volumes:
+  cass-storage:
+  cass-mysql:

@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: cass_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, zip, pdo_mysql, sqlite3, pdo_sqlite
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: npm ci
+      - run: npm run build
+      - run: cp .env.example .env && php artisan key:generate
+      - name: Pint
+        run: ./vendor/bin/pint --test
+      - name: Larastan
+        run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+      - name: Tests (SQLite)
+        run: php artisan test --compact
+      - name: Tests (MySQL)
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: cass_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: php artisan test --compact
+
+  image:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build arm64 image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          tags: cass:ci
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: cass
+          MYSQL_USER: cass
+          MYSQL_PASSWORD: cass
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build amd64 image
+        run: docker build -t cass:smoke .
+      - name: Run container
+        run: |
+          docker run -d --name cass --network host \
+            -e APP_KEY=base64:$(openssl rand -base64 32) -e APP_URL=http://localhost:8080 -e APP_ENV=production -e APP_DEBUG=false \
+            -e DB_CONNECTION=mysql -e DB_HOST=127.0.0.1 -e DB_USERNAME=cass -e DB_PASSWORD=cass -e DB_DATABASE=cass \
+            -e QUEUE_CONNECTION=database -e CACHE_STORE=database -e SESSION_DRIVER=database -e MAIL_MAILER=log \
+            -e CASS_ADMIN_EMAIL=admin@example.org -e CASS_ADMIN_PASSWORD=smoke-test-password-1 cass:smoke
+          for i in $(seq 1 30); do curl -sf -H 'Host: localhost' http://127.0.0.1:8080/up && break; sleep 2; done
+          docker exec cass su-exec app php artisan migrate --force
+      - name: Assertions
+        run: |
+          set -e
+          curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/up
+          curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/
+          code=$(head -c 65536 /dev/urandom | base64 | curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' -X POST --data-binary @- http://127.0.0.1:8080/register)
+          echo "64KB POST -> $code"; test "$code" != "500"
+          # BusyBox Alpine has no `ss`; netstat is present. php-fpm must be
+          # loopback-only (no 0.0.0.0:9000).
+          docker exec cass sh -c 'netstat -tln' | tee /tmp/ports
+          ! grep -E ':9000 ' /tmp/ports | grep -vq '127.0.0.1'
+          # `ps -o user,comm` truncates to bare binary names on BusyBox
+          # (no way to tell a worker from a master process), so use
+          # `ps aux`, which prints the full command ("nginx: worker
+          # process", "php-fpm: pool www", the artisan queue/schedule
+          # commands) and assert none of those are root-owned - column 2
+          # is USER in BusyBox's `PID USER TIME COMMAND` layout.
+          docker exec cass sh -c 'ps aux' | tee /tmp/ps
+          ! awk '$2 == "root"' /tmp/ps | grep -E 'worker process|pool www|artisan'
+      - if: always()
+        run: docker logs cass | tail -50

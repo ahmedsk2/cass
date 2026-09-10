@@ -1,0 +1,35 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Http\Middleware\SecurityHeaders;
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
+
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        web: __DIR__.'/../routes/web.php',
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',
+    )
+    ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->append(SecurityHeaders::class);
+
+        // env() is used here (not config()) because the application config
+        // files are not loaded yet when bootstrap/app.php runs - this is
+        // the earliest point in the boot sequence, before the config
+        // repository exists. Production runs with real environment
+        // variables from Docker, so this is safe.
+        $middleware->trustProxies(
+            at: array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'))))),
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO,
+        );
+        $middleware->trustHosts(at: fn (): array => [parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'localhost'], subdomains: false);
+    })
+    ->withExceptions(function (Exceptions $exceptions): void {
+        //
+    })->create();

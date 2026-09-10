@@ -1,0 +1,39 @@
+<svg version="1.0" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 width="708.66px" height="708.66px" viewBox="0 0 708.66 708.66" enable-background="new 0 0 708.66 708.66" xml:space="preserve">
+<g>
+	
+		<polygon fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" points="
+		531.489,203.733 177.171,203.733 177.171,150.585 248.02,150.585 283.469,168.309 425.191,168.309 460.628,150.585 
+		531.489,150.585 	"/>
+	
+		<polygon fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" points="
+		425.191,602.363 283.469,602.363 248.02,248.02 460.628,248.02 	"/>
+	
+		<polygon fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" points="
+		177.171,203.733 212.596,274.607 250.681,274.607 248.02,248.02 460.628,248.02 457.967,274.607 496.053,274.607 531.489,203.733 	
+		"/>
+	
+		<rect x="212.596" y="628.95" fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" width="283.469" height="26.563"/>
+	<path fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M332.175,66.43c0,7.348-5.933,13.305-13.281,13.305s-13.281-5.957-13.281-13.305c0-7.324,5.933-13.281,13.281-13.281
+		S332.175,59.106,332.175,66.43z"/>
+	<path fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M283.469,168.309v-66.431c0-15.063,9.412-27.832,22.632-32.958c-13.22,5.126-22.632,17.895-22.632,32.958V168.309z"/>
+	<path fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M376.474,66.43c0,7.348,5.944,13.305,13.293,13.305c7.337,0,13.281-5.957,13.281-13.305c0-7.324-5.944-13.281-13.281-13.281
+		C382.418,53.149,376.474,59.106,376.474,66.43z"/>
+	<path fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M425.191,168.309v-66.431c0-15.063-9.424-27.832-22.644-32.958c13.22,5.126,22.644,17.895,22.644,32.958V168.309z"/>
+	<path fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M407.479,407.468c0,29.37-23.804,53.173-53.149,53.173c-29.357,0-53.161-23.803-53.161-53.173
+		c0-29.346,23.804-53.149,53.161-53.149C383.676,354.318,407.479,378.122,407.479,407.468z"/>
+	
+		<rect x="318.894" y="487.203" fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" width="70.861" height="17.725"/>
+	
+		<rect x="283.469" y="310.032" fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" width="141.723" height="17.724"/>
+	
+		<polygon fill="none" stroke="#373431" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" points="
+		460.628,575.801 427.853,575.801 425.191,602.363 283.469,602.363 280.808,575.801 248.02,575.801 212.596,628.95 496.064,628.95 	
+		"/>
+</g>
+</svg>

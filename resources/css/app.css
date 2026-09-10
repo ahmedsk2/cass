@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+
+@source '../views';
+@source '../../app/Livewire';
+
+@theme {
+    --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --color-brand-50: #eaf4fc;
+    --color-brand-100: #bfe0f7;
+    --color-brand-400: #1e7bd1; /* decorative only: 4.37:1 on white */
+    --color-brand-500: #176bb8; /* 5.48:1 on white, AA */
+    --color-brand-600: #1565ae;
+    --color-brand-700: #0f4c8a;
+    --color-ink: #111827;
+    --color-surface: #f8fafc;
+}
+
+:root {
+    --org-primary: var(--color-brand-500);
+    --org-accent: var(--color-brand-700);
+}
+
+body {
+    @apply bg-surface text-ink antialiased;
+}
