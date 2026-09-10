@@ -186,6 +186,14 @@ class Conference extends Model
         return $this->submission_opens_at?->copy()->setTimezone($this->timezone);
     }
 
+    public function publicUrl(): string
+    {
+        return route('conference.show', [
+            'organization' => $this->organization,
+            'conference' => $this,
+        ]);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
