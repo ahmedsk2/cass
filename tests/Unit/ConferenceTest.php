@@ -14,6 +14,11 @@ uses(RefreshDatabase::class);
 it('creates a conference with a ulid, a derived slug and draft status', function () {
     $conference = Conference::factory()->create(['name' => 'Gulf Pediatric Critical Care 2026']);
 
+    // Read the row back: the factory's in-memory attributes would satisfy the
+    // enum/boolean/integer/array assertions below even with every cast removed,
+    // so only a database round trip actually exercises Conference::casts().
+    $conference->refresh();
+
     expect($conference->ulid)->toHaveLength(26)
         ->and($conference->slug)->toBe('gulf-pediatric-critical-care-2026')
         ->and($conference->status)->toBe(ConferenceStatus::Draft)
