@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\CustomFieldType;
 use App\Enums\OrganizationRole;
+use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Filament\Organizer\Resources\Conferences\RelationManagers\CustomFieldsRelationManager;
 use App\Filament\Organizer\Resources\Conferences\RelationManagers\ReviewQuestionsRelationManager;
@@ -24,6 +25,31 @@ beforeEach(function () {
     actingAs($this->user);
     bootOrganizerPanel($this->organization);
     $this->conference = Conference::factory()->for($this->organization)->create();
+});
+
+it('registers all three managers on the conference resource', function () {
+    // Every other test here mounts a relation manager's Livewire component
+    // directly, which never touches getRelations(): without this test the three
+    // managers could disappear from the organizer UI with the suite still green.
+    expect(ConferenceResource::getRelations())->toBe([
+        TracksRelationManager::class,
+        CustomFieldsRelationManager::class,
+        ReviewQuestionsRelationManager::class,
+    ]);
+
+    // And they have to survive the page's own canViewForRecord() filter, which
+    // is what actually decides whether the edit page renders their tabs.
+    $page = livewire(EditConference::class, ['record' => $this->conference->getRouteKey()])
+        ->assertSuccessful()
+        ->assertSee('Tracks')
+        ->assertSee('Extra submission fields')
+        ->assertSee('Review form');
+
+    expect(array_values($page->instance()->getRelationManagers()))->toBe([
+        TracksRelationManager::class,
+        CustomFieldsRelationManager::class,
+        ReviewQuestionsRelationManager::class,
+    ]);
 });
 
 it('lists, creates, edits and reorders tracks', function () {
