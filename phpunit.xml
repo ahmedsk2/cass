@@ -18,6 +18,13 @@
         </include>
     </source>
     <php>
+        <!-- One PHP process runs the whole suite, so framework state, fixtures
+             and the dompdf poster render in tests/Unit/ConferenceQrTest.php all
+             sit in the same heap: the peak is over this machine's 128M php.ini
+             default even though a production request renders one poster in a
+             fresh 256M worker. Set it here so a local run matches CI, where
+             setup-php leaves memory_limit unlimited. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

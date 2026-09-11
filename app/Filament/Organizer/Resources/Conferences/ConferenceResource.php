@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Organizer\Resources\Conferences;
 
+use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceShortLink;
 use App\Filament\Organizer\Resources\Conferences\Pages\CreateConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
@@ -89,6 +90,7 @@ class ConferenceResource extends Resource
             'index' => ListConferences::route('/'),
             'create' => CreateConference::route('/create'),
             'view' => ViewConference::route('/{record}'),
+            'short-link' => ConferenceShortLink::route('/{record}/share'),
             'edit' => EditConference::route('/{record}/edit'),
         ];
     }

@@ -8,6 +8,7 @@ use App\Actions\Conferences\ArchiveConference;
 use App\Actions\Conferences\CloseSubmissions;
 use App\Actions\Conferences\PublishConference;
 use App\Enums\ConferenceStatus;
+use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Models\Conference;
 use App\Models\User;
 use Filament\Actions\Action;
@@ -110,9 +111,19 @@ class ConferenceStatusActions
             });
     }
 
+    public static function share(): Action
+    {
+        return Action::make('share')
+            ->label('Share and print')
+            ->icon(Heroicon::OutlinedQrCode)
+            ->color('gray')
+            ->visible(fn (Conference $record): bool => $record->shortLink !== null && Gate::allows('view', $record))
+            ->url(fn (Conference $record): string => ConferenceResource::getUrl('short-link', ['record' => $record]));
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
-        return [static::publish(), static::close(), static::archive()];
+        return [static::share(), static::publish(), static::close(), static::archive()];
     }
 }

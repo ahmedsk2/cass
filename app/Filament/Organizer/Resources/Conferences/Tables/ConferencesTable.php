@@ -44,6 +44,7 @@ class ConferencesTable
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
+                ConferenceStatusActions::share(),
                 ConferenceStatusActions::publish(),
                 ConferenceStatusActions::close(),
                 ConferenceStatusActions::archive(),
