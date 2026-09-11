@@ -69,4 +69,17 @@
             </ul>
         </x-filament::section>
     @endif
+
+    <x-filament::section :heading="__('reviewer.review.your_review')">
+        @if ($this->isReadOnly())
+            <p style="font-size:0.875rem;margin-bottom:1rem">
+                {{ $this->deadlineHasPassed() ? __('reviewer.review.deadline_passed') : __('reviewer.review.submitted_notice') }}
+            </p>
+        @endif
+
+        {{-- The fields only. There is no <form> element and no submit button
+             here on purpose: the three actions live in the page header, where
+             a test can call them by name (fact 32). --}}
+        {{ $this->form }}
+    </x-filament::section>
 </x-filament-panels::page>

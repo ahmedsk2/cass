@@ -69,6 +69,9 @@ return [
         'resent' => 'Invitation sent again',
         'revoked' => 'Invitation withdrawn',
         'refused' => 'Nothing changed',
+        'draft_saved' => 'Draft saved',
+        'submitted' => 'Review submitted',
+        'reopened' => 'Review reopened',
     ],
 
     'list' => [
@@ -83,6 +86,15 @@ return [
         'already_reviewing' => ':email is already reviewing this conference.',
         'send_limit' => 'Too many invitations have been sent from this account in the last hour. Try again later.',
         'not_yours' => 'This abstract is not in your queue.',
+        'already_submitted' => 'You have already submitted this review. Reopen it if you want to change it.',
+        'not_submitted' => 'This review has not been submitted, so there is nothing to reopen.',
+        'review_closed' => 'This conference is no longer open for reviewing.',
+        'deadline_passed' => 'The review deadline has passed.',
+        'answer' => 'Please answer ":prompt". :detail',
+        'detail_scale' => 'Choose a number between :min and :max.',
+        'detail_choice' => 'Choose one of: :choices.',
+        'detail_boolean' => 'Choose yes or no.',
+        'detail_text' => 'Write something, or ask the organizers to make this question optional.',
     ],
 
     'mail' => [
@@ -102,6 +114,12 @@ return [
             'track' => 'Track',
             'preference' => 'Preference',
             'files' => 'Files',
+            'state' => 'Your review',
+        ],
+        'state' => [
+            'not_started' => 'Not started',
+            'draft' => 'Draft',
+            'submitted' => 'Submitted',
         ],
         'actions' => [
             'review' => 'Open',
@@ -129,6 +147,15 @@ return [
         'yes' => 'Yes',
         'no' => 'No',
         'back' => 'Back to the queue',
+        'your_review' => 'Your review',
+        'save_draft' => 'Save draft',
+        'submit' => 'Submit review',
+        'submit_heading' => 'Submit this review?',
+        'submit_description' => 'The organizers can see it straight away. You can reopen it and change it until the review deadline.',
+        'reopen' => 'Reopen',
+        'reopen_heading' => 'Reopen this review so you can change it?',
+        'submitted_notice' => 'You have submitted this review. Reopen it if you want to change anything.',
+        'deadline_passed' => 'The review deadline has passed, so a submitted review can no longer be changed.',
     ],
 
     'switch' => [
