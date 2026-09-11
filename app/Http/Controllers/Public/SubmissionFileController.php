@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
 use App\Models\SubmissionFile;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -25,7 +26,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class SubmissionFileController extends Controller
 {
-    public function __invoke(string $ulid): StreamedResponse
+    public function __invoke(Request $request, string $ulid): StreamedResponse
     {
         $file = SubmissionFile::query()->where('ulid', $ulid)->first();
 
@@ -38,9 +39,17 @@ class SubmissionFileController extends Controller
 
         abort_unless(Storage::disk('local')->exists((string) $file->path), 404);
 
+        // `blind` was signed into the URL by whoever minted it (Task 6), so it
+        // cannot be removed or added by the recipient. There is still no policy
+        // call and no session check here: the signature is the capability, and
+        // the author reaching this route has no session at all.
+        $name = $request->boolean('blind')
+            ? $file->blindName()
+            : (string) $file->original_name;
+
         return Storage::disk('local')->download(
             (string) $file->path,
-            (string) $file->original_name,
+            $name,
             [
                 // The sniffed type from upload, never a guess from the
                 // extension at download time.
