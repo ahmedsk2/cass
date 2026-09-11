@@ -7,7 +7,9 @@ namespace App\Filament\Organizer\Resources\Conferences;
 use App\Filament\Organizer\Resources\Conferences\Pages\CreateConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
+use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
 use App\Filament\Organizer\Resources\Conferences\Schemas\ConferenceForm;
+use App\Filament\Organizer\Resources\Conferences\Schemas\ConferenceInfolist;
 use App\Filament\Organizer\Resources\Conferences\Tables\ConferencesTable;
 use App\Models\Conference;
 use BackedEnum;
@@ -48,6 +50,11 @@ class ConferenceResource extends Resource
         return ConferenceForm::configure($schema);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return ConferenceInfolist::configure($schema);
+    }
+
     public static function table(Table $table): Table
     {
         return ConferencesTable::configure($table);
@@ -69,6 +76,7 @@ class ConferenceResource extends Resource
         return [
             'index' => ListConferences::route('/'),
             'create' => CreateConference::route('/create'),
+            'view' => ViewConference::route('/{record}'),
             'edit' => EditConference::route('/{record}/edit'),
         ];
     }

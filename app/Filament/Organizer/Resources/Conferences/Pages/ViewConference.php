@@ -6,20 +6,18 @@ namespace App\Filament\Organizer\Resources\Conferences\Pages;
 
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Filament\Organizer\Resources\Conferences\Tables\ConferenceStatusActions;
-use Filament\Actions\DeleteAction;
-use Filament\Actions\ViewAction;
-use Filament\Resources\Pages\EditRecord;
+use Filament\Actions\EditAction;
+use Filament\Resources\Pages\ViewRecord;
 
-class EditConference extends EditRecord
+class ViewConference extends ViewRecord
 {
     protected static string $resource = ConferenceResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
-            ViewAction::make(),
+            EditAction::make(),
             ...ConferenceStatusActions::all(),
-            DeleteAction::make(),
         ];
     }
 }

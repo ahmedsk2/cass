@@ -10,6 +10,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -41,7 +42,11 @@ class ConferencesTable
                 SelectFilter::make('status')->options(ConferenceStatus::class)->multiple(),
             ])
             ->recordActions([
+                ViewAction::make(),
                 EditAction::make(),
+                ConferenceStatusActions::publish(),
+                ConferenceStatusActions::close(),
+                ConferenceStatusActions::archive(),
                 DeleteAction::make()->icon(Heroicon::OutlinedArchiveBox)
                     ->modalDescription('Soft delete: the conference and everything under it stay in the database and can be restored by the platform team.'),
             ])
