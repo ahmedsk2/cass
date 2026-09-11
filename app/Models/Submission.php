@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\PresentationPreference;
 use App\Enums\SubmissionStatus;
+use App\Support\Tokens\SubmissionToken;
 use Database\Factories\SubmissionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -102,6 +103,21 @@ class Submission extends Model
         }
 
         return $this->authors()->where('is_corresponding', true)->first();
+    }
+
+    /**
+     * One indexed read on the unique `access_token_hash`. An empty or
+     * wrong-length token still hashes to something, so it simply does not
+     * match - there is no separate "invalid format" branch and therefore no
+     * shape of answer that tells an attacker which of the two happened.
+     */
+    public static function findByPlainToken(string $token): ?self
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        return static::query()->where('access_token_hash', SubmissionToken::hash($token))->first();
     }
 
     /**
