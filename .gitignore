@@ -52,3 +52,7 @@ Thumbs.db
 
 # local dev-server launch config for the Claude desktop app
 /.claude/launch.json
+
+# dompdf writes converted font metrics here at runtime
+/storage/fonts/*
+!/storage/fonts/.gitignore

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -26,7 +27,7 @@ class Organization extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'name', 'type', 'country', 'website', 'contact_email', 'purpose',
+        'name', 'type', 'country', 'website', 'contact_email', 'publish_contact_email', 'purpose',
         'logo_path', 'primary_color', 'accent_color',
     ];
 
@@ -35,6 +36,7 @@ class Organization extends Model
         return [
             'type' => OrganizationType::class,
             'status' => OrganizationStatus::class,
+            'publish_contact_email' => 'boolean',
             'approved_at' => 'datetime',
             'custom_domain_verified_at' => 'datetime',
         ];
@@ -85,6 +87,12 @@ class Organization extends Model
         return $this->members()->withPivotValue('role', OrganizationRole::Owner->value);
     }
 
+    /** @return HasMany<Conference, $this> */
+    public function conferences(): HasMany
+    {
+        return $this->hasMany(Conference::class);
+    }
+
     /**
      * @return BelongsTo<User, $this>
      */
@@ -101,6 +109,17 @@ class Organization extends Model
     public function isApproved(): bool
     {
         return $this->status === OrganizationStatus::Approved;
+    }
+
+    /**
+     * `contact_email` is how the platform reaches the organization, which for
+     * an organization that has never edited its profile can be the owner's
+     * personal login address. Public pages print it only after the organizer
+     * has explicitly asked for that.
+     */
+    public function publishesContactEmail(): bool
+    {
+        return $this->publish_contact_email === true && filled($this->contact_email);
     }
 
     public function getActivitylogOptions(): LogOptions

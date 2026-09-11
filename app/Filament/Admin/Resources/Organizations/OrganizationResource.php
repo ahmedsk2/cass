@@ -25,11 +25,13 @@ class OrganizationResource extends Resource
     protected static ?string $recordTitleAttribute = 'name';
 
     /**
-     * The organizer-facing route key is the slug, but the admin panel links to
-     * organizations by id (see the approval notification), so route binding
-     * here must resolve by id regardless of the model's own route key name.
+     * No $recordRouteKeyName override: Filament builds every record URL from
+     * $record->getRouteKey() and resolves it with the resource's own key name,
+     * so naming a different column here (id, while the model's route key is
+     * the slug) makes the list's View action link to /admin/organizations/{slug}
+     * and then look that slug up in the id column - a 404 on every row. Leaving
+     * it null falls back to Organization::getRouteKeyName(), and the two agree.
      */
-    protected static ?string $recordRouteKeyName = 'id';
 
     /**
      * Defense in depth: the panel's own auth middleware already blocks

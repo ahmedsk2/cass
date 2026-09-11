@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Enums\OrganizationRole;
 use App\Enums\OrganizationStatus;
+use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Filament\Admin\Resources\Organizations\Pages\ListOrganizations;
+use App\Filament\Admin\Resources\Organizations\Pages\ViewOrganization;
 use App\Models\Organization;
 use App\Models\User;
 use App\Notifications\OrganizationApproved;
+use App\Notifications\OrganizationRegistered;
 use App\Notifications\OrganizationRejected;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Notification;
@@ -88,10 +91,23 @@ it('requires a reason to reject', function () {
     expect($org->refresh()->status)->toBe(OrganizationStatus::Pending);
 });
 
-it('opens the view page', function () {
+it('opens the view page behind the URL Filament generates', function () {
+    // Organization::getRouteKeyName() is the slug, so the resource has to
+    // resolve the record by slug too: a resource that binds by id while the
+    // row link prints a slug answers 404 on every View action.
     $org = Organization::factory()->create(['name' => 'Viewable Society']);
 
-    get("/admin/organizations/{$org->id}")->assertOk()->assertSee('Viewable Society');
+    get(ViewOrganization::getUrl(['record' => $org]))->assertOk()->assertSee('Viewable Society');
+    get(OrganizationResource::getUrl('view', ['record' => $org]))->assertOk()->assertSee('Viewable Society');
+});
+
+it('points the registration notification at an admin page that opens', function () {
+    $org = Organization::factory()->create(['name' => 'Notified Society']);
+    $owner = User::factory()->create();
+
+    $url = (new OrganizationRegistered($org, $owner))->toMail($this->admin)->actionUrl;
+
+    get((string) $url)->assertOk()->assertSee('Notified Society');
 });
 
 it('is invisible to non-admins', function () {

@@ -25,6 +25,8 @@
 :root {
     --org-primary: var(--color-brand-500);
     --org-accent: var(--color-brand-700);
+    --org-on-primary: #ffffff;
+    --org-on-accent: #ffffff;
 }
 
 body {

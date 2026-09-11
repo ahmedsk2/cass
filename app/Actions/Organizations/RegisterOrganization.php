@@ -32,7 +32,10 @@ class RegisterOrganization
                 'type' => OrganizationType::from($data['organization_type']),
                 'country' => $data['country'],
                 'website' => $data['website'] ?: null,
-                'contact_email' => $data['email'],
+                // Deliberately not seeded from $data['email']: that is the
+                // owner's personal login address, and contact_email is an
+                // organization address the organizer may publish on the public
+                // conference page. They fill it in on the profile page.
                 'purpose' => $data['purpose'],
             ]);
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -32,6 +33,10 @@ class OrganizationRegistered extends Notification implements ShouldQueue
             ->line('Country: '.(config('cass.countries')[$this->organization->country] ?? $this->organization->country))
             ->line('Website: '.($this->organization->website ?: 'not given'))
             ->line('Purpose: '.$this->organization->purpose)
-            ->action('Review in admin panel', url('/admin/organizations/'.$this->organization->id));
+            // Built by the resource itself rather than by hand, so the link
+            // keeps matching however the admin panel binds an organization.
+            ->action('Review in admin panel', OrganizationResource::getUrl(
+                'view', ['record' => $this->organization], panel: 'admin'
+            ));
     }
 }

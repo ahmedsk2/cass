@@ -11,3 +11,8 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('queue:prune-failed --hours=720')->daily();
+
+// Prunable models: ShortLinkVisit rows outside the retention window in
+// config/cass.php. /q/{code} is unauthenticated, so that table only stops
+// growing if something deletes from it.
+Schedule::command('model:prune')->daily();

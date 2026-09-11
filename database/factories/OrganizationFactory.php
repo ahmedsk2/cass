@@ -22,6 +22,7 @@ class OrganizationFactory extends Factory
             'country' => 'SA',
             'website' => fake()->url(),
             'contact_email' => fake()->safeEmail(),
+            'publish_contact_email' => false,
             'purpose' => fake()->sentence(12),
             'status' => OrganizationStatus::Pending,
         ];

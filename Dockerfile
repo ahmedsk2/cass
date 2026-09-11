@@ -39,9 +39,14 @@ COPY docker/php.ini /usr/local/etc/php/conf.d/zz-cass.ini
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+# Filament's CSS/JS/fonts and Livewire's script are git-ignored and composer
+# runs with --no-scripts, so publish them into public/ here. Livewire serves
+# /vendor/livewire/livewire.min.js once public/vendor/livewire/manifest.json exists.
 RUN chmod +x /usr/local/bin/entrypoint.sh \
  && mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs \
-      storage/app/private storage/app/public bootstrap/cache /run/nginx \
+      storage/app/private storage/app/public storage/fonts bootstrap/cache /run/nginx \
+ && php artisan filament:assets \
+ && php artisan vendor:publish --tag=livewire:assets --force \
  && chown -R app:app storage bootstrap/cache /run/nginx /var/lib/nginx /var/log/nginx \
  && chmod 755 /var/www/html
 
