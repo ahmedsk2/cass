@@ -8,6 +8,7 @@ use App\Http\Controllers\Public\ShortLinkController;
 use App\Http\Controllers\Public\SubmissionFileController;
 use App\Livewire\Public\ContactForm;
 use App\Livewire\Public\RegisterOrganization;
+use App\Livewire\Public\SubmissionForm;
 use App\Livewire\Public\SubmissionStatus;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Facades\Route;
@@ -36,6 +37,18 @@ Route::get('/register', RegisterOrganization::class)->name('register');
 Route::get('/c/{organization}/{conference:slug}', [ConferenceController::class, 'show'])
     ->scopeBindings()
     ->name('conference.show');
+
+// The same explicit {conference:slug} binding and the same ->scopeBindings()
+// as conference.show above, for the same reason: the model's route key is the
+// ULID, and a slug that is only unique per organization is only safe when it is
+// resolved through that organization's relation.
+//
+// No AuthenticateSession here either. The page is public; the only signed-in
+// visitor it cares about is a member previewing an unpublished conference, and
+// SubmissionForm::mount() checks membership and email verification itself.
+Route::get('/c/{organization}/{conference:slug}/submit', SubmissionForm::class)
+    ->scopeBindings()
+    ->name('conference.submit');
 
 // Authenticated but outside the Filament panel, so the URLs are stable and
 // short. Binding is by ULID because the conference slug is only unique inside
