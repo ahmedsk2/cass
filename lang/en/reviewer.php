@@ -78,4 +78,59 @@ return [
         'open_queue' => 'Open the abstracts',
     ],
 
+    // Three keys the Reviewers page (Task 4) and the review page (Task 7) also
+    // reach for. They land here with the first page that needs them; those
+    // tasks add their own keys to the same three groups.
+    'actions' => [
+        'back' => 'Back to the conference',
+    ],
+
+    'notices' => [
+        'refused' => 'Nothing changed',
+    ],
+
+    'errors' => [
+        'not_yours' => 'This abstract is not in your queue.',
+    ],
+
+    'assign' => [
+        'page_link' => 'Assignments',
+        'title' => 'Assignments',
+        'subheading' => ':covered of :submissions abstracts have all :target reviewers.',
+        'coverage' => 'Coverage',
+        'coverage_target' => 'Target: :count reviewers per abstract',
+        'coverage_covered' => 'Fully covered: :count of :total',
+        'coverage_under' => 'Still short of reviewers: :count',
+        'coverage_unassigned' => 'With no reviewer at all: :count',
+        'none' => 'Nobody yet',
+        'empty_heading' => 'No abstracts to assign',
+        'empty_body' => 'Abstracts appear here once authors have submitted them.',
+        'columns' => [
+            'reference' => 'Reference',
+            'title' => 'Title',
+            'track' => 'Track',
+            'count' => 'Reviewers',
+            'reviewers' => 'Assigned to',
+        ],
+        'filters' => [
+            'under_target' => 'Still short of reviewers',
+        ],
+        'fields' => [
+            'reviewers' => 'Reviewers',
+            'reviewers_help' => 'This conference aims for :target reviewers per abstract. Only reviewers who have accepted their invitation are listed.',
+        ],
+        'actions' => [
+            'assign' => 'Assign',
+            'assign_heading' => 'Who reviews :reference?',
+        ],
+        'notices' => [
+            'saved' => 'Assignments saved',
+        ],
+        'errors' => [
+            'open_pool' => 'This conference is in open pool mode, where every reviewer already sees every abstract. Switch it to assigned review first.',
+            'not_reviewable' => 'Only a submitted abstract can be assigned.',
+            'not_a_reviewer' => 'One of those people is not an active reviewer of this conference.',
+        ],
+    ],
+
 ];

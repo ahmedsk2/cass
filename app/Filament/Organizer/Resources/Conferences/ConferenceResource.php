@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Organizer\Resources\Conferences;
 
+use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceAssignments;
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceEmailTemplates;
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceShortLink;
 use App\Filament\Organizer\Resources\Conferences\Pages\CreateConference;
@@ -93,6 +94,7 @@ class ConferenceResource extends Resource
             'view' => ViewConference::route('/{record}'),
             'short-link' => ConferenceShortLink::route('/{record}/share'),
             'emails' => ConferenceEmailTemplates::route('/{record}/emails'),
+            'assignments' => ConferenceAssignments::route('/{record}/assignments'),
             'edit' => EditConference::route('/{record}/edit'),
         ];
     }
