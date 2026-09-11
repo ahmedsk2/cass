@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 
 use function Pest\Laravel\get;
 use function Pest\Livewire\livewire;
@@ -328,4 +329,70 @@ it('404s when the conference is no longer public', function () {
     // organization goes offline entirely, and the author's own link is part of
     // "entirely".
     get('/s/'.$this->token)->assertNotFound();
+});
+
+it('404s rather than 500s when the conference or organization is deleted', function (string $target) {
+    get('/s/'.$this->token)->assertOk();
+
+    // Both models soft delete and the organizer panel exposes DeleteAction, so
+    // either belongsTo can resolve to null while the submission row survives -
+    // submissions.conference_id only restricts a *hard* delete.
+    // Submission::isOpenToAuthor() already guards this with ?->; without the
+    // same guard in mount() every author status link behind a deleted
+    // conference is "Call to a member function isPubliclyVisible() on null".
+    $this->{$target}->delete();
+
+    get('/s/'.$this->token)->assertNotFound();
+})->with(['conference', 'organization']);
+
+it('locks the edit flag against a crafted payload', function () {
+    // Every other server-decided boolean in this codebase is #[Locked] for the
+    // same reason - isPreview, windowWasOpen, humanVerified. Without it, one
+    // `editing=true` in an update payload renders the nested edit form for an
+    // abstract startEditing() would refuse, and startEditing()'s
+    // isOpenToAuthor() gate is the only thing guarding it.
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Withdrawn,
+        'withdrawn_at' => now(),
+    ])->save();
+
+    $page = livewire(StatusPage::class, ['token' => $this->token])
+        ->assertDontSeeLivewire(SubmissionForm::class);
+
+    expect(fn () => $page->set('editing', true))
+        ->toThrow(CannotUpdateLockedPropertyException::class);
+});
+
+it('reports a refusal instead of a 500 when the abstract is withdrawn mid-edit', function () {
+    // UpdateSubmission::handle() throws SubmissionNotAcceptable once the
+    // abstract is no longer open to the author, and Livewire rethrows anything
+    // that is not a ValidationException - which on this public, unauthenticated
+    // page is a 500 over the author's typing. An organizer withdrawing while
+    // the form is open is all it takes.
+    $draftForm = livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+        'submission' => $this->submission,
+        'token' => $this->token,
+    ]);
+    $submitForm = livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+        'submission' => $this->submission,
+        'token' => $this->token,
+    ]);
+
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Withdrawn,
+        'withdrawn_at' => now(),
+    ])->save();
+
+    // "An abstract that is withdrawn can no longer be changed." carries the
+    // word "abstract", so reportBlockers() puts it on the abstract field.
+    $draftForm->set('title', 'Edited after the withdrawal')->call('saveDraft')->assertHasErrors(['abstract']);
+    $submitForm->call('submit')->assertHasErrors(['abstract']);
+
+    expect($this->submission->refresh())
+        ->title->toBe('Early mobilisation after cardiac surgery')
+        ->status->toBe(SubmissionStatus::Withdrawn);
 });

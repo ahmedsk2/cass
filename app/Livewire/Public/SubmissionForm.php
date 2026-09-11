@@ -316,7 +316,20 @@ class SubmissionForm extends Component
         $this->validate($this->uploadRules(), [], ['uploads' => __('submission.files.label')]);
 
         if ($this->submission !== null) {
-            $update->handle($this->submission, $this->payload());
+            try {
+                // The window was open when this request started, but the
+                // abstract itself may no longer be open to its author: an
+                // organizer can withdraw it while the form is on screen, and a
+                // deleted conference closes it too. UpdateSubmission answers
+                // that with SubmissionNotAcceptable, and Livewire rethrows
+                // anything that is not a ValidationException - a 500 on a
+                // public, unauthenticated page, over the author's own typing.
+                $update->handle($this->submission, $this->payload());
+            } catch (SubmissionNotAcceptable $exception) {
+                $this->reportBlockers($exception->reasons);
+
+                return null;
+            }
 
             // The status-page edit form has the same files section, and
             // returning before this would drop an attachment behind a success
@@ -370,7 +383,17 @@ class SubmissionForm extends Component
         $this->validate($this->submitRules(), [], $this->validationAttributes());
 
         if ($this->submission !== null) {
-            $update->handle($this->submission, $this->payload());
+            try {
+                // Same refusal as saveDraft()'s, for the same reason: the
+                // abstract can stop being the author's to change between the
+                // render that drew this form and the press of the button.
+                $update->handle($this->submission, $this->payload());
+            } catch (SubmissionNotAcceptable $exception) {
+                $this->reportBlockers($exception->reasons);
+
+                return null;
+            }
+
             $submission = $this->submission->refresh();
             $token = $this->token;
         } else {

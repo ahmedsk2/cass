@@ -39,6 +39,15 @@ class SubmissionStatus extends Component
     #[Locked]
     public string $token;
 
+    /**
+     * Server-decided, never client-set: startEditing() turns it on only when
+     * the abstract is still open to the author. #[Locked] for the same reason
+     * SubmissionForm locks isPreview, windowWasOpen and humanVerified - without
+     * it, one `editing=true` in a crafted update payload would render the
+     * nested edit form for a withdrawn, reviewed or past-deadline abstract,
+     * and startEditing()'s gate would be guarding nothing.
+     */
+    #[Locked]
     public bool $editing = false;
 
     public function mount(string $token): void
@@ -46,6 +55,14 @@ class SubmissionStatus extends Component
         $submission = Submission::findByPlainToken($token);
 
         abort_if($submission === null, 404);
+
+        // Conference and Organization both soft delete, and the organizer panel
+        // exposes DeleteAction on both the table and the edit page, so either
+        // belongsTo can resolve to null while this row survives - the foreign
+        // key only restricts a *hard* delete. Submission::isOpenToAuthor()
+        // already guards the same case with ?->; without this line a deleted
+        // conference turns every one of its author links into a 500.
+        abort_if($submission->conference?->organization === null, 404);
 
         // The same visibility rule as the conference page and the short link: a
         // draft, archived or suspended conference is offline to everyone
