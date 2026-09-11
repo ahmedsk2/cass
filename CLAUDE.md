@@ -19,3 +19,11 @@ Conference Abstract Submission System. Multi-tenant Laravel 13 + Filament 5. Spe
 - Tests: `php artisan test` (SQLite in-memory). MySQL suite: `docker compose -f docker-compose.dev.yml up -d` then `DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=cass DB_USERNAME=cass DB_PASSWORD=cass php artisan test`.
 - Static analysis: `./vendor/bin/phpstan analyse`. Style: `./vendor/bin/pint --test`.
 - Dev server: `composer run dev` (or `php artisan serve`), Mailpit UI at http://localhost:8025.
+
+## Models and cost
+
+- Fable 5.1 is the orchestrator only: it decides, briefs agents, reads their one-line reports, verifies gates by exit code, deploys, and talks to the owner. It does not read plans, vendor code, diffs or long logs itself; it asks an agent for the answer instead.
+- Opus 5 at maximum effort does the bulk of the work: writing plans, reviewing plans, implementing tasks, reviewing code, fixing findings, writing scripts, asset work. Multi-step work runs through the Workflow tool; single tasks through the Agent tool with `model: opus`; both in the background.
+- Sonnet only for mechanical one-file edits with a complete spec. Never Haiku for code.
+- Keep the orchestrator's context lean: split plans into per-task files, require single-line JSON report fields, grep instead of cat, never re-read a plan after the review, prefer background tasks with notifications over polling.
+- Pipeline per plan: Opus writes the plan → adversarial review Workflow (lens reviewers, skeptics, one editor, one critic) → implementation Workflow one task at a time (implement, spec check, quality review, up to two fix rounds) → CI → pull request → merge → Coolify deploy → migrations run in the container → live checks.
