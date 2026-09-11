@@ -240,4 +240,30 @@ return [
         ],
     ],
 
+    'start' => [
+        'action' => 'Start reviewing',
+        'heading' => 'Open this conference for review?',
+        'description' => 'Reviewers can see the abstracts and start writing reviews. Authors are not emailed, and you can still send reviewer reminders from here.',
+        'started' => 'Reviewing has started',
+        'not_ready' => 'This conference is not ready for review',
+        'errors' => [
+            'wrong_status' => 'Only a conference whose submissions are closed can move to review; this one is :status.',
+            'no_deadline' => 'Set a review deadline first, so reviewers know when their work is due and reminders can be sent.',
+            'no_reviewers' => 'No reviewer has accepted an invitation yet.',
+            'no_submissions' => 'No abstract has been submitted, so there is nothing to review.',
+            'no_questions' => 'The review form has no questions yet.',
+            'unassigned' => ':count abstract(s) have no reviewer assigned. In assigned review, an abstract nobody is assigned to is invisible to everybody.',
+        ],
+    ],
+
+    'progress' => [
+        'heading' => 'Review progress',
+        'submitted' => 'Reviews submitted',
+        'drafts' => 'Drafts in progress',
+        'reviewers' => 'Active reviewers',
+        'per_reviewer' => 'By reviewer',
+        'none' => 'No reviewers yet',
+        'yours' => 'You have submitted :submitted of :expected reviews.',
+    ],
+
 ];

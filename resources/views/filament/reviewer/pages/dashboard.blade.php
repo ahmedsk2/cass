@@ -28,6 +28,11 @@
                 @endunless
 
                 @if ($conference->isOpenToReviewers())
+                    @php($progress = $this->progressFor($conference))
+                    <p style="margin-top:0.5rem;font-size:0.875rem;font-weight:600">
+                        {{ __('reviewer.progress.yours', ['submitted' => $progress['submitted'], 'expected' => $progress['expected']]) }}
+                    </p>
+
                     <p style="margin-top:0.75rem">
                         <x-filament::link :href="\App\Filament\Reviewer\Resources\Submissions\SubmissionResource::urlForConference($conference)">
                             {{ __('reviewer.dashboard.open_queue') }}

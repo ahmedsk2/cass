@@ -62,6 +62,16 @@ class Dashboard extends BaseDashboard
         return $conferences;
     }
 
+    /** @return array{expected: int, submitted: int} */
+    public function progressFor(Conference $conference): array
+    {
+        $user = $this->reviewer();
+
+        return $user === null
+            ? ['expected' => 0, 'submitted' => 0]
+            : $conference->reviewProgressFor($user);
+    }
+
     public function reviewer(): ?User
     {
         $user = auth()->user();

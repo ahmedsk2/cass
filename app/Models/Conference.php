@@ -7,11 +7,14 @@ namespace App\Models;
 use App\Enums\ConferenceStatus;
 use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
+use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
 use App\Enums\SubmissionWindow;
+use App\Support\Reviews\ReviewerScope;
 use App\Support\Submissions\ReferencePrefix;
 use Carbon\CarbonInterface;
 use Database\Factories\ConferenceFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -384,6 +387,90 @@ class Conference extends Model
             'covered' => $covered,
             'under' => $submissions - $covered,
             'unassigned' => $unassigned,
+        ];
+    }
+
+    /**
+     * Spec 5.4 step 3's "progress", from the organizer's side.
+     *
+     * "Expected" is derived differently by mode, and the difference is the
+     * honest one: in assigned mode the work that was handed out is exactly the
+     * `review_assignments` rows, while in open pool nobody was handed anything
+     * and the conference's own `reviewers_per_submission` target is the only
+     * denominator that means something.
+     *
+     * @return array{expected: int, submitted: int, drafts: int, reviewers: list<array{name: string, submitted: int, expected: int}>}
+     */
+    public function reviewProgress(): array
+    {
+        $reviewableIds = $this->submissions()
+            ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
+            ->pluck('id');
+
+        $assignments = ReviewAssignment::query()->whereIn('submission_id', $reviewableIds)->count();
+
+        $expected = $this->review_mode === ReviewMode::Assigned
+            ? $assignments
+            : $reviewableIds->count() * max(1, (int) $this->reviewers_per_submission);
+
+        /** @var array<string, int> $byStatus */
+        $byStatus = Review::query()
+            ->whereIn('submission_id', $reviewableIds)
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status')
+            ->all();
+
+        $reviewers = [];
+
+        /** @var ConferenceReviewer $reviewer */
+        foreach ($this->activeReviewers()->with('user')->orderBy('id')->get() as $reviewer) {
+            $reviewers[] = [
+                // No nullsafe walk and no fallback, for the reason
+                // AutoAssignReviewers::plan() spells out: user_id is NOT NULL
+                // and cascades on delete, so Larastan level 6 rejects
+                // `?->name ?? ...` outright (nullsafe.neverNull).
+                'name' => (string) $reviewer->user->name,
+                'submitted' => Review::query()
+                    ->whereIn('submission_id', $reviewableIds)
+                    ->where('reviewer_user_id', $reviewer->user_id)
+                    ->where('status', ReviewStatus::Submitted->value)
+                    ->count(),
+                'expected' => $this->review_mode === ReviewMode::Assigned
+                    ? ReviewAssignment::query()
+                        ->whereIn('submission_id', $reviewableIds)
+                        ->where('reviewer_user_id', $reviewer->user_id)
+                        ->count()
+                    : $reviewableIds->count(),
+            ];
+        }
+
+        return [
+            'expected' => $expected,
+            'submitted' => (int) ($byStatus[ReviewStatus::Submitted->value] ?? 0),
+            'drafts' => (int) ($byStatus[ReviewStatus::Draft->value] ?? 0),
+            'reviewers' => $reviewers,
+        ];
+    }
+
+    /**
+     * The same two numbers for one reviewer, for their own dashboard. In open
+     * pool a reviewer's expectation is the whole pool; in assigned mode it is
+     * what they were given.
+     *
+     * @return array{expected: int, submitted: int}
+     */
+    public function reviewProgressFor(User $reviewer): array
+    {
+        $queue = ReviewerScope::submissions($reviewer, $this);
+
+        return [
+            'expected' => (clone $queue)->count(),
+            'submitted' => (clone $queue)
+                ->whereHas('reviews', fn (Builder $reviews): Builder => $reviews
+                    ->where('reviewer_user_id', $reviewer->getKey())
+                    ->where('status', ReviewStatus::Submitted->value))
+                ->count(),
         ];
     }
 

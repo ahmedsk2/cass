@@ -7,6 +7,7 @@ namespace App\Filament\Organizer\Resources\Conferences\Tables;
 use App\Actions\Conferences\ArchiveConference;
 use App\Actions\Conferences\CloseSubmissions;
 use App\Actions\Conferences\PublishConference;
+use App\Actions\Conferences\StartReviewing;
 use App\Actions\Reviews\SendReviewerReminders;
 use App\Enums\ConferenceStatus;
 use App\Enums\ReviewMode;
@@ -202,12 +203,50 @@ class ConferenceStatusActions
             });
     }
 
+    public static function startReviewing(): Action
+    {
+        return Action::make('startReviewing')
+            ->label(__('reviewer.start.action'))
+            ->icon(Heroicon::OutlinedClipboardDocumentCheck)
+            ->color('info')
+            ->requiresConfirmation()
+            ->modalHeading(__('reviewer.start.heading'))
+            ->modalDescription(__('reviewer.start.description'))
+            ->visible(fn (Conference $record): bool => $record->status === ConferenceStatus::Closed
+                && Gate::allows('publish', $record))
+            ->action(function (Conference $record, StartReviewing $start): void {
+                Gate::authorize('publish', $record);
+
+                $blockers = $start->blockers($record);
+
+                if ($blockers !== []) {
+                    // The same shape the publish action uses: report, do not
+                    // throw, and name every missing piece at once.
+                    Notification::make()
+                        ->danger()
+                        ->title(__('reviewer.start.not_ready'))
+                        ->body(implode(' ', array_map('e', $blockers)))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                /** @var User $actor */
+                $actor = auth()->user();
+                $start->handle($record, $actor);
+
+                Notification::make()->success()->title(__('reviewer.start.started'))->send();
+            });
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
         return [
             static::share(), static::emails(), static::reviewers(), static::assignments(),
-            static::remindReviewers(), static::publish(), static::close(), static::archive(),
+            static::remindReviewers(), static::publish(), static::startReviewing(),
+            static::close(), static::archive(),
         ];
     }
 }

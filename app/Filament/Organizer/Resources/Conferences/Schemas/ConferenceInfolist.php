@@ -6,6 +6,7 @@ namespace App\Filament\Organizer\Resources\Conferences\Schemas;
 
 use App\Actions\Conferences\PublishConference;
 use App\Enums\ConferenceStatus;
+use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
 use App\Models\Conference;
 use Filament\Actions\Action;
@@ -49,6 +50,19 @@ class ConferenceInfolist
         self::$counts ??= new WeakMap;
 
         return self::$counts[$record] ??= $record->submissionCounts();
+    }
+
+    /**
+     * @var WeakMap<Conference, array{expected: int, submitted: int, drafts: int, reviewers: list<array{name: string, submitted: int, expected: int}>}>|null
+     */
+    private static ?WeakMap $progress = null;
+
+    /** @return array{expected: int, submitted: int, drafts: int, reviewers: list<array{name: string, submitted: int, expected: int}>} */
+    private static function progress(Conference $record): array
+    {
+        self::$progress ??= new WeakMap;
+
+        return self::$progress[$record] ??= $record->reviewProgress();
     }
 
     public static function configure(Schema $schema): Schema
@@ -107,6 +121,39 @@ class ConferenceInfolist
                         ->state(fn (Conference $record): int => self::counts($record)['submitted']),
                     TextEntry::make('submissions_withdrawn')->label('Withdrawn')->badge()->color('danger')
                         ->state(fn (Conference $record): int => self::counts($record)['withdrawn']),
+                ]),
+
+            Section::make(__('reviewer.progress.heading'))
+                // Only once reviewing has started: a checklist of zeroes on a
+                // conference still collecting abstracts is noise.
+                ->visible(fn (Conference $record): bool => in_array(
+                    $record->status,
+                    [ConferenceStatus::Reviewing, ConferenceStatus::Decided],
+                    true,
+                ))
+                ->headerActions([
+                    Action::make('manageReviewers')
+                        ->label(__('reviewer.actions.page_link'))
+                        ->icon(Heroicon::OutlinedUserGroup)
+                        ->color('gray')
+                        ->url(fn (Conference $record): string => ConferenceResource::getUrl('reviewers', ['record' => $record])),
+                ])
+                ->columns(3)
+                ->components([
+                    TextEntry::make('reviews_submitted')->label(__('reviewer.progress.submitted'))->badge()->color('success')
+                        ->state(fn (Conference $record): string => self::progress($record)['submitted'].' / '.self::progress($record)['expected']),
+                    TextEntry::make('reviews_drafts')->label(__('reviewer.progress.drafts'))->badge()->color('warning')
+                        ->state(fn (Conference $record): int => self::progress($record)['drafts']),
+                    TextEntry::make('reviewers_active')->label(__('reviewer.progress.reviewers'))->badge()
+                        ->state(fn (Conference $record): int => count(self::progress($record)['reviewers'])),
+                    TextEntry::make('per_reviewer')->label(__('reviewer.progress.per_reviewer'))
+                        ->listWithLineBreaks()
+                        ->columnSpanFull()
+                        ->placeholder(__('reviewer.progress.none'))
+                        ->state(fn (Conference $record): array => array_map(
+                            fn (array $row): string => $row['name'].' — '.$row['submitted'].' / '.$row['expected'],
+                            self::progress($record)['reviewers'],
+                        )),
                 ]),
 
             // Every date-time entry names the conference timezone explicitly:
