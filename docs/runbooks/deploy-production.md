@@ -124,12 +124,36 @@ conference's `max_files` above 10 would need a rebuild, not just a setting.
 
 The 64 characters after `/s/` are a bearer credential: anyone holding them can
 edit or withdraw that abstract until the deadline. nginx logs that path
-redacted (see the `cass` log_format in `docker/nginx.conf`), but **Cloudflare
-still sees the full URI** — do not enable Logpush for this zone without a
-transform rule that strips it, and never paste a `/s/...` URL into a ticket.
-To take a leaked link out of circulation, open the submission in the organizer
-panel and use **Resend status link**, which rotates the token and kills the old
-one.
+redacted, **and the `Referer` header with it**: `App\Http\Middleware\SecurityHeaders`
+sets `Referrer-Policy: strict-origin-when-cross-origin`, so every same-origin
+request the status page makes — each `/files/{ulid}` click, each
+`/livewire/update` POST — sends the whole status-page URL in `Referer`. Both go
+through a redacting `map` in the `cass` log_format in `docker/nginx.conf`; an
+ordinary referer is still logged verbatim. **Cloudflare still sees the full
+URI** — do not enable Logpush for this zone without a transform rule that
+strips it, and never paste a `/s/...` URL into a ticket. To take a leaked link
+out of circulation, open the submission in the organizer panel and use **Resend
+status link**, which rotates the token and kills the old one.
+
+`tests/Feature/AccessLogRedactionTest.php` reads `docker/nginx.conf` and fails
+if that redaction is ever removed, but it does not run nginx. Syntax-check the
+file after every edit to it:
+
+```bash
+cd /c/Users/ahmed/Documents/CASS && MSYS_NO_PATHCONV=1 docker run --rm \
+  -v "$(pwd)/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  nginx:alpine nginx -t 2>&1 | tail -3
+```
+
+Mount it at **`conf.d`**, never at `http.d`. The official `nginx:alpine` image
+includes only `/etc/nginx/conf.d/*.conf` and has no `http.d` directory at all,
+so a file mounted there is never read and `nginx -t` cheerfully reports "syntax
+is ok" for the stock config whatever this file contains. Production is the
+other way round — `apk add nginx` on Alpine includes `/etc/nginx/http.d/*.conf`,
+which is where `Dockerfile:39` copies it — but both are the same `http {}`
+context, so the `conf.d` mount parses the file exactly as production does.
+`MSYS_NO_PATHCONV=1` stops Git Bash rewriting the container-side path into a
+Windows one.
 
 ## Email triage
 
@@ -158,13 +182,21 @@ sudo docker exec "$C" su-exec app php artisan queue:failed
 ```
 
 Every delivered message carries an `X-CASS-Log` header holding the `ulid` of its
-`email_logs` row, plus `X-CASS-Template` and `X-CASS-Organization`; the member
-notice (`App\Notifications\NewSubmissionNotice`) adds `X-CASS-Conference` and
-`X-CASS-Submission`. For templated mail the conference and the submission are
-columns on the `email_logs` row rather than headers on the message, because
-`SendTemplatedEmail` writes that row itself before queueing. When the owner's
-mailbox shows a bounce, `X-CASS-Log` is how the bounce is matched to a row —
-search the log for the ulid rather than guessing from the subject line.
+`email_logs` row: `App\Mail\TemplatedMail` sets its own, and
+`App\Listeners\RecordOutgoingEmail::sending()` stamps one on everything else.
+The rest of the `X-CASS-*` set is **not** universal:
+
+| Message | Headers beyond `X-CASS-Log` |
+|---|---|
+| `App\Mail\TemplatedMail` — every conference template | `X-CASS-Template`, `X-CASS-Organization` |
+| `App\Notifications\NewSubmissionNotice` — the member notice | `X-CASS-Organization`, `X-CASS-Conference`, `X-CASS-Submission` |
+| Everything else — `OrganizationApproved`, Filament password resets, verification mail | none |
+
+For templated mail the conference and the submission are columns on the
+`email_logs` row rather than headers on the message, because `SendTemplatedEmail`
+writes that row itself before queueing. When the owner's mailbox shows a bounce,
+`X-CASS-Log` is how the bounce is matched to a row — search the log for the ulid
+rather than guessing from the subject line.
 
 To re-send an author's link after a bounce is fixed, do **not** replay the queue
 job: open the submission in the organizer panel and use **Resend status link**,

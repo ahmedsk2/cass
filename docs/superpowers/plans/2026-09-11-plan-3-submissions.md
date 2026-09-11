@@ -11856,18 +11856,30 @@ map $request_uri $cass_logged_uri {
     default                        $request_uri;
 }
 
+# Redacting the request line is only half of it. SecurityHeaders sends
+# `Referrer-Policy: strict-origin-when-cross-origin`, which means a same-origin
+# request carries the FULL referring URL - so every subresource the status page
+# pulls and every /livewire/update POST it makes would otherwise write the same
+# 64-character credential into this log, one field to the right. Only the /s/
+# token is redacted here: an ordinary referer is triage data worth keeping.
+map $http_referer $cass_logged_referer {
+    ""                                              "-";
+    "~*^(?<cass_ref>https?://[^/]+)/s/[a-z0-9]{64}" "$cass_ref/s/[redacted]";
+    default                                         $http_referer;
+}
+
 log_format cass '$remote_addr - $remote_user [$time_local] '
                 '"$request_method $cass_logged_uri $server_protocol" '
-                '$status $body_bytes_sent "$http_referer" "$http_user_agent"';
+                '$status $body_bytes_sent "$cass_logged_referer" "$http_user_agent"';
 ```
 
 and change `access_log /dev/stdout;` to `access_log /dev/stdout cass;`.
 
 ```bash
-cd /c/Users/ahmed/Documents/CASS && docker run --rm -v "$(pwd)/docker/nginx.conf:/etc/nginx/http.d/default.conf:ro" nginx:alpine nginx -t 2>&1 | tail -3
+cd /c/Users/ahmed/Documents/CASS && MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd)/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:alpine nginx -t 2>&1 | tail -3
 ```
 
-Expected: `syntax is ok` and `test is successful`. (`nginx:alpine` puts its own `http {}` around `/etc/nginx/http.d/*.conf`, exactly as the production image does at `Dockerfile:39`, so this validates the file in the context it is actually included in.)
+Expected: `syntax is ok` and `test is successful`. Mount it at **`conf.d`**, not at `http.d`: the official `nginx:alpine` image includes only `/etc/nginx/conf.d/*.conf` and has no `/etc/nginx/http.d` directory at all, so a file mounted there is never read and `nginx -t` prints "syntax is ok" for the stock config however broken this file is (confirmed by mounting a deliberately broken copy at both paths). Production is the other way round — `apk add nginx` on Alpine includes `/etc/nginx/http.d/*.conf`, which is where `Dockerfile:39` copies it — but both are the same `http {}` context, so the `conf.d` mount parses the file exactly as production does. `MSYS_NO_PATHCONV=1` stops Git Bash rewriting the container-side path.
 
 - [ ] **Step 7: Run the tests, Pint, Larastan, commit**
 
