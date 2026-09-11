@@ -17,10 +17,14 @@ use App\Models\Submission;
 use App\Models\Track;
 use App\Models\User;
 use App\Notifications\NewSubmissionNotice;
+use App\Support\Turnstile;
 use Carbon\Carbon;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportTesting\Testable;
 
 use function Pest\Laravel\actingAs;
@@ -537,3 +541,292 @@ it('does not leak a conference through another organization slug', function () {
     get(submitUrl($this->conference))->assertOk();
     get("/c/{$other->slug}/{$this->conference->slug}/submit")->assertNotFound();
 });
+
+// --- Files ---------------------------------------------------------------
+
+it('attaches a pdf to the abstract when it is submitted', function () {
+    Storage::fake('local');
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('uploads', [uploadedFixturePdf()])
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    $submission = Submission::query()->firstOrFail();
+
+    expect($submission->files)->toHaveCount(1)
+        ->and($submission->files->first()?->original_name)->toBe('abstract.pdf');
+
+    Storage::disk('local')->assertExists((string) $submission->files->first()?->path);
+});
+
+it('shows the count, size and type limits the conference set', function () {
+    $this->conference->forceFill(['max_files' => 2, 'allowed_file_types' => ['pdf']])->save();
+
+    get(submitUrl($this->conference))
+        ->assertOk()
+        ->assertSee('PDF')
+        ->assertSee('2')
+        ->assertSee('10 MB');
+});
+
+it('refuses a renamed image and leaves the abstract as a draft', function () {
+    Storage::fake('local');
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('uploads', [uploadedRenamedImage()])
+        ->call('submit')
+        ->assertHasErrors(['uploads']);
+
+    // The row exists as a draft - the author's typing is not thrown away - but
+    // it was not submitted and no reference was burnt.
+    $submission = Submission::query()->firstOrFail();
+
+    expect($submission->status)->toBe(SubmissionStatus::Draft)
+        ->and($submission->reference)->toBeNull()
+        ->and($submission->files)->toHaveCount(0)
+        ->and($this->conference->refresh()->submission_counter)->toBe(0);
+});
+
+it('refuses more files than the conference allows before touching the database', function () {
+    Storage::fake('local');
+    $this->conference->forceFill(['max_files' => 1])->save();
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('uploads', [uploadedFixturePdf(), uploadedFixturePdf('second.pdf')])
+        ->call('submit')
+        ->assertHasErrors(['uploads']);
+
+    expect(Submission::query()->count())->toBe(0);
+});
+
+it('drops a pending upload the author changed their mind about', function () {
+    Storage::fake('local');
+
+    livewire(SubmissionForm::class, ['organization' => $this->organization, 'conference' => $this->conference])
+        ->set('uploads', [uploadedFixturePdf(), uploadedFixturePdf('second.pdf')])
+        ->assertCount('uploads', 2)
+        ->call('removeUpload', 0)
+        ->assertCount('uploads', 1);
+});
+
+// --- Bot protection ------------------------------------------------------
+
+it('silently swallows a filled honeypot', function () {
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('website_confirm', 'http://spam.example')
+        ->call('submit')
+        ->assertHasNoErrors()
+        ->assertRedirect();
+
+    // It looks like it worked, and nothing was written. Telling a bot which
+    // check it failed is telling it which check to remove.
+    expect(Submission::query()->count())->toBe(0);
+    Mail::assertNothingQueued();
+});
+
+it('refuses a form that was filled faster than a human could, and accepts it four seconds later', function () {
+    // phpunit.xml pins CASS_SUBMISSION_MIN_SECONDS=0 for the suite, because
+    // openedAt is #[Locked] - a test cannot back-date it any more than a
+    // browser can, and Livewire answers ->set() on a locked property with
+    // CannotUpdateLockedPropertyException. So the one test that owns the gate
+    // switches it on itself.
+    config()->set('cass.submission_min_seconds', 4);
+
+    // BOTH components are mounted at the same instant, before the clock moves:
+    // openedAt is stamped in mount(), so a component created after the jump
+    // would be "opened" at the advanced instant and refused all over again -
+    // which is why the only honest way to test the patient half is to mount it
+    // first and wait.
+    $tooFast = fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]));
+    $patient = fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]));
+
+    $tooFast->call('submit')->assertHasErrors();
+
+    expect(Submission::query()->count())->toBe(0);
+
+    Carbon::setTestNow(now()->addSeconds(5));
+
+    $patient->call('submit')->assertHasNoErrors();
+
+    expect(Submission::query()->count())->toBe(1);
+
+    Carbon::setTestNow();
+});
+
+it('blocks the sixth save or submit from one address in a minute', function () {
+    foreach (range(1, 5) as $i) {
+        fillForm(livewire(SubmissionForm::class, [
+            'organization' => $this->organization,
+            'conference' => $this->conference,
+        ]))->call('saveDraft')->assertHasNoErrors();
+    }
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))->call('submit')->assertHasErrors();
+
+    expect(Submission::query()->count())->toBe(5);
+});
+
+it('renders the turnstile widget only when both keys are configured', function () {
+    get(submitUrl($this->conference))->assertOk()->assertDontSee('challenges.cloudflare.com', escape: false);
+
+    config()->set('cass.turnstile.site_key', 'site-key');
+    config()->set('cass.turnstile.secret_key', 'secret-key');
+
+    get(submitUrl($this->conference))
+        ->assertOk()
+        ->assertSee('challenges.cloudflare.com', escape: false)
+        ->assertSee('site-key');
+});
+
+// Two tests, not one with two halves: Http::fake() MERGES stub sets and
+// PendingRequest::buildStubHandler() takes ->filter()->first(), so a second
+// fake() for the same URL never wins over the first.
+it('refuses a submission whose turnstile token fails verification', function () {
+    config()->set('cass.turnstile.site_key', 'site-key');
+    config()->set('cass.turnstile.secret_key', 'secret-key');
+    Http::fake([Turnstile::VERIFY_URL => Http::response(['success' => false], 200)]);
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('turnstileToken', 'a-token')
+        ->call('submit')
+        ->assertHasErrors(['turnstileToken']);
+
+    expect(Submission::query()->count())->toBe(0);
+});
+
+it('accepts a submission whose turnstile token verifies', function () {
+    config()->set('cass.turnstile.site_key', 'site-key');
+    config()->set('cass.turnstile.secret_key', 'secret-key');
+    Http::fake([Turnstile::VERIFY_URL => Http::response(['success' => true], 200)]);
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('turnstileToken', 'a-token')
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    expect(Submission::query()->count())->toBe(1);
+});
+
+it('redeems a turnstile token only once, however many times a submit is refused', function () {
+    config()->set('cass.turnstile.site_key', 'site-key');
+    config()->set('cass.turnstile.secret_key', 'secret-key');
+
+    // One stub, deliberately: what proves the fix is the call COUNT, because a
+    // second redemption of the same token answers `timeout-or-duplicate` at
+    // Cloudflare and the widget is inside wire:ignore, so nothing would mint a
+    // replacement for minutes.
+    Http::fake([Turnstile::VERIFY_URL => Http::response(['success' => true], 200)]);
+
+    $component = fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))->set('turnstileToken', 'a-token');
+
+    // Verification runs before $this->validate(), so this refusal has already
+    // been past Cloudflare once.
+    $component->set('abstract', implode(' ', array_fill(0, 251, 'word')))
+        ->call('submit')
+        ->assertHasErrors(['abstract']);
+
+    $component->set('abstract', 'Background. Methods. Results. Conclusion.')
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    Http::assertSentCount(1);
+
+    expect(Submission::query()->count())->toBe(1);
+});
+
+it('reuses the same draft when a submit is retried after a rejected file', function () {
+    Storage::fake('local');
+
+    $component = fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]));
+
+    $component
+        ->set('uploads', [uploadedRenamedImage()])
+        ->call('submit')
+        ->assertHasErrors(['uploads']);
+
+    // Livewire's _finishUpload() APPENDS to an array property, so the rejected
+    // file has to be cleared before the good one is attached.
+    $component->set('uploads', [])
+        ->set('uploads', [uploadedFixturePdf()])
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    // One abstract, one token, one file - not two of each. submit() adopts the
+    // row it just created into $this->submission, so the retry edits it.
+    expect(Submission::query()->count())->toBe(1)
+        ->and(Submission::query()->firstOrFail()->files)->toHaveCount(1);
+});
+
+it('refuses an oversized temporary upload at the livewire endpoint', function () {
+    // config/livewire.php caps temporary_file_upload at max:10240 (KB), the
+    // same 10 MB the form enforces. Without that file the package default is
+    // max:12288 with no type rule, on a throttle:60,1 endpoint that any
+    // anonymous visitor to /submit can reach.
+    livewire(SubmissionForm::class, ['organization' => $this->organization, 'conference' => $this->conference])
+        ->set('uploads', [UploadedFile::fake()->create('huge.pdf', 11 * 1024)])
+        ->assertHasErrors(['uploads.0']);
+});
+
+/**
+ * The real 615-byte fixture PDF, wrapped so Livewire's test helper can carry it.
+ *
+ * createWithContent() rather than `new UploadedFile($path, ...)`: Livewire's
+ * Testable::upload() reads `$file->name` (Testable.php:291), a public property
+ * only Illuminate\Http\Testing\File declares, so a plain UploadedFile makes
+ * every ->set('uploads', ...) raise "Undefined property". The bytes are the
+ * fixture's either way, which is what the content sniff is here to read.
+ */
+function uploadedFixturePdf(string $name = 'abstract.pdf'): UploadedFile
+{
+    $content = (string) file_get_contents(base_path('tests/Fixtures/abstract.pdf'));
+
+    // A distinct body, so two uploads in one submission are not a duplicate.
+    if ($name !== 'abstract.pdf') {
+        $content .= '%% '.$name."\n";
+    }
+
+    return UploadedFile::fake()->createWithContent($name, $content);
+}
+
+/** A real PNG under a .pdf name - the fixture the content sniff must refuse. */
+function uploadedRenamedImage(): UploadedFile
+{
+    return UploadedFile::fake()->createWithContent(
+        'abstract.pdf',
+        (string) file_get_contents(base_path('tests/Fixtures/not-really.pdf')),
+    );
+}

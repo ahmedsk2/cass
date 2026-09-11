@@ -4,26 +4,35 @@ declare(strict_types=1);
 
 namespace App\Livewire\Public;
 
+use App\Actions\Submissions\DeleteSubmissionFile;
 use App\Actions\Submissions\SaveSubmissionDraft;
 use App\Actions\Submissions\SendSubmissionStatusLink;
+use App\Actions\Submissions\StoreSubmissionFile;
 use App\Actions\Submissions\SubmitAbstract;
 use App\Actions\Submissions\UpdateSubmission;
 use App\Enums\CustomFieldType;
 use App\Enums\PresentationPreference;
 use App\Enums\SubmissionWindow;
+use App\Exceptions\SubmissionFileRejected;
 use App\Exceptions\SubmissionNotAcceptable;
 use App\Models\Conference;
 use App\Models\CustomField;
 use App\Models\Organization;
 use App\Models\Submission;
+use App\Models\SubmissionFile;
 use App\Models\Track;
 use App\Models\User;
 use App\Support\Branding\OrganizationTheme;
+use App\Support\ClientIp;
 use App\Support\Text\WordCounter;
+use App\Support\Turnstile;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Livewire\WithFileUploads;
 
 /**
  * Spec 5.3 step 2: one form, used twice. It is the page at
@@ -42,6 +51,8 @@ use Livewire\Component;
  */
 class SubmissionForm extends Component
 {
+    use WithFileUploads;
+
     /**
      * A sanity bound on submissions.abstract, not the rule an author meets:
      * that one is the conference's own word limit. It exists because the column
@@ -116,9 +127,38 @@ class SubmissionForm extends Component
 
     public bool $agreed = false;
 
-    // Task 7 adds: public array $uploads = [], public string $website_confirm = '',
-    // public int $openedAt = 0, public string $turnstileToken = '',
-    // public bool $humanVerified = false.
+    /**
+     * Pending uploads, not yet stored. They stay in Livewire's temporary-upload
+     * directory until a submission row exists to attach them to - which for a
+     * brand new abstract is only after SaveSubmissionDraft has run.
+     *
+     * @var list<TemporaryUploadedFile>
+     */
+    public array $uploads = [];
+
+    /** Honeypot. A real author never sees it, so a value in it is a bot. */
+    public string $website_confirm = '';
+
+    /**
+     * When the form was mounted. #[Locked] so the client cannot backdate it,
+     * which is the only thing that makes the minimum-fill-time check mean
+     * anything.
+     */
+    #[Locked]
+    public int $openedAt = 0;
+
+    public string $turnstileToken = '';
+
+    /**
+     * A Turnstile token is single-use. Once Cloudflare has said yes for this
+     * component instance, a later validation failure must not re-redeem it:
+     * the second answer is `timeout-or-duplicate`, and the widget sits inside
+     * wire:ignore, so nothing would mint a replacement until its own
+     * refresh-expired timer fires minutes later. #[Locked] because it is a
+     * server-side fact about a past HTTP call, not a form field.
+     */
+    #[Locked]
+    public bool $humanVerified = false;
 
     public function mount(Organization $organization, Conference $conference, ?Submission $submission = null, ?string $token = null): void
     {
@@ -132,6 +172,7 @@ class SubmissionForm extends Component
         $this->windowWasOpen = $conference->submissionWindow() === SubmissionWindow::Open;
         $this->submission = $submission;
         $this->token = $token;
+        $this->openedAt = now()->timestamp;
 
         if ($submission !== null) {
             $this->fillFromSubmission($submission);
@@ -176,6 +217,40 @@ class SubmissionForm extends Component
         }
     }
 
+    // --- Files ----------------------------------------------------------
+
+    /**
+     * Runs on every change to the uploads array. Size and count are cheap and
+     * are the two an author gets wrong most often, so they are answered here
+     * rather than after the whole form is filled in.
+     */
+    public function updatedUploads(): void
+    {
+        $this->validate($this->uploadRules(), [], ['uploads' => __('submission.files.label')]);
+    }
+
+    public function removeUpload(int $index): void
+    {
+        unset($this->uploads[$index]);
+        $this->uploads = array_values($this->uploads);
+        $this->resetErrorBag('uploads');
+    }
+
+    /** Edit mode only: drop a file that is already stored. */
+    public function deleteFile(string $ulid, DeleteSubmissionFile $delete): void
+    {
+        if ($this->submission === null || ! $this->submission->isOpenToAuthor()) {
+            return;
+        }
+
+        $file = $this->submission->files()->where('ulid', $ulid)->first();
+
+        if ($file instanceof SubmissionFile) {
+            $delete->handle($file);
+            $this->submission->unsetRelation('files');
+        }
+    }
+
     // --- The two buttons ------------------------------------------------
 
     /**
@@ -183,11 +258,9 @@ class SubmissionForm extends Component
      * Everything else can wait, because the whole point of a draft is that the
      * author is not finished.
      */
-    public function saveDraft(SaveSubmissionDraft $save, UpdateSubmission $update, SendSubmissionStatusLink $sendLink): mixed
+    public function saveDraft(SaveSubmissionDraft $save, UpdateSubmission $update, SendSubmissionStatusLink $sendLink, StoreSubmissionFile $store): mixed
     {
-        // Task 7 inserts the honeypot, the minimum-fill-time check, the
-        // per-IP throttle and the Turnstile verification into this guard.
-        if (! $this->isWritable() || ! $this->windowIsOpen()) {
+        if (! $this->isWritable() || ! $this->passesBotChecks() || ! $this->windowIsOpen()) {
             return null;
         }
 
@@ -217,12 +290,24 @@ class SubmissionForm extends Component
             "authors.{$index}.email" => ['required', 'email:rfc', 'max:255'],
         ], [], $this->validationAttributes());
 
+        // The attributes are passed explicitly, exactly as every other
+        // validate() call in this component does. Livewire's
+        // getValidationAttributes() fallback uses method_exists(), which is true
+        // for this component's *private* validationAttributes(), and then calls
+        // it from outside the class - so a bare $this->validate($rules) here
+        // would be a BadMethodCallException through __call, not a validation.
+        $this->validate($this->uploadRules(), [], ['uploads' => __('submission.files.label')]);
+
         if ($this->submission !== null) {
             $update->handle($this->submission, $this->payload());
 
-            // Task 7 stores pending uploads here, on this branch too - the
-            // status-page edit form has the same files section, and returning
-            // before it would drop an attachment behind a success flash.
+            // The status-page edit form has the same files section, and
+            // returning before this would drop an attachment behind a success
+            // flash.
+            if (! $this->storeUploads($this->submission, $store)) {
+                return null;
+            }
+
             session()->flash('status', __('submission.flash.draft_updated'));
 
             return $this->redirect(route('submission.status', ['token' => $this->token]), navigate: false);
@@ -230,10 +315,10 @@ class SubmissionForm extends Component
 
         $link = $save->handle($this->conference, $this->payload());
 
-        // Adopt the row immediately. Task 7 inserts an upload gate below this
-        // line that can still refuse, and a retry must edit this draft rather
-        // than mint a second abstract with a second token. Both properties are
-        // #[Locked], so the server may write them and the client may not.
+        // Adopt the row immediately. The upload gate below this line can still
+        // refuse, and a retry must edit this draft rather than mint a second
+        // abstract with a second token. Both properties are #[Locked], so the
+        // server may write them and the client may not.
         $this->submission = $link->submission;
         $this->token = $link->token;
 
@@ -250,16 +335,18 @@ class SubmissionForm extends Component
             // would be a 500 on top of a row that was written successfully.
         }
 
+        if (! $this->storeUploads($link->submission, $store)) {
+            return null;
+        }
+
         session()->flash('status', __('submission.flash.draft_saved'));
 
         return $this->redirect($link->url() ?? route('conference.show', [$this->organization, $this->conference]), navigate: false);
     }
 
-    public function submit(SaveSubmissionDraft $save, UpdateSubmission $update, SubmitAbstract $submitAbstract): mixed
+    public function submit(SaveSubmissionDraft $save, UpdateSubmission $update, SubmitAbstract $submitAbstract, StoreSubmissionFile $store): mixed
     {
-        // Task 7 inserts the honeypot, the minimum-fill-time check, the
-        // per-IP throttle and the Turnstile verification into this guard.
-        if (! $this->isWritable() || ! $this->windowIsOpen()) {
+        if (! $this->isWritable() || ! $this->passesBotChecks() || ! $this->windowIsOpen()) {
             return null;
         }
 
@@ -275,13 +362,23 @@ class SubmissionForm extends Component
             $token = $link->token;
 
             // Adopt the draft immediately. Everything below this line can still
-            // refuse - SubmitAbstract's own blockers, and the upload gate Task 7
-            // inserts - and a retry must edit this row rather than create a
-            // second abstract with a second token and a second copy of every
-            // file. Both properties are #[Locked]: the server writes them, the
-            // client cannot.
+            // refuse - SubmitAbstract's own blockers, and the upload gate below
+            // - and a retry must edit this row rather than create a second
+            // abstract with a second token and a second copy of every file.
+            // Both properties are #[Locked]: the server writes them, the client
+            // cannot.
             $this->submission = $submission;
             $this->token = $token;
+        }
+
+        // Validated before the row is touched (count, size, extension) and
+        // stored after it exists (content sniff). A content mismatch therefore
+        // leaves a draft behind, which is the friendliest failure available:
+        // the author fixes the file and presses Submit again - and because the
+        // branch above adopted the row into $this->submission, that second
+        // press edits the same abstract instead of creating another one.
+        if (! $this->storeUploads($submission, $store)) {
+            return null;
         }
 
         try {
@@ -327,6 +424,8 @@ class SubmissionForm extends Component
             'customFields' => $this->customFields(),
             'presentationOptions' => $this->presentationOptions(),
             'wordCount' => WordCounter::count($this->abstract),
+            'storedFiles' => $this->submission?->files()->get() ?? collect(),
+            'turnstileSiteKey' => Turnstile::siteKey(),
         ])->layout('components.layouts.conference', [
             'organization' => $this->organization,
             'conference' => $this->conference,
@@ -380,6 +479,7 @@ class SubmissionForm extends Component
             'authors.*.email' => ['required', 'email:rfc', 'max:255'],
             'authors.*.affiliation' => ['nullable', 'string', 'max:255'],
             'agreed' => ['accepted'],
+            ...$this->uploadRules(),
         ];
 
         foreach ($this->customFields() as $field) {
@@ -487,6 +587,127 @@ class SubmissionForm extends Component
         $this->addError('title', __('submission.errors.preview_readonly'));
 
         return false;
+    }
+
+    /**
+     * Spec 5.3: honeypot, per-IP rate limit, Turnstile when configured, plus a
+     * minimum fill time.
+     *
+     * A filled honeypot returns *true from the caller's point of view* -
+     * `handledAsBot()` sets a redirect and the caller stops - because telling a
+     * bot which check it failed is telling it which check to remove. Every
+     * other refusal is a visible error, because a person hitting one has done
+     * nothing wrong and needs to know what happened.
+     */
+    private function passesBotChecks(): bool
+    {
+        $key = 'submission:'.ClientIp::from(request());
+
+        // A separate key for the penalties. RateLimiter::hit() sets the decay
+        // only on the *first* hit for a key (Illuminate\Cache\RateLimiter::
+        // increment uses cache->add), so mixing a 600-second penalty and the
+        // 60-second budget on one key would make the limit five per ten minutes
+        // for everyone behind that address - not the 5/min/IP spec section 9
+        // gives real authors, who on a conference NAT share one IP.
+        $penaltyKey = 'submission-penalty:'.ClientIp::from(request());
+
+        if ($this->website_confirm !== '') {
+            RateLimiter::hit($penaltyKey, 600);
+            $this->handledAsBot();
+
+            return false;
+        }
+
+        if (now()->timestamp - $this->openedAt < (int) config('cass.submission_min_seconds')) {
+            RateLimiter::hit($penaltyKey, 600);
+            $this->addError('title', __('submission.errors.too_fast'));
+
+            return false;
+        }
+
+        if (RateLimiter::tooManyAttempts($penaltyKey, (int) config('cass.submission_rate_limit'))
+            || RateLimiter::tooManyAttempts($key, (int) config('cass.submission_rate_limit'))) {
+            $this->addError('title', __('submission.errors.too_many', [
+                'seconds' => max(RateLimiter::availableIn($key), RateLimiter::availableIn($penaltyKey)),
+            ]));
+
+            return false;
+        }
+
+        RateLimiter::hit($key, 60);
+
+        // Only once per component instance. This method runs before
+        // $this->validate(), so a submit that fails on the word limit has
+        // already been here - and re-redeeming the same token would answer
+        // `timeout-or-duplicate`, locking the author out of their own form.
+        if (! $this->humanVerified) {
+            if (! Turnstile::verify($this->turnstileToken === '' ? null : $this->turnstileToken, ClientIp::from(request()))) {
+                // The widget mints a single-use token; a failed verification
+                // means the author has to solve it again, so clear it and ask
+                // the widget - which lives inside wire:ignore - for a new one.
+                $this->turnstileToken = '';
+                $this->dispatch('turnstile-reset');
+                $this->addError('turnstileToken', __('submission.errors.turnstile'));
+
+                return false;
+            }
+
+            $this->humanVerified = true;
+        }
+
+        return true;
+    }
+
+    /** Looks exactly like success and writes nothing. */
+    private function handledAsBot(): void
+    {
+        session()->flash('status', __('submission.flash.draft_saved'));
+
+        $this->redirect(route('conference.show', [$this->organization, $this->conference]), navigate: false);
+    }
+
+    /** @return array<string, mixed> */
+    private function uploadRules(): array
+    {
+        $remaining = max(0, (int) $this->conference->max_files - $this->storedFileCount());
+
+        return [
+            'uploads' => ['array', 'max:'.$remaining],
+            'uploads.*' => [
+                'file',
+                // Kilobytes, which is what the `max` rule speaks.
+                'max:'.(int) floor((int) config('cass.max_file_bytes') / 1024),
+                'extensions:'.implode(',', array_map('strtolower', (array) ($this->conference->allowed_file_types ?? ['pdf']))),
+            ],
+        ];
+    }
+
+    private function storedFileCount(): int
+    {
+        return $this->submission?->files()->count() ?? 0;
+    }
+
+    /**
+     * Called after the row exists and before the submit transition. A rejection
+     * here leaves the abstract as a saved draft with a visible error rather
+     * than throwing the author's typing away - which is why the caller checks
+     * the return value instead of catching an exception.
+     */
+    private function storeUploads(Submission $submission, StoreSubmissionFile $store): bool
+    {
+        foreach ($this->uploads as $upload) {
+            try {
+                $store->handle($submission, $upload);
+            } catch (SubmissionFileRejected $exception) {
+                $this->addError('uploads', $exception->getMessage());
+
+                return false;
+            }
+        }
+
+        $this->uploads = [];
+
+        return true;
     }
 
     /** @return Collection<string, string> */

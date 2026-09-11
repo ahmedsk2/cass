@@ -38,6 +38,16 @@ return [
     // blank 413 from PHP.
     'max_file_bytes' => (int) env('CASS_MAX_FILE_BYTES', 10 * 1024 * 1024),
 
+    // Spec section 9: "submission 5/min/IP". Applied inside the Livewire
+    // component (a Livewire action is one POST to /livewire/update, so route
+    // middleware cannot tell a save from a submit) with App\Support\ClientIp.
+    'submission_rate_limit' => (int) env('CASS_SUBMISSION_RATE_LIMIT', 5),
+
+    // A form nobody could have read, let alone filled, in this many seconds was
+    // not filled by a person. Four is low enough that a determined author
+    // pasting a prepared abstract still gets through.
+    'submission_min_seconds' => (int) env('CASS_SUBMISSION_MIN_SECONDS', 4),
+
     // Spec section 9: /s/{token} is 20 GETs per minute per address. It lives
     // here rather than with the submission knobs in Task 7 because the limiter
     // that reads it is registered in this task, alongside the route.

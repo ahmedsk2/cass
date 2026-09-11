@@ -50,7 +50,36 @@
 
     @if ($showForm)
         <form wire:submit="submit" class="mt-8 space-y-8" novalidate>
-            {{-- Task 7 inserts the honeypot, the fill-time field and the Turnstile widget here. --}}
+            {{-- Honeypot. Hidden from sight and from screen readers, out of the
+                 tab order, and with autocomplete off so a password manager does
+                 not fill it in and lock a real author out. --}}
+            <div class="hidden" aria-hidden="true">
+                <label for="website_confirm">{{ __('submission.fields.honeypot') }}</label>
+                <input id="website_confirm" type="text" wire:model="website_confirm" tabindex="-1" autocomplete="off">
+            </div>
+
+            @if ($turnstileSiteKey !== null)
+                {{-- wire:ignore: the widget is rendered by Cloudflare's script
+                     into this div, and a Livewire morph would replace it with an
+                     empty one on the next update. The callback writes the token
+                     straight into the component with $wire.set. --}}
+                <div wire:ignore>
+                    <div class="cf-turnstile"
+                         data-sitekey="{{ $turnstileSiteKey }}"
+                         data-callback="cassTurnstileCallback"></div>
+                    <script>
+                        window.cassTurnstileCallback = (token) => window.Livewire.find('{{ $this->getId() }}').set('turnstileToken', token, false);
+                        // $this->dispatch('turnstile-reset') reaches
+                        // dispatchGlobal(), which is a window CustomEvent. A
+                        // refused verification burns the token, and the widget
+                        // is inside wire:ignore, so nothing else would mint a
+                        // replacement before its own refresh-expired timer.
+                        window.addEventListener('turnstile-reset', () => window.turnstile && window.turnstile.reset());
+                    </script>
+                    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                </div>
+                @error('turnstileToken') <p class="text-sm text-red-600">{{ $message }}</p> @enderror
+            @endif
 
             <section class="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
                 <h2 class="text-lg font-semibold">{{ __('submission.sections.abstract') }}</h2>
@@ -128,7 +157,9 @@
                 @include('livewire.public.partials.custom-fields')
             @endif
 
-            {{-- Task 7 inserts the files section here. --}}
+            @if ((int) $conference->max_files > 0)
+                @include('livewire.public.partials.files')
+            @endif
 
             <section class="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
                 <h2 class="text-lg font-semibold">{{ __('submission.sections.agreement') }}</h2>

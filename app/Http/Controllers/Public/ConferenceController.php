@@ -21,6 +21,12 @@ class ConferenceController extends Controller
 
         $conference->load('tracks');
 
+        // The scoped route binding resolved this conference *through*
+        // $organization, but Eloquent does not set the inverse relation, so the
+        // CTA's route() call would lazily load the same row again. The public
+        // page has a 300 ms budget and a query-count test; this keeps both.
+        $conference->setRelation('organization', $organization);
+
         return view('public.conference', [
             'organization' => $organization,
             'conference' => $conference,

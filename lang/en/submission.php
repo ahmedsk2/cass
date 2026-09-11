@@ -46,6 +46,15 @@ return [
         'contact_phone_help' => 'Used only if the organizers need to reach you quickly about this abstract.',
         'choose' => 'Choose one…',
         'agreed' => 'I have read and accept the terms above, and I confirm every author listed has agreed to this submission.',
+        'honeypot' => 'Leave this field empty',
+    ],
+
+    'files' => [
+        'label' => 'Attach files',
+        'limits' => 'Up to :count file(s), :types, :size MB each.',
+        'remove' => 'Remove',
+        'confirm_delete' => 'Remove this file from your abstract?',
+        'uploading' => 'Uploading…',
     ],
 
     'authors' => [
@@ -73,6 +82,9 @@ return [
         'word_limit' => 'The abstract is :words words. The limit is :limit words.',
         'window_closed' => 'Submissions for this conference are closed. Copy your text somewhere safe before leaving this page.',
         'preview_readonly' => 'This is a preview of a page that is not public yet, so nothing can be submitted from it. Publish the conference first.',
+        'too_fast' => 'That was quicker than a person can fill this in. Please take a moment and try again.',
+        'too_many' => 'Too many attempts from this connection. Please try again in :seconds seconds.',
+        'turnstile' => 'Please complete the "I am human" check and try again.',
     ],
 
     'flash' => [
