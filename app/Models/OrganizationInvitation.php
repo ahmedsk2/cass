@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Contracts\Invitation;
 use App\Enums\InvitationStatus;
 use App\Enums\OrganizationRole;
+use App\Exceptions\InvitationNotAcceptable;
 use App\Filament\Organizer\Pages\Dashboard;
 use Carbon\CarbonInterface;
 use Database\Factories\OrganizationInvitationFactory;
@@ -89,9 +90,20 @@ class OrganizationInvitation extends Model implements Invitation
         return null;
     }
 
+    /**
+     * Null-guarded because Organization soft-deletes while its invitations
+     * survive, and the public `/invite/{token}` view prints
+     * `invitationHeadline()` before it prints the refusal block - so an
+     * unguarded walk would 500 the page instead of explaining itself.
+     * AcceptInvitation::blockers() refuses the same row outright.
+     */
     public function invitingOrganizationName(): string
     {
-        return (string) $this->organization->name;
+        // `->`, not `?->`: `??` evaluates its left side in isset mode, which
+        // already tolerates a null relation anywhere in the chain - and a
+        // nullsafe fetch on the left of it is what PHPStan's nullsafe.neverNull
+        // rule refuses, here and at the three twins of this line.
+        return (string) ($this->organization->name ?? __('members.invite.unknown_organization'));
     }
 
     public function invitationHeadline(): string
@@ -109,6 +121,16 @@ class OrganizationInvitation extends Model implements Invitation
 
     public function grantTo(User $user): void
     {
+        $organization = $this->organization;
+
+        if ($organization === null) {
+            // Soft-deleted since the link was sent. AcceptInvitation::blockers()
+            // refuses before this is reached; this is the belt to that brace for
+            // a hand-made call, and a refusal rather than a silent no-op so the
+            // invitation is not stamped accepted against nothing.
+            throw InvitationNotAcceptable::because(__('members.invite.blocked.organization_gone'));
+        }
+
         // A sitting member keeps the role they already have. addMember() is
         // syncWithoutDetaching([$id => ['role' => ...]]), and sync() UPDATES the
         // pivot of an id it already holds
@@ -119,11 +141,11 @@ class OrganizationInvitation extends Model implements Invitation
         // the owner-grants-owner rule all live there, and a stale link would
         // silently rewrite a sitting admin's row. Changing a role is
         // ChangeMemberRole's job, with a policy in front of it.
-        if ($user->roleIn($this->organization) !== null) {
+        if ($user->roleIn($organization) !== null) {
             return;
         }
 
-        $this->organization->addMember($user, $this->role);
+        $organization->addMember($user, $this->role);
     }
 
     /**
@@ -147,6 +169,14 @@ class OrganizationInvitation extends Model implements Invitation
 
     public function landingUrl(): string
     {
-        return Dashboard::getUrl(panel: 'organizer', tenant: $this->organization);
+        $organization = $this->organization;
+
+        // Only reachable after a successful accept, which grantTo() above
+        // refuses without an organization - but this is a *public* page and a
+        // panel URL builder that is handed null throws, so answer the panel root
+        // rather than 500 on the way to it.
+        return $organization === null
+            ? url('/org')
+            : Dashboard::getUrl(panel: 'organizer', tenant: $organization);
     }
 }

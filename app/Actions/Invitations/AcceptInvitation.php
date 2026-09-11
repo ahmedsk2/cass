@@ -8,6 +8,7 @@ use App\Contracts\Invitation;
 use App\Enums\OrganizationRole;
 use App\Exceptions\InvitationNotAcceptable;
 use App\Models\OrganizationInvitation;
+use App\Models\ReviewerInvitation;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -45,22 +46,49 @@ class AcceptInvitation
         // RemoveMember and ChangeMemberRole withdraw the invitations a departing
         // or demoted member minted; this is the belt to those braces, because a
         // link created before somebody lost the right to create it must not
-        // still install an Owner days afterwards - and because a role can also
-        // change by a path neither of those actions owns.
+        // still install an Owner - or a reviewer - days afterwards, and because
+        // a role can also change by a path neither of those actions owns.
         //
         // `invited_by` is nullable and is only null on rows nothing minted
-        // through InviteMember (the factory default, and any future import), so
-        // a row with no recorded inviter has no authority to re-check and is not
-        // blocked on that ground. The organization hop is null-guarded because
-        // Organization soft-deletes while its invitations survive, and
-        // User::roleIn() takes a non-nullable Organization.
-        if ($invitation instanceof OrganizationInvitation && $invitation->invited_by !== null) {
+        // through InviteMember or InviteReviewer (the factory default, and any
+        // future import), so a row with no recorded inviter has no authority to
+        // re-check and is not blocked on that ground.
+        //
+        // Both arms start by refusing a missing organization rather than walking
+        // to it: Organization soft-deletes while its invitations survive,
+        // Conference soft-deletes while its reviewer invitations survive, and
+        // User::roleIn(), grantTo() and landingUrl() all take or dereference a
+        // non-nullable Organization. Unguarded that is a TypeError 500 on a
+        // public, unauthenticated route.
+        //
+        // The two arms differ in what "still allowed" means, and the difference
+        // is the policies': OrganizationInvitationPolicy::create() needs a
+        // manager and only an owner grants owner, while
+        // ReviewerInvitationPolicy::create() admits every role down to a plain
+        // member - so a reviewer invitation only asks whether the inviter still
+        // has a role at all.
+        if ($invitation instanceof OrganizationInvitation) {
             $organization = $invitation->organization;
-            $inviterRole = $organization === null ? null : $invitation->inviter?->roleIn($organization);
 
-            if ($inviterRole === null
-                || ! $inviterRole->canManageOrganization()
-                || ($invitation->role === OrganizationRole::Owner && $inviterRole !== OrganizationRole::Owner)) {
+            if ($organization === null) {
+                $reasons[] = __('members.invite.blocked.organization_gone');
+            } elseif ($invitation->invited_by !== null) {
+                $inviterRole = $invitation->inviter?->roleIn($organization);
+
+                if ($inviterRole === null
+                    || ! $inviterRole->canManageOrganization()
+                    || ($invitation->role === OrganizationRole::Owner && $inviterRole !== OrganizationRole::Owner)) {
+                    $reasons[] = __('members.invite.blocked.inviter_gone');
+                }
+            }
+        }
+
+        if ($invitation instanceof ReviewerInvitation) {
+            $organization = $invitation->conference?->organization;
+
+            if ($organization === null) {
+                $reasons[] = __('members.invite.blocked.organization_gone');
+            } elseif ($invitation->invited_by !== null && $invitation->inviter?->roleIn($organization) === null) {
                 $reasons[] = __('members.invite.blocked.inviter_gone');
             }
         }

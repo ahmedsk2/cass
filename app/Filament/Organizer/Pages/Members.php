@@ -193,6 +193,18 @@ class Members extends Page implements HasTable
             ];
         }
 
+        // canAccess() deliberately admits every member of the tenant, so that a
+        // plain member can turn their own submission notifications off - which
+        // makes this page shared, and makes the invitation rows a separate
+        // question. Spec section 4 gives "Manage organization members" to an
+        // owner and an admin only, and OrganizationInvitationPolicy::viewAny()
+        // says the same: who has been invited, and at what privilege, is not a
+        // plain member's business. The tenant is set inside this panel, so the
+        // policy's Filament::getTenant() answers correctly here.
+        if (! Gate::allows('viewAny', OrganizationInvitation::class)) {
+            return $rows;
+        }
+
         $invitations = $organization->invitations()
             ->whereNull('accepted_at')
             ->whereNull('revoked_at')

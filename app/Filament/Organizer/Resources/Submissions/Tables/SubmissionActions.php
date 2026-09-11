@@ -36,7 +36,11 @@ class SubmissionActions
             ->requiresConfirmation()
             ->modalHeading('Withdraw this abstract?')
             ->modalDescription('Use this when the author has asked you to withdraw it. The reference is kept, the abstract stays visible to you, and the author sees the withdrawal on their status page. It cannot be undone here.')
-            ->visible(fn (Submission $record): bool => $record->status->isOpenToAuthor() && Gate::allows('withdraw', $record))
+            // isOrganizerWithdrawable(), not isOpenToAuthor(): this button is
+            // the organizer's, and the first submitted review moves an abstract
+            // to `under_review` - which must not be the moment nobody can pull
+            // it from the programme any more.
+            ->visible(fn (Submission $record): bool => $record->status->isOrganizerWithdrawable() && Gate::allows('withdraw', $record))
             ->action(function (Submission $record, WithdrawSubmission $withdraw): void {
                 Gate::authorize('withdraw', $record);
 

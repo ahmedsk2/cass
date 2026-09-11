@@ -250,7 +250,14 @@ class Conference extends Model
             return false;
         }
 
-        return $user->roleIn($this->organization) === null;
+        $organization = $this->organization;
+
+        // Organization soft-deletes while its conferences survive, and
+        // User::roleIn() takes a non-nullable Organization. Stay BLIND when the
+        // hop is gone: "show the authors" is the wrong answer to "membership can
+        // no longer be verified", and this method is the one definition of
+        // blind, so it may not fall open.
+        return $organization === null || $user->roleIn($organization) === null;
     }
 
     /** Timestamps are stored UTC; organizers and reviewers read them locally. */
@@ -421,26 +428,48 @@ class Conference extends Model
             ->pluck('aggregate', 'status')
             ->all();
 
+        // Two grouped queries, read from maps inside the loop - not one or two
+        // counts per reviewer. Each of those counts carried a whereIn over every
+        // reviewable submission id, and spec section 10 budgets for 500
+        // abstracts, so forty reviewers cost about eighty such queries on every
+        // ViewConference and EditConference render. ConferenceInfolist memoises
+        // the call; it cannot memoise the loop inside it.
+        /** @var array<int, int> $submittedByReviewer */
+        $submittedByReviewer = Review::query()
+            ->whereIn('submission_id', $reviewableIds)
+            ->where('status', ReviewStatus::Submitted->value)
+            ->selectRaw('reviewer_user_id, count(*) as aggregate')
+            ->groupBy('reviewer_user_id')
+            ->pluck('aggregate', 'reviewer_user_id')
+            ->map(fn (mixed $count): int => (int) $count)
+            ->all();
+
+        /** @var array<int, int> $assignedByReviewer */
+        $assignedByReviewer = $this->review_mode === ReviewMode::Assigned
+            ? ReviewAssignment::query()
+                ->whereIn('submission_id', $reviewableIds)
+                ->selectRaw('reviewer_user_id, count(*) as aggregate')
+                ->groupBy('reviewer_user_id')
+                ->pluck('aggregate', 'reviewer_user_id')
+                ->map(fn (mixed $count): int => (int) $count)
+                ->all()
+            : [];
+
         $reviewers = [];
 
         /** @var ConferenceReviewer $reviewer */
         foreach ($this->activeReviewers()->with('user')->orderBy('id')->get() as $reviewer) {
+            $userId = (int) $reviewer->user_id;
+
             $reviewers[] = [
                 // No nullsafe walk and no fallback, for the reason
                 // AutoAssignReviewers::plan() spells out: user_id is NOT NULL
                 // and cascades on delete, so Larastan level 6 rejects
                 // `?->name ?? ...` outright (nullsafe.neverNull).
                 'name' => (string) $reviewer->user->name,
-                'submitted' => Review::query()
-                    ->whereIn('submission_id', $reviewableIds)
-                    ->where('reviewer_user_id', $reviewer->user_id)
-                    ->where('status', ReviewStatus::Submitted->value)
-                    ->count(),
+                'submitted' => $submittedByReviewer[$userId] ?? 0,
                 'expected' => $this->review_mode === ReviewMode::Assigned
-                    ? ReviewAssignment::query()
-                        ->whereIn('submission_id', $reviewableIds)
-                        ->where('reviewer_user_id', $reviewer->user_id)
-                        ->count()
+                    ? ($assignedByReviewer[$userId] ?? 0)
                     : $reviewableIds->count(),
             ];
         }

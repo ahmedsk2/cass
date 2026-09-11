@@ -10,6 +10,7 @@ use App\Exceptions\ReviewNotAcceptable;
 use App\Models\ReviewAssignment;
 use App\Models\Submission;
 use App\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -78,15 +79,31 @@ class AssignReviewers
 
             $toAdd = array_values(array_diff($wanted, $current));
             $toRemove = array_values(array_diff($current, $wanted));
+            $added = [];
 
             foreach ($toAdd as $id) {
-                $assignment = new ReviewAssignment;
-                $assignment->forceFill([
-                    'submission_id' => $submission->getKey(),
-                    'reviewer_user_id' => $id,
-                    'assigned_by' => $actor->getKey(),
-                    'assigned_at' => now(),
-                ])->save();
+                try {
+                    $assignment = new ReviewAssignment;
+                    $assignment->forceFill([
+                        'submission_id' => $submission->getKey(),
+                        'reviewer_user_id' => $id,
+                        'assigned_by' => $actor->getKey(),
+                        'assigned_at' => now(),
+                    ])->save();
+                } catch (UniqueConstraintViolationException) {
+                    // Another organizer saved the same submission between the
+                    // read above and this insert - auto-assign, which drives this
+                    // method in a loop, widens that window. The unique
+                    // (submission_id, reviewer_user_id) key is what makes
+                    // "already assigned" a fact, so let it answer: the row they
+                    // wrote is the row this one wanted, the set the caller asked
+                    // for is now correct, and the only thing that would be a lie
+                    // is counting it as ours. The same discipline as
+                    // SendReviewerReminders::automatic().
+                    continue;
+                }
+
+                $added[] = $id;
             }
 
             if ($toRemove !== []) {
@@ -96,16 +113,16 @@ class AssignReviewers
                 $submission->reviewAssignments()->whereIn('reviewer_user_id', $toRemove)->delete();
             }
 
-            if ($toAdd !== [] || $toRemove !== []) {
+            if ($added !== [] || $toRemove !== []) {
                 // Spec section 9 names assignment changes as an audited event.
                 activity()
                     ->performedOn($submission)
                     ->causedBy($actor)
-                    ->withProperties(['added' => $toAdd, 'removed' => $toRemove])
+                    ->withProperties(['added' => $added, 'removed' => $toRemove])
                     ->log('review.assignments_changed');
             }
 
-            return ['added' => count($toAdd), 'removed' => count($toRemove)];
+            return ['added' => count($added), 'removed' => count($toRemove)];
         });
     }
 }

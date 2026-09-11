@@ -158,7 +158,14 @@ class InviteReviewer
         return [
             'reviewer_name' => $reviewerName,
             'conference' => (string) $conference->name,
-            'organization' => (string) $conference->organization->name,
+            // Null-guarded for the reason blockers() above spells out:
+            // Organization soft-deletes while its conferences survive. Unguarded
+            // this is an ErrorException, and the hourly reminder command drives
+            // this very method for every conference in one pass.
+            // `->`, not `?->`: `??` evaluates its left side in isset mode, which
+            // already tolerates the null relation - and a nullsafe fetch on the
+            // left of it is what PHPStan's nullsafe.neverNull rule refuses.
+            'organization' => (string) ($conference->organization->name ?? __('members.invite.unknown_organization')),
             'deadline' => $deadline === null
                 ? __('reviewer.mail.no_deadline')
                 : $deadline->format('j F Y, H:i').' ('.$conference->timezone.')',

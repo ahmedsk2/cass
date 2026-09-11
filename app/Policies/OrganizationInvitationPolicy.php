@@ -11,9 +11,15 @@ use Filament\Facades\Filament;
 
 /**
  * Spec section 4: "Manage organization members" belongs to the platform admin,
- * the org owner and the org admin - and to nobody else. A plain member sees the
- * Members page (Task 3 hides the page from them entirely through canAccess())
- * and can change nothing.
+ * the org owner and the org admin - and to nobody else.
+ *
+ * The Members page is NOT hidden from a plain member: Members::canAccess()
+ * deliberately admits every member of the tenant, because a plain member needs
+ * that page to turn their own submission notifications off. What is gated is
+ * everything on it - the invite action, the five row actions, and the pending
+ * invitation rows themselves, which Members::rows() builds only when viewAny()
+ * below says yes. An invitee's address and the role they were granted are as
+ * much "manage members" as the buttons are.
  */
 class OrganizationInvitationPolicy
 {

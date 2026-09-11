@@ -30,6 +30,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\HtmlString;
 
@@ -66,9 +67,26 @@ class ConferenceAssignments extends Page implements HasTable
         return __('reviewer.assign.title');
     }
 
+    /**
+     * The coverage summary for this request. Memoised because
+     * Conference::assignmentCoverage() is a withCount over every reviewable
+     * abstract of the conference - spec section 10 budgets for 500 - and it is
+     * asked for by the per-row badge colour, the filter, the modal helper text,
+     * the subheading and the Blade view: about fourteen full-conference
+     * aggregates per page view, for one number. ConferenceInfolist memoises the
+     * identical pattern; a plain property is enough here because the page is one
+     * conference, not a WeakMap of them.
+     *
+     * Nulled by the two actions that write assignments, so a post-mutation
+     * re-render cannot read a stale summary.
+     *
+     * @var array{target: int, submissions: int, covered: int, under: int, unassigned: int}|null
+     */
+    private ?array $coverage = null;
+
     public function getSubheading(): ?string
     {
-        $coverage = $this->getConference()->assignmentCoverage();
+        $coverage = $this->getCoverage();
 
         return __('reviewer.assign.subheading', [
             'target' => $coverage['target'],
@@ -88,7 +106,7 @@ class ConferenceAssignments extends Page implements HasTable
     /** @return array{target: int, submissions: int, covered: int, under: int, unassigned: int} */
     public function getCoverage(): array
     {
-        return $this->getConference()->assignmentCoverage();
+        return $this->coverage ??= $this->getConference()->assignmentCoverage();
     }
 
     public function table(Table $table): Table
@@ -207,6 +225,10 @@ class ConferenceAssignments extends Page implements HasTable
                     return;
                 }
 
+                // See getCoverage(): the memoised summary is stale the moment
+                // this writes.
+                $this->coverage = null;
+
                 Notification::make()->success()->title(__('reviewer.assign.notices.saved'))->send();
             });
     }
@@ -293,10 +315,32 @@ class ConferenceAssignments extends Page implements HasTable
                 ->action(function (AutoAssignReviewers $auto): void {
                     Gate::authorize('create', ReviewAssignment::class);
 
-                    // Re-plans rather than applying the preview: between the
-                    // modal opening and this click a reviewer may have been
-                    // removed, and applying a stale plan would assign them.
-                    $plan = $auto->apply($this->getConference(), $this->actor());
+                    try {
+                        // Re-plans rather than applying the preview: between the
+                        // modal opening and this click a reviewer may have been
+                        // removed, and applying a stale plan would assign them.
+                        //
+                        // Caught for the same reason assignAction() catches:
+                        // apply() drives AssignReviewers::handle() and a
+                        // firstOrFail() inside one transaction, so a submission
+                        // withdrawn or a mode flipped to open pool between the
+                        // preview and this click is a refusal - and an uncaught
+                        // RuntimeException here is a 500 where the row action
+                        // beside it shows a sentence.
+                        $plan = $auto->apply($this->getConference(), $this->actor());
+                    } catch (ReviewNotAcceptable|ModelNotFoundException $exception) {
+                        Notification::make()->danger()
+                            ->title(__('reviewer.notices.refused'))
+                            ->body(e($exception->getMessage()))
+                            ->persistent()
+                            ->send();
+
+                        return;
+                    }
+
+                    // Whatever this just wrote, the memoised summary above it is
+                    // now a lie; the re-render that follows must re-read it.
+                    $this->coverage = null;
 
                     Notification::make()
                         ->status($plan->assignments > 0 ? 'success' : 'warning')

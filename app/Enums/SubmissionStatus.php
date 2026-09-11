@@ -60,6 +60,20 @@ enum SubmissionStatus: string implements HasColor, HasLabel
         return in_array($this, [self::Draft, self::Submitted], true);
     }
 
+    /**
+     * The organizer's reach is one status wider, and the difference is the
+     * honest one: the *text* freezes once reviewers are scoring it, but taking
+     * an abstract off the programme is exactly what an organizer has to be able
+     * to do when the author emails instead of clicking - and the first submitted
+     * review writes `under_review`, so without this a single reviewer's Submit
+     * would end every route to withdrawal for good. A decided abstract is Plan
+     * 5's business and stays out.
+     */
+    public function isOrganizerWithdrawable(): bool
+    {
+        return $this->isOpenToAuthor() || $this === self::UnderReview;
+    }
+
     /** Statuses this plan actually writes; the rest render read-only. */
     public function isDrivenInPlan3(): bool
     {

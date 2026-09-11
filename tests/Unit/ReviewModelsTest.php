@@ -121,7 +121,11 @@ it('hides authors from a reviewer only when the conference is blind', function (
         // An organizer is never blinded: spec section 4 gives every
         // organization member "View submissions and files" with no caveat, and
         // somebody has to be able to answer an author's email.
-        ->and($this->conference->hidesAuthorsFrom($member))->toBeFalse();
+        ->and($this->conference->hidesAuthorsFrom($member))->toBeFalse()
+        // Nor is a platform admin, and that branch is the only thing that lets
+        // support read an author on a blind conference - deleting or inverting
+        // it was invisible to every test.
+        ->and($this->conference->hidesAuthorsFrom(User::factory()->platformAdmin()->create()))->toBeFalse();
 
     $this->conference->forceFill(['blind_review' => false])->save();
 

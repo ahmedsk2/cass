@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Notifications\MemberInvitation;
 use App\Support\Tokens\InvitationToken;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Invite, re-invite and resend are all this one method.
@@ -63,6 +64,27 @@ class InviteMember
 
         $email = mb_strtolower(trim($email));
         $plain = InvitationToken::generate();
+
+        // The same guard, the same bucket and the same ordering as
+        // InviteReviewer::handle(). The same bucket because it is one actor's
+        // mail budget, not one table's: an invitation of either kind is a
+        // bulk-mail primitive, and anyone can self-register an organization at
+        // /register - User::canAccessTenant() checks membership, not approval -
+        // so this action is reachable by anyone with an address, and no route or
+        // Livewire throttle covers it.
+        //
+        // Consulted BEFORE the forceFill below, and that ordering is
+        // load-bearing for the reason it is there: this method re-invites by
+        // refreshing the live row in place, so a limiter that threw afterwards
+        // would already have invalidated a link that was emailed an hour ago,
+        // for a message that then never leaves.
+        $key = 'invitation-send:'.$actor->getKey();
+
+        if (RateLimiter::tooManyAttempts($key, (int) config('cass.invitations.send_rate_limit'))) {
+            throw new MemberChangeRefused([__('members.errors.send_limit')]);
+        }
+
+        RateLimiter::hit($key, 3600);
 
         $invitation = OrganizationInvitation::query()
             ->where('organization_id', $organization->getKey())

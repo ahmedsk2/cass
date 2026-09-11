@@ -13,9 +13,12 @@ use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\OrganizationMember;
+use App\Models\ReviewerInvitation;
 use App\Models\User;
 use App\Notifications\MemberInvitation;
+use App\Support\Invitations\InvitationLookup;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Livewire\livewire;
@@ -82,8 +85,13 @@ it('invites by email and role, queues the notification and logs it', function ()
 
     Notification::assertSentOnDemand(
         MemberInvitation::class,
+        // The token carried to the mailbox has to be the plaintext that hashes
+        // to the row just written. Asserting only the address passed on a stale
+        // token, on the stored hash, or on a second freshly generated one - that
+        // is, in exactly the world where no invitation is ever acceptable.
         fn (MemberInvitation $notification, array $channels, object $notifiable): bool => $notifiable->routes['mail'] === 'new@example.org'
-            && $notification->organization->is($this->organization),
+            && $notification->organization->is($this->organization)
+            && app(InvitationLookup::class)->find($notification->token)?->is($invitation) === true,
     );
 
     expect(Activity::query()->where('description', 'organization.member_invited')->count())->toBe(1);
@@ -100,6 +108,42 @@ it('re-invites by refreshing the live row instead of creating a second link', fu
     expect(OrganizationInvitation::query()->where('email', 'new@example.org')->count())->toBe(1)
         ->and($first->fresh()?->role)->toBe(OrganizationRole::Admin)
         ->and($first->fresh()?->token_hash)->not->toBe($first->token_hash);
+});
+
+it('refuses to send once the hourly invitation limit trips, and touches nothing', function () {
+    // Anybody can self-register an organization at /register and canAccessTenant
+    // does not wait for approval, so the invite action is reachable by anyone
+    // with an email address. Without a limiter it is an unmetered relay for
+    // organization-signed mail carrying a display name and an organization name
+    // of the sender's choosing. InviteReviewer already meters the same actor on
+    // the same bucket: it is one person's mail budget, not one table's.
+    $limit = (int) config('cass.invitations.send_rate_limit');
+    RateLimiter::clear('invitation-send:'.$this->owner->getKey());
+
+    // A live invitation whose address is the one re-invited below. InviteMember
+    // re-invites by refreshing this very row, so a limiter consulted AFTER the
+    // write would kill a link that was emailed an hour ago for a message that
+    // then never leaves.
+    $live = OrganizationInvitation::factory()->for($this->organization)
+        ->create(['email' => 'new@example.org', 'invited_by' => $this->owner->id]);
+    $hashBefore = (string) $live->token_hash;
+
+    foreach (range(1, $limit) as $ignored) {
+        RateLimiter::hit('invitation-send:'.$this->owner->getKey(), 3600);
+    }
+
+    livewire(Members::class)
+        ->callAction('invite', data: ['email' => 'new@example.org', 'role' => OrganizationRole::Member->value])
+        ->assertNotified();
+
+    expect(fn () => app(InviteMember::class)->handle(
+        $this->organization, 'other@example.org', OrganizationRole::Member, $this->owner,
+    ))->toThrow(MemberChangeRefused::class, __('members.errors.send_limit'));
+
+    expect(OrganizationInvitation::query()->count())->toBe(1)
+        ->and((string) $live->fresh()?->token_hash)->toBe($hashBefore);
+
+    Notification::assertNothingSent();
 });
 
 it('refuses to invite somebody who is already a member', function () {
@@ -216,11 +260,20 @@ it('removes a member and leaves their user account alone', function () {
 });
 
 it('lets a plain member open the page and toggle only their own notifications', function () {
+    OrganizationInvitation::factory()->for($this->organization)
+        ->create(['email' => 'pending@example.org', 'role' => OrganizationRole::Owner]);
+
     actingAs($this->member);
     bootOrganizerPanel($this->organization);
 
     livewire(Members::class)
         ->assertOk()
+        // The page is shared with a plain member so they can reach the line
+        // below; the invitation rows are not. Who has been invited and at what
+        // privilege is what spec section 4 reserves for an owner or an admin,
+        // and what OrganizationInvitationPolicy::viewAny() refuses them.
+        ->assertSee('Dr Member')
+        ->assertDontSee('pending@example.org')
         ->assertActionHidden('invite')
         ->assertTableActionHidden('changeRole', 'member:'.$this->owner->getKey())
         ->assertTableActionHidden('notifications', 'member:'.$this->owner->getKey())
@@ -235,6 +288,39 @@ it('lets a plain member open the page and toggle only their own notifications', 
         ->and(SubmitAbstract::notifiableMembers(
             Conference::factory()->for($this->organization)->published()->create(),
         )->pluck('id')->all())->not->toContain($this->member->id);
+});
+
+it('refuses a role change, a removal and a revoke across the tenant boundary', function () {
+    // The listing case above stops at assertDontSee. These are the five row
+    // actions themselves: Members::memberUser() and Members::invitation() scope
+    // by tenant, and ChangeMemberRole/RemoveMember refuse a target with no role
+    // here - and neither guard was exercised by anything.
+    [$stranger, $theirInvitation] = withoutTenant(function (): array {
+        $other = Organization::factory()->approved()->create();
+        $user = User::factory()->create(['name' => 'Somebody Else']);
+        $other->addMember($user, OrganizationRole::Owner);
+
+        return [$user, OrganizationInvitation::factory()->for($other)->create(['email' => 'theirs@example.org'])];
+    });
+
+    expect(app(ChangeMemberRole::class)->blockers($this->organization, $stranger, OrganizationRole::Admin, $this->owner))
+        ->toContain(__('members.errors.not_a_member'))
+        ->and(app(RemoveMember::class)->blockers($this->organization, $stranger, $this->owner))
+        ->toContain(__('members.errors.not_a_member'));
+
+    // The row action itself. Assert on the ROW, not on an exception class: this
+    // table is array-backed (->records(fn () => $this->rows())), so a foreign
+    // `invitation:` key resolves to no record at all and Members::invitation()'s
+    // tenant-scoped firstOrFail is never reached - a different mechanism with
+    // the same required outcome.
+    try {
+        livewire(Members::class)->callTableAction('revoke', 'invitation:'.$theirInvitation->getKey());
+    } catch (Throwable) {
+        // Whatever Filament answers for a key that is not in the table.
+    }
+
+    expect($theirInvitation->fresh()?->revoked_at)->toBeNull()
+        ->and($stranger->fresh()?->roleIn($this->organization))->toBeNull();
 });
 
 it('refuses the page to somebody with no role in this organization', function () {
@@ -301,4 +387,32 @@ it('withdraws the invitations a removed or demoted member had minted', function 
     app(RemoveMember::class)->handle($this->organization, $this->admin, $second);
 
     expect($byAdminAtOwner->fresh()?->revoked_at)->not->toBeNull();
+});
+
+it('withdraws the reviewer invitations a removed member had minted', function () {
+    // The same rule, on the other invitation table. ReviewerInvitationPolicy
+    // ::create() admits a plain member, so a member can mint reviewer links to
+    // addresses they control; being removed must take them, or a fortnight
+    // later they read every submitted abstract and file of the conference.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    $live = ReviewerInvitation::factory()->for($conference)
+        ->create(['email' => 'theirs@example.org', 'invited_by' => $this->member->id]);
+    $byAnother = ReviewerInvitation::factory()->for($conference)
+        ->create(['email' => 'not-theirs@example.org', 'invited_by' => $this->admin->id]);
+    $alreadyAccepted = ReviewerInvitation::factory()->for($conference)
+        ->create(['email' => 'done@example.org', 'invited_by' => $this->member->id, 'accepted_at' => now()]);
+
+    $elsewhere = withoutTenant(fn (): ReviewerInvitation => ReviewerInvitation::factory()
+        ->create(['invited_by' => $this->member->id]));
+
+    app(RemoveMember::class)->handle($this->organization, $this->member, $this->owner);
+
+    expect($live->fresh()?->revoked_at)->not->toBeNull()
+        ->and($byAnother->fresh()?->revoked_at)->toBeNull()
+        // An accepted invitation is history, not authority: revoking it would
+        // rewrite the record of how a sitting reviewer got in.
+        ->and($alreadyAccepted->fresh()?->revoked_at)->toBeNull()
+        // Another organization's conference is not this action's business.
+        ->and($elsewhere->fresh()?->revoked_at)->toBeNull();
 });

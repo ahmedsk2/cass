@@ -12,6 +12,7 @@ return [
     'invite' => [
         'headline' => ':organization has invited you to review abstracts for :conference.',
         'accept' => 'Accept and start reviewing',
+        'unknown_conference' => 'a conference that is no longer on CASS',
     ],
 
     'page' => [
@@ -156,6 +157,7 @@ return [
         'reopen_heading' => 'Reopen this review so you can change it?',
         'submitted_notice' => 'You have submitted this review. Reopen it if you want to change anything.',
         'deadline_passed' => 'The review deadline has passed, so a submitted review can no longer be changed.',
+        'review_closed_notice' => 'This conference is no longer open for reviewing, so this review can no longer be changed.',
     ],
 
     'switch' => [

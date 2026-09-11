@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\ReviewQuestionType;
 use App\Exceptions\ReviewFormLocked;
+use App\Exceptions\ReviewQuestionInUse;
 use Database\Factories\ReviewQuestionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -68,6 +69,18 @@ class ReviewQuestion extends Model
         static::deleting(function (ReviewQuestion $question): void {
             if ($question->reviewForm?->isLocked()) {
                 throw ReviewFormLocked::make();
+            }
+
+            // The lock is not the whole rule. SaveReviewDraft writes
+            // review_answers rows and never locks the form - only SubmitReview
+            // does - so between the first draft save and the first submit there
+            // are answers on an UNLOCKED form, and
+            // review_answers.review_question_id is restrictOnDelete. Without
+            // this the delete is a foreign-key QueryException where a refusal
+            // belongs. ReviewQuestionPolicy::delete() mirrors it so the button
+            // hides; this holds for every other path.
+            if (ReviewAnswer::query()->where('review_question_id', $question->getKey())->exists()) {
+                throw ReviewQuestionInUse::make();
             }
         });
     }

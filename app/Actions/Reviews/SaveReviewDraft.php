@@ -47,6 +47,25 @@ class SaveReviewDraft
             throw ReviewNotAcceptable::because(__('reviewer.errors.review_closed'));
         }
 
+        // A submitted review is not a scratchpad any more. SubmitReview refuses
+        // `already_submitted` and ReopenReview refuses once the deadline has
+        // passed, so without this the ONLY thing stopping a reviewer rewriting
+        // the answers of a submitted, deadline-frozen review is the page's
+        // `visible(fn () => ! $this->isReadOnly())` - and this class's siblings
+        // all say the page is a convenience and a hand-made call is not.
+        //
+        // Safe for SubmitReview::handle(), which calls this while the row is
+        // still Draft and flips the status afterwards, and for the reopen path,
+        // which puts it back to Draft first.
+        $existing = Review::query()
+            ->where('submission_id', $submission->getKey())
+            ->where('reviewer_user_id', $reviewer->getKey())
+            ->first();
+
+        if ($existing?->status === ReviewStatus::Submitted) {
+            throw ReviewNotAcceptable::because(__('reviewer.errors.already_submitted'));
+        }
+
         $form = $this->form($submission);
 
         return DB::transaction(function () use ($submission, $reviewer, $answers, $form): Review {

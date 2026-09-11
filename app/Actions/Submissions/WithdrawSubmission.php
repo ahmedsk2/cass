@@ -29,7 +29,18 @@ class WithdrawSubmission
             throw SubmissionNotAcceptable::because('This abstract has already been withdrawn.');
         }
 
-        if (! $submission->status->isOpenToAuthor()) {
+        // The organizer reaches one status further than the author: an abstract
+        // whose first review has landed is `under_review`, and an author who
+        // emails "please pull it" then still has to be taken off the programme
+        // by somebody. The author's own path keeps stopping at `submitted`,
+        // because the text is frozen once reviewers are scoring it. The
+        // assignments and reviews are deliberately left alone - ReviewerScope
+        // and reviewableSubmissions both exclude a withdrawn abstract already.
+        $withdrawable = $actor === null
+            ? $submission->status->isOpenToAuthor()
+            : $submission->status->isOrganizerWithdrawable();
+
+        if (! $withdrawable) {
             throw SubmissionNotAcceptable::because(
                 'An abstract that is '.strtolower($submission->status->getLabel()).' cannot be withdrawn here. Contact the organizers.',
             );

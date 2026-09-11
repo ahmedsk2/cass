@@ -7,7 +7,9 @@ namespace App\Actions\Organizations;
 use App\Enums\OrganizationRole;
 use App\Exceptions\MemberChangeRefused;
 use App\Models\Organization;
+use App\Models\ReviewerInvitation;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class RemoveMember
 {
@@ -57,19 +59,46 @@ class RemoveMember
 
         $role = $member->roleIn($organization);
 
-        // An invitation is the removed member's authority, exercised later. A
-        // removed owner must not still be able to install an owner through a
-        // link they minted while they could, so every live invitation of theirs
-        // goes with them. Revoked rather than deleted, so whoever holds the
-        // emailed link meets Task 2's sentence rather than a 404.
-        // AcceptInvitation::blockers() re-checks the same rule at accept time.
-        $organization->invitations()
-            ->where('invited_by', $member->getKey())
-            ->whereNull('accepted_at')
-            ->whereNull('revoked_at')
-            ->update(['revoked_at' => now()]);
+        DB::transaction(function () use ($organization, $member, $role): void {
+            // blockers() above counts the owners with a plain read, and this is
+            // the write it authorised: two managers removing the two remaining
+            // owners in the same instant both pass `owners()->count() <= 1` and
+            // leave an organization nobody can administer. See the twin comment
+            // in ChangeMemberRole::handle().
+            if ($role === OrganizationRole::Owner && $organization->owners()->lockForUpdate()->count() <= 1) {
+                throw new MemberChangeRefused([__('members.errors.last_owner')]);
+            }
 
-        $organization->members()->detach($member->getKey());
+            // An invitation is the removed member's authority, exercised later.
+            // A removed owner must not still be able to install an owner through
+            // a link they minted while they could, so every live invitation of
+            // theirs goes with them. Revoked rather than deleted, so whoever
+            // holds the emailed link meets Task 2's sentence rather than a 404.
+            // AcceptInvitation::blockers() re-checks the same rule at accept
+            // time.
+            $organization->invitations()
+                ->where('invited_by', $member->getKey())
+                ->whereNull('accepted_at')
+                ->whereNull('revoked_at')
+                ->update(['revoked_at' => now()]);
+
+            // The same rule on the other invitation table, and it is NOT covered
+            // by the one above: reviewer invitations hang off conferences, not
+            // off the organization, and ReviewerInvitationPolicy::create()
+            // admits every role down to a plain member - so "invite reviewers
+            // you control, then leave" is the cheapest version of this attack,
+            // not the most expensive. ChangeMemberRole needs no twin arm for the
+            // same reason: no demotion this app can make takes the right to
+            // invite a reviewer away.
+            ReviewerInvitation::query()
+                ->whereIn('conference_id', $organization->conferences()->select('id'))
+                ->where('invited_by', $member->getKey())
+                ->whereNull('accepted_at')
+                ->whereNull('revoked_at')
+                ->update(['revoked_at' => now()]);
+
+            $organization->members()->detach($member->getKey());
+        });
 
         activity()
             ->performedOn($organization)

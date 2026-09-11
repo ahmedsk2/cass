@@ -119,12 +119,76 @@ it('locks the form once, whichever reviewer is second', function () {
     expect($this->form->fresh()?->locked_at?->toDateTimeString())->toBe($lockedAt?->toDateTimeString());
 });
 
-it('does not drag a withdrawn or decided abstract back to under review', function () {
+it('leaves an abstract that is already under review exactly where it is', function () {
+    // Renamed to what it actually asserts. `forceFill` to the enum the row
+    // already holds leaves the model clean, so save() issues no UPDATE either
+    // way and this passes with or without SubmitReview's `=== Submitted` guard.
+    // The withdrawn and decided halves are the case below.
     $this->submission->forceFill(['status' => SubmissionStatus::UnderReview])->save();
 
     app(SubmitReview::class)->handle($this->submission, $this->reviewer, fullAnswers($this));
 
     expect($this->submission->fresh()?->status)->toBe(SubmissionStatus::UnderReview);
+});
+
+it('does not drag a withdrawn or decided abstract back to under review', function () {
+    // ReviewerScope::constrain() restricts the queue to `submitted` and
+    // `under_review`, so neither of these ever reaches the status write at all -
+    // they are refused one layer earlier, which is the stronger guarantee and
+    // the one no test had made.
+    foreach ([SubmissionStatus::Withdrawn, SubmissionStatus::Accepted] as $status) {
+        $this->submission->forceFill(['status' => $status])->save();
+
+        expect(app(SubmitReview::class)->blockers($this->submission->fresh(), $this->reviewer, fullAnswers($this)))
+            ->toBe([__('reviewer.errors.not_yours')], $status->value)
+            ->and(fn () => app(SubmitReview::class)->handle($this->submission->fresh(), $this->reviewer, fullAnswers($this)))
+            ->toThrow(ReviewNotAcceptable::class)
+            ->and($this->submission->fresh()?->status)->toBe($status);
+    }
+
+    expect(Review::query()->count())->toBe(0);
+});
+
+it('refuses a draft save over a review that has already been submitted', function () {
+    // SubmitReview refuses `already_submitted` and ReopenReview refuses past the
+    // deadline, but SaveReviewDraft checked only the scope and the conference -
+    // so the one thing stopping a reviewer rewriting the answers of a submitted,
+    // deadline-frozen review was the page's own visible() closure. The page is a
+    // convenience and a hand-made Livewire call is not.
+    $review = app(SubmitReview::class)->handle($this->submission, $this->reviewer, fullAnswers($this));
+    $answers = $review->answers()->pluck('value_int', 'review_question_id')->all();
+
+    expect(fn () => app(SaveReviewDraft::class)->handle(
+        $this->submission->fresh(), $this->reviewer, [$this->first->ulid => 1],
+    ))->toThrow(ReviewNotAcceptable::class, __('reviewer.errors.already_submitted'));
+
+    expect($review->fresh()?->answers()->pluck('value_int', 'review_question_id')->all())->toBe($answers);
+
+    // ...and a reopen puts the scratchpad back, because the refusal is about the
+    // status and nothing else.
+    app(ReopenReview::class)->handle($review->fresh(), $this->reviewer);
+
+    app(SaveReviewDraft::class)->handle($this->submission->fresh(), $this->reviewer, [$this->first->ulid => 1]);
+
+    expect($review->fresh()?->answers()->where('review_question_id', $this->first->id)->first()?->value_int)->toBe(1);
+});
+
+it('refuses to reopen a review once the reviewer has been removed from the conference', function () {
+    // ReviewerScope::allows() is what refuses a removed reviewer everywhere
+    // else, and ReopenReview never asked it: the record is #[Locked] and
+    // mount()'s scoped resolve never runs again, so a Livewire snapshot captured
+    // before the removal still retracted a submitted review - and took it out of
+    // the committee's evidence.
+    $review = app(SubmitReview::class)->handle($this->submission, $this->reviewer, fullAnswers($this));
+
+    $this->conference->reviewers()->where('user_id', $this->reviewer->id)->delete();
+
+    expect(ReviewerScope::allows($this->reviewer, $this->submission->fresh()))->toBeFalse()
+        ->and(app(ReopenReview::class)->blockers($review->fresh()))->toBe([__('reviewer.errors.not_yours')])
+        ->and(fn () => app(ReopenReview::class)->handle($review->fresh(), $this->reviewer))
+        ->toThrow(ReviewNotAcceptable::class);
+
+    expect($review->fresh()?->status)->toBe(ReviewStatus::Submitted);
 });
 
 it('refuses a second submit and refuses a submission outside the pool', function () {

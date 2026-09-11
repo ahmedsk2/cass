@@ -72,8 +72,25 @@
 
     <x-filament::section :heading="__('reviewer.review.your_review')">
         @if ($this->isReadOnly())
+            {{-- isReadOnly() is true for two independent reasons - this review
+                 was submitted, OR the conference no longer accepts writes - and
+                 choosing the sentence on the deadline alone told a reviewer
+                 holding an UNSUBMITTED draft on a conference that reached
+                 Decided that they had already submitted it. So ask the review
+                 first, and only then why it cannot be changed:
+                   submitted + past the deadline -> it is frozen;
+                   submitted + still open        -> reopen it if you want to;
+                   anything else                 -> the conference has moved on,
+                                                    which is the only other way
+                                                    a draft gets here. --}}
             <p style="font-size:0.875rem;margin-bottom:1rem">
-                {{ $this->deadlineHasPassed() ? __('reviewer.review.deadline_passed') : __('reviewer.review.submitted_notice') }}
+                @if ($this->review()?->isSubmitted() && $this->deadlineHasPassed())
+                    {{ __('reviewer.review.deadline_passed') }}
+                @elseif ($this->review()?->isSubmitted() && $conference->acceptsReviewWrites())
+                    {{ __('reviewer.review.submitted_notice') }}
+                @else
+                    {{ __('reviewer.review.review_closed_notice') }}
+                @endif
             </p>
         @endif
 

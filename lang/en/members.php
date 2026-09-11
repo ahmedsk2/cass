@@ -50,7 +50,10 @@ return [
             'not_signed_in' => 'Sign in first, then accept the invitation.',
             'account_exists' => 'There is already a CASS account at this address. Sign in instead.',
             'inviter_gone' => 'Whoever invited you no longer manages this organization. Ask them to invite you again.',
+            'organization_gone' => 'Whoever invited you is no longer on CASS, so there is nothing to join. Ask them if you think that is a mistake.',
         ],
+
+        'unknown_organization' => 'An organization that is no longer on CASS',
     ],
 
     'page' => [
@@ -130,6 +133,7 @@ return [
         'last_owner' => 'An organization always needs at least one owner. Make somebody else an owner first.',
         'already_a_member' => ':email is already a member of this organization.',
         'bad_email' => 'That does not look like an email address.',
+        'send_limit' => 'Too many invitations have been sent from this account in the last hour. Try again later.',
     ],
 
     'mail' => [

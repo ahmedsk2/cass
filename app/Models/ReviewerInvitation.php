@@ -81,16 +81,26 @@ class ReviewerInvitation extends Model implements Invitation
         return $name === '' ? null : $name;
     }
 
+    /**
+     * Two null-guarded hops, not defensive noise: Conference soft-deletes (the
+     * organizer's own DeleteAction) while its reviewer invitations survive, and
+     * Organization soft-deletes under it. The public `/invite/{token}` view
+     * prints `invitationHeadline()` before it prints the refusal block, so an
+     * unguarded walk would 500 that page instead of explaining itself.
+     * AcceptInvitation::blockers() refuses the same row outright.
+     */
     public function invitingOrganizationName(): string
     {
-        return (string) $this->conference->organization->name;
+        // `->`, not `?->`: see the twin comment on
+        // OrganizationInvitation::invitingOrganizationName().
+        return (string) ($this->conference->organization->name ?? __('members.invite.unknown_organization'));
     }
 
     public function invitationHeadline(): string
     {
         return __('reviewer.invite.headline', [
             'organization' => $this->invitingOrganizationName(),
-            'conference' => (string) $this->conference->name,
+            'conference' => (string) ($this->conference->name ?? __('reviewer.invite.unknown_conference')),
         ]);
     }
 

@@ -66,7 +66,19 @@ it('lists the pool and offers a way into each abstract', function () {
         ->assertTableActionVisible('review', $this->submission);
 });
 
-it('never shows an author name in the queue of a blind conference', function () {
+it('never shows an author name in the queue, blind or not', function () {
+    livewire(ListSubmissions::class)
+        ->assertDontSee('Dr Sara Al-Harbi')
+        ->assertDontSee('sara@example.org');
+
+    // QueueTable has no author column and no author search in EITHER mode, by
+    // design - so the two assertions above hold identically with blind_review
+    // off, and the blind-only version of this test pinned nothing about
+    // blinding. Both modes are asserted, so a later author column gated on
+    // hidesAuthorsFrom() cannot leak every non-blind conference's authors with
+    // this test still green.
+    $this->conference->forceFill(['blind_review' => false])->save();
+
     livewire(ListSubmissions::class)
         ->assertDontSee('Dr Sara Al-Harbi')
         ->assertDontSee('sara@example.org');

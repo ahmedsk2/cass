@@ -19,6 +19,7 @@ use App\Models\ReviewAssignment;
 use App\Models\ReviewerInvitation;
 use App\Models\Submission;
 use App\Models\User;
+use App\Support\Invitations\InvitationLookup;
 use App\Support\Reviews\ReviewerList;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
@@ -68,14 +69,24 @@ it('invites one reviewer, queues the templated email and logs it', function () {
         ->and($invitation->invited_by)->toBe($this->user->id)
         ->and($invitation->token_hash)->toHaveLength(64);
 
-    Mail::assertQueued(
-        TemplatedMail::class,
-        fn (TemplatedMail $mail): bool => $mail->hasTo('omar@example.org')
-            && $mail->templateKey === EmailTemplateKey::ReviewerInvitation->value
-            // {{review_link}} in an invitation is the ACCEPT url, because the
-            // reviewer has no account and no queue yet (spec 5.4 step 1).
-            && str_contains($mail->body, '/invite/'),
-    );
+    Mail::assertQueued(TemplatedMail::class, function (TemplatedMail $mail) use ($invitation): bool {
+        if (! $mail->hasTo('omar@example.org') || $mail->templateKey !== EmailTemplateKey::ReviewerInvitation->value) {
+            return false;
+        }
+
+        // {{review_link}} in an invitation is the ACCEPT url, because the
+        // reviewer has no account and no queue yet (spec 5.4 step 1) - and the
+        // 64 characters in it are the plaintext that hashes to the row just
+        // written. `str_contains($mail->body, '/invite/')` was shape only: it
+        // passed just as happily on the stored HASH, on a stale token, or on a
+        // second freshly generated one - that is, in exactly the world where no
+        // invitation on the platform can be accepted at all.
+        if (preg_match('#/invite/([0-9a-f]{64})#', (string) $mail->body, $matches) !== 1) {
+            return false;
+        }
+
+        return app(InvitationLookup::class)->find($matches[1])?->is($invitation) === true;
+    });
 
     $log = EmailLog::query()->firstOrFail();
     expect($log->template_key)->toBe('reviewer_invitation')
@@ -272,6 +283,39 @@ it('is reachable from the conference view and from the generated url', function 
     livewire(ViewConference::class, [
         'record' => $this->conference->getRouteKey(),
     ])->assertActionVisible('reviewers');
+});
+
+it('lists and acts on only this conference, not a sibling conference of the same organization', function () {
+    // Within one organization every policy answers true for every conference, so
+    // the only thing keeping conference A's page off conference B's reviewers is
+    // the whereKey scoping in ConferenceReviewers::reviewer()/invitation() and
+    // the rows() query behind them. The cross-tenant case below never gets past
+    // the route, so it cannot see any of that.
+    $sibling = Conference::factory()->for($this->organization)->closed()->create(['name' => 'Beta Annual Meeting']);
+
+    $theirInvitation = ReviewerInvitation::factory()->for($sibling)->create(['email' => 'sibling@example.org']);
+    $theirUser = User::factory()->create(['name' => 'Dr Sibling Reviewer']);
+    $theirReviewer = ConferenceReviewer::factory()->for($sibling)->create(['user_id' => $theirUser->id]);
+
+    reviewersPage($this->conference)
+        ->assertDontSee('sibling@example.org')
+        ->assertDontSee('Dr Sibling Reviewer');
+
+    // Assert on the ROWS, not on an exception class: this table is array-backed
+    // (->records(fn () => $this->rows())), so a foreign key resolves to no
+    // record at all and the scoped firstOrFail is never reached - a different
+    // mechanism with the same required outcome.
+    foreach ([['revoke', 'invitation:'.$theirInvitation->getKey()], ['remove', 'reviewer:'.$theirReviewer->getKey()]] as [$action, $key]) {
+        try {
+            reviewersPage($this->conference)->callTableAction($action, $key);
+        } catch (Throwable) {
+            // Whatever Filament answers for a key that is not in the table.
+        }
+    }
+
+    expect($theirInvitation->fresh()?->revoked_at)->toBeNull()
+        ->and($theirReviewer->fresh()?->removed_at)->toBeNull()
+        ->and($theirReviewer->fresh()?->status)->toBe(ReviewerStatus::Active);
 });
 
 it('does not open the reviewers page of another organization conference', function () {

@@ -98,11 +98,34 @@ it('refuses from a status the graph does not allow', function () {
     }
 });
 
+/**
+ * The per-reviewer rows, keyed by the name ConferenceInfolist prints beside each
+ * pair. Factory names are random, so the callers pin them first; summing the two
+ * reviewers instead - which is what this file used to do - passes just as
+ * happily when the attribution is swapped between them.
+ *
+ * @return array<string, array{submitted: int, expected: int}>
+ */
+function progressByName(Conference $conference): array
+{
+    /** @var array<string, array{submitted: int, expected: int}> $rows */
+    $rows = collect($conference->reviewProgress()['reviewers'])
+        ->keyBy('name')
+        ->map(fn (array $row): array => ['submitted' => $row['submitted'], 'expected' => $row['expected']])
+        ->sortKeys()
+        ->all();
+
+    return $rows;
+}
+
 it('counts the progress an organizer looks at', function () {
     $conference = readyToReview($this->conference);
     $second = Submission::factory()->for($conference)->submitted()->create();
     $reviewer = $conference->reviewers()->firstOrFail();
     $other = ConferenceReviewer::factory()->for($conference)->create();
+
+    User::query()->whereKey($reviewer->user_id)->update(['name' => 'Dr Omar Khan']);
+    User::query()->whereKey($other->user_id)->update(['name' => 'Dr Sara Nasser']);
 
     Review::factory()->for($conference->submissions()->firstOrFail())->submitted()
         ->create(['reviewer_user_id' => $reviewer->user_id]);
@@ -114,18 +137,38 @@ it('counts the progress an organizer looks at', function () {
     expect($progress['expected'])->toBe(4)
         ->and($progress['submitted'])->toBe(1)
         ->and($progress['drafts'])->toBe(1)
-        ->and($progress['reviewers'])->toHaveCount(2)
-        ->and($progress['reviewers'][0]['submitted'] + $progress['reviewers'][1]['submitted'])->toBe(1);
+        ->and($progress['reviewers'])->toHaveCount(2);
+
+    // Per reviewer, by name: who submitted what, and how much was expected of
+    // each of them. In open pool the expectation is the whole pool, so both owe
+    // two - and only Omar has delivered one. Sara's draft is not a submission.
+    expect(progressByName($conference->fresh()))->toBe([
+        'Dr Omar Khan' => ['submitted' => 1, 'expected' => 2],
+        'Dr Sara Nasser' => ['submitted' => 0, 'expected' => 2],
+    ]);
 });
 
 it('counts assignments as the expectation in assigned mode', function () {
     $conference = readyToReview($this->conference);
     $conference->forceFill(['review_mode' => ReviewMode::Assigned])->save();
     $reviewer = $conference->reviewers()->firstOrFail();
+    $other = ConferenceReviewer::factory()->for($conference)->create();
+
+    User::query()->whereKey($reviewer->user_id)->update(['name' => 'Dr Omar Khan']);
+    User::query()->whereKey($other->user_id)->update(['name' => 'Dr Sara Nasser']);
+
     ReviewAssignment::factory()->for($conference->submissions()->firstOrFail())
         ->create(['reviewer_user_id' => $reviewer->user_id]);
 
     expect($conference->fresh()->reviewProgress()['expected'])->toBe(1);
+
+    // And the per-reviewer half of the same rule: in assigned mode a reviewer
+    // owes exactly what they were handed, so a reviewer nobody assigned owes
+    // nothing - not the whole pool.
+    expect(progressByName($conference->fresh()))->toBe([
+        'Dr Omar Khan' => ['submitted' => 0, 'expected' => 1],
+        'Dr Sara Nasser' => ['submitted' => 0, 'expected' => 0],
+    ]);
 });
 
 it('counts one reviewer own progress for their dashboard', function () {

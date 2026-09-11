@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Reviews\AssignReviewers;
+use App\Actions\Reviews\AutoAssignReviewers;
 use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
 use App\Enums\ReviewerStatus;
@@ -18,6 +19,9 @@ use App\Models\Review;
 use App\Models\ReviewAssignment;
 use App\Models\Submission;
 use App\Models\User;
+use App\Support\Reviews\AssignmentPlan;
+use Illuminate\Support\Facades\DB;
+use Mockery\MockInterface;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
@@ -198,6 +202,79 @@ it('does not exist for an open pool conference', function () {
     livewire(ViewConference::class, [
         'record' => $pool->getRouteKey(),
     ])->assertActionHidden('assignments');
+});
+
+it('lists only this conference abstracts, not a sibling conference of the same organization', function () {
+    // Within one organization every policy answers true for every conference, so
+    // the ONLY thing keeping conference A's page off conference B's abstracts is
+    // the relation in ConferenceAssignments::table(). The cross-tenant case
+    // below cannot see that: it never gets past the route.
+    $sibling = Conference::factory()->for($this->organization)->create([
+        'status' => ConferenceStatus::Closed,
+        'review_mode' => ReviewMode::Assigned,
+        'reviewers_per_submission' => 2,
+    ]);
+    $theirs = Submission::factory()->for($sibling)->submitted()->create(['title' => 'A sibling conference abstract']);
+
+    assignmentsPage($this->conference)
+        ->assertCanSeeTableRecords([$this->submission])
+        ->assertCanNotSeeTableRecords([$theirs])
+        ->assertDontSee('A sibling conference abstract');
+});
+
+it('notifies rather than 500s when auto-assign is refused as it saves', function () {
+    // apply() re-plans inside its own transaction, so a reviewer removed or a
+    // mode flipped to open pool between the preview and the click makes
+    // AssignReviewers::handle() refuse - and ReviewNotAcceptable is a plain
+    // RuntimeException, so before this it left the header action as a 500. The
+    // row action at :196 has always caught and notified; this is the same
+    // treatment for the button beside it.
+    $this->mock(AutoAssignReviewers::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('plan')->andReturn(new AssignmentPlan([], [], 0, []));
+        $mock->shouldReceive('apply')->andThrow(ReviewNotAcceptable::because(__('reviewer.assign.errors.open_pool')));
+    });
+
+    assignmentsPage($this->conference)
+        ->callAction('autoAssign')
+        ->assertHasNoActionErrors()
+        ->assertNotified();
+
+    expect(ReviewAssignment::query()->count())->toBe(0);
+});
+
+it('treats a concurrent insert of the same assignment as already assigned', function () {
+    // Two organizers saving the same submission at once both read the current
+    // set inside their own transaction and compute the same toAdd; the loser's
+    // insert hits the unique (submission_id, reviewer_user_id) index. The
+    // listener below IS that other organizer, committing between our read and
+    // our insert - and the required answer is the set the caller asked for, not
+    // an unhandled QueryException.
+    $raced = false;
+
+    ReviewAssignment::creating(function (ReviewAssignment $assignment) use (&$raced): void {
+        if ($raced) {
+            return;
+        }
+
+        $raced = true;
+
+        DB::table('review_assignments')->insert([
+            'submission_id' => $assignment->submission_id,
+            'reviewer_user_id' => $assignment->reviewer_user_id,
+            'assigned_by' => null,
+            'assigned_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    $result = app(AssignReviewers::class)->handle($this->submission, [$this->omar->id, $this->sara->id], $this->owner);
+
+    expect($this->submission->reviewAssignments()->pluck('reviewer_user_id')->sort()->values()->all())
+        ->toBe(collect([$this->omar->id, $this->sara->id])->sort()->values()->all())
+        // The raced row was not added by us, so it is not counted as added.
+        ->and($result['added'])->toBe(1)
+        ->and($result['removed'])->toBe(0);
 });
 
 it('does not open the assignments page of another organization conference', function () {

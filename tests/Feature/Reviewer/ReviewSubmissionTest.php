@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Conferences\CreateDefaultReviewForm;
+use App\Actions\Reviews\SaveReviewDraft;
 use App\Enums\ConferenceStatus;
 use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
@@ -12,6 +13,7 @@ use App\Filament\Reviewer\Resources\Submissions\SubmissionResource;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
 use App\Models\Review;
+use App\Models\ReviewAnswer;
 use App\Models\Submission;
 use App\Models\User;
 use Carbon\Carbon;
@@ -164,6 +166,36 @@ it('lets a reviewer see and change only their own review', function () {
         ->and($other->can('update', $theirReview))->toBeTrue();
 
     // A second reviewer's review is invisible on the page: this is a review
-    // form, not a discussion.
-    reviewPage($this->submission)->assertDontSee($theirReview->ulid);
+    // form, not a discussion. Asserted on a VALUE they wrote, not on the review
+    // ulid: the page prints no review identifier under any implementation
+    // (review-submission.blade.php renders the abstract, the authors, the files
+    // and $this->form), so assertDontSee($theirReview->ulid) could never have
+    // failed. A leaked answer would reach the Livewire payload and this one
+    // would.
+    ReviewAnswer::factory()->for($theirReview)->create([
+        'review_question_id' => $this->second->id,
+        'value_int' => null,
+        'value_text' => 'ZZTOP-OTHER-REVIEWER-TEXT',
+    ]);
+
+    reviewPage($this->submission)
+        ->assertDontSee('ZZTOP-OTHER-REVIEWER-TEXT')
+        ->assertDontSee($theirReview->ulid);
+});
+
+it('does not claim a draft was submitted when the conference has simply moved on', function () {
+    // isReadOnly() is true either because the review WAS submitted or because
+    // the conference no longer accepts writes, and the notice chose between the
+    // two sentences on the deadline alone - so a reviewer holding an unsubmitted
+    // draft on a conference that reached Decided with the deadline still in the
+    // future was told they had already submitted it.
+    app(SaveReviewDraft::class)->handle($this->submission, $this->reviewer, [$this->first->ulid => 3]);
+
+    $this->conference->forceFill(['status' => ConferenceStatus::Decided])->save();
+
+    reviewPage($this->submission->fresh())
+        ->assertOk()
+        ->assertSee(__('reviewer.review.review_closed_notice'))
+        ->assertDontSee(__('reviewer.review.submitted_notice'))
+        ->assertDontSee(__('reviewer.review.deadline_passed'));
 });

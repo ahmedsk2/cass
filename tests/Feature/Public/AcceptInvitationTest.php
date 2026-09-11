@@ -109,9 +109,27 @@ it('refuses a wrong password without saying whether the account exists', functio
     livewire(AcceptInvitation::class, ['token' => $this->plain])
         ->set('password', 'wrong-password-11')
         ->call('signIn')
-        ->assertHasErrors(['password']);
+        ->assertHasErrors(['password'])
+        ->assertSee(__('members.invite.wrong_password'));
 
     expect(Auth::check())->toBeFalse()
+        ->and($this->invitation->fresh()?->accepted_at)->toBeNull();
+});
+
+it('answers the same sentence when there is no account at that address at all', function () {
+    // The other half of the non-disclosure rule, and the half the test above
+    // cannot reach: with no `users` row, signIn() must still answer
+    // `wrong_password` rather than a different message (or a 500 on the null
+    // user), or the page is an oracle for "does this address have a CASS
+    // account".
+    livewire(AcceptInvitation::class, ['token' => $this->plain])
+        ->set('password', 'anything-at-all')
+        ->call('signIn')
+        ->assertHasErrors(['password'])
+        ->assertSee(__('members.invite.wrong_password'));
+
+    expect(Auth::check())->toBeFalse()
+        ->and(User::query()->where('email', 'new@example.org')->exists())->toBeFalse()
         ->and($this->invitation->fresh()?->accepted_at)->toBeNull();
 });
 
@@ -335,7 +353,137 @@ it('throttles the sign-in attempt separately, per email and address', function (
     livewire(AcceptInvitation::class, ['token' => $this->plain])
         ->set('password', 'correct-horse-99')
         ->call('signIn')
-        ->assertHasErrors(['password']);
+        ->assertHasErrors(['password'])
+        ->assertSee(__('members.invite.too_many_attempts'));
 
     expect(Auth::check())->toBeFalse();
+
+    // ...and the EMAIL is in the key, not only the address. A second invitee
+    // behind the same NAT still has their own budget; an IP-only key would let
+    // one guessed address burn everybody else's. Seven hits on the accept
+    // limiter so far against its ten, so nothing else can refuse this.
+    $second = InvitationToken::generate();
+    OrganizationInvitation::factory()->for($this->organization)->create([
+        'email' => 'second@example.org',
+        'token_hash' => InvitationToken::hash($second),
+    ]);
+    User::factory()->create(['email' => 'second@example.org', 'password' => 'correct-horse-99']);
+
+    livewire(AcceptInvitation::class, ['token' => $second])
+        ->set('password', 'correct-horse-99')
+        ->call('signIn')
+        ->assertHasNoErrors();
+});
+
+it('refuses a reviewer invitation minted by somebody who has since left the organization', function () {
+    // ReviewerInvitationPolicy::create() admits every member down to a plain
+    // `member`, so the mint was legitimate when it happened. Fourteen days of
+    // link life later it must not still install a reviewer who can read every
+    // submitted abstract and file of that conference.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+    $minter = User::factory()->create();
+    $this->organization->addMember($minter, OrganizationRole::Member);
+
+    $token = InvitationToken::generate();
+    ReviewerInvitation::factory()->for($conference)->create([
+        'email' => 'omar@example.org',
+        'invited_by' => $minter->id,
+        'token_hash' => InvitationToken::hash($token),
+    ]);
+
+    $this->organization->members()->detach($minter->getKey());
+
+    $invitee = User::factory()->create(['email' => 'omar@example.org']);
+    actingAs($invitee);
+
+    livewire(AcceptInvitation::class, ['token' => $token])
+        ->call('accept')
+        ->assertHasErrors(['token'])
+        ->assertSee(__('members.invite.blocked.inviter_gone'));
+
+    expect(ConferenceReviewer::query()->count())->toBe(0);
+});
+
+it('explains an expired or withdrawn reviewer invitation and refuses the accept', function () {
+    // ReviewerInvitation::invitationStatus() is a separate copy from
+    // OrganizationInvitation's, so the cases above prove nothing about it.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    $expired = InvitationToken::generate();
+    ReviewerInvitation::factory()->for($conference)->expired()
+        ->create(['email' => 'expired@example.org', 'token_hash' => InvitationToken::hash($expired)]);
+
+    $revoked = InvitationToken::generate();
+    ReviewerInvitation::factory()->for($conference)->revoked()
+        ->create(['email' => 'revoked@example.org', 'token_hash' => InvitationToken::hash($revoked)]);
+
+    get('/invite/'.$expired)->assertOk()->assertSee(__('members.invite.expired'));
+    get('/invite/'.$revoked)->assertOk()->assertSee(__('members.invite.revoked'));
+
+    // Signed in AS the invited address, deliberately: with nobody signed in,
+    // accept() answers `not_signed_in` before any status check and the
+    // assertion below would pass even if invitationStatus() always said
+    // Pending.
+    actingAs(User::factory()->create(['email' => 'revoked@example.org']));
+
+    livewire(AcceptInvitation::class, ['token' => $revoked])
+        ->call('accept')
+        ->assertHasErrors(['token'])
+        ->assertSee(__('members.invite.blocked.revoked'));
+
+    actingAs(User::factory()->create(['email' => 'expired@example.org']));
+
+    livewire(AcceptInvitation::class, ['token' => $expired])
+        ->call('accept')
+        ->assertHasErrors(['token'])
+        ->assertSee(__('members.invite.blocked.expired'));
+
+    expect(ConferenceReviewer::query()->count())->toBe(0);
+});
+
+it('refuses rather than 500s when the inviting organization has been soft-deleted', function () {
+    // Organization soft-deletes while its invitations survive, and
+    // User::roleIn() takes a non-nullable Organization - so an unguarded walk
+    // on this PUBLIC, unauthenticated route is a TypeError 500 where the
+    // sentence this page exists to print belongs.
+    $existing = User::factory()->create(['email' => 'new@example.org']);
+    actingAs($existing);
+
+    $this->organization->delete();
+
+    get('/invite/'.$this->plain)->assertOk();
+
+    livewire(AcceptInvitation::class, ['token' => $this->plain])
+        ->call('accept')
+        ->assertHasErrors(['token'])
+        ->assertSee(__('members.invite.blocked.organization_gone'));
+
+    expect($existing->fresh()?->roleIn($this->organization))->toBeNull()
+        ->and($this->invitation->fresh()?->accepted_at)->toBeNull();
+});
+
+it('refuses rather than 500s when the reviewer conference has been soft-deleted', function () {
+    // The same hop, one relation further out: Conference soft-deletes too (the
+    // organizer's own DeleteAction), and ReviewerInvitation walks
+    // conference->organization.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+    $token = InvitationToken::generate();
+    $invitation = ReviewerInvitation::factory()->for($conference)->create([
+        'email' => 'omar@example.org',
+        'token_hash' => InvitationToken::hash($token),
+    ]);
+
+    $conference->delete();
+
+    get('/invite/'.$token)->assertOk();
+
+    actingAs(User::factory()->create(['email' => 'omar@example.org']));
+
+    livewire(AcceptInvitation::class, ['token' => $token])
+        ->call('accept')
+        ->assertHasErrors(['token'])
+        ->assertSee(__('members.invite.blocked.organization_gone'));
+
+    expect(ConferenceReviewer::query()->count())->toBe(0)
+        ->and($invitation->fresh()?->accepted_at)->toBeNull();
 });
