@@ -63,10 +63,18 @@ final class SniffedMimeType
     }
 
     /**
-     * Reads the head of the stream and rewinds it, because the caller
-     * (StoreSubmissionFile) hashes and copies the same handle straight
-     * afterwards. 4 KiB is far more than any magic number needs and small
-     * enough that a 10 MB upload is not read twice.
+     * Reads the head of the stream and puts it back where it found it, because
+     * the caller (StoreSubmissionFile) hashes and copies the same handle
+     * straight afterwards. 4 KiB is far more than any magic number needs and
+     * small enough that a 10 MB upload is not read twice.
+     *
+     * A handle that cannot be rewound is *refused*, not read. Reading it would
+     * swallow the head the caller still needs and leave a truncated - possibly
+     * empty - file stored behind a MIME check that had just passed. A Livewire
+     * temporary-upload disk that is not `local` hands out exactly such a
+     * stream, and `ftell()` on one still cheerfully answers 0, so the seekable
+     * flag and a rewind proved *before* anything is consumed are the only
+     * honest tests. The caller falls back to forPath().
      *
      * @param  resource  $stream
      */
@@ -76,14 +84,22 @@ final class SniffedMimeType
             return null;
         }
 
-        $position = ftell($stream);
-        rewind($stream);
-        $head = fread($stream, 4096);
-        rewind($stream);
-
-        if ($position !== false && $position !== 0) {
-            fseek($stream, $position);
+        if (stream_get_meta_data($stream)['seekable'] !== true) {
+            return null;
         }
+
+        $position = ftell($stream);
+
+        // A user-space wrapper may advertise itself as seekable and still
+        // refuse, so the rewind is checked here, while the bytes are still
+        // there to lose.
+        if ($position === false || @rewind($stream) === false) {
+            return null;
+        }
+
+        $head = fread($stream, 4096);
+
+        fseek($stream, $position);
 
         if ($head === false || $head === '') {
             return null;

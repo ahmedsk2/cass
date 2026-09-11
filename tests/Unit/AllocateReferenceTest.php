@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Submissions\AllocateReference;
 use App\Models\Conference;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -56,6 +57,53 @@ it('derives a prefix for a conference that has none', function () {
     $conference->forceFill(['reference_prefix' => null])->save();
 
     expect(app(AllocateReference::class)->handle($conference->refresh()))->toBe('WSCC27-001');
+});
+
+it('leaves the caller copy clean so a later save cannot roll the counter back', function () {
+    // The bug this prevents: handle() copies the new counter onto the instance
+    // the caller passed in. If that copy is left *dirty*, any later save() of
+    // that same instance - Filament saving an edited conference, an action
+    // touching a flag - rewrites submission_counter from a value that is now
+    // stale, and the next author draws a number that is already taken.
+    $conference = Conference::factory()->create(['reference_prefix' => 'GPCC26']);
+    $concurrent = Conference::query()->whereKey($conference->getKey())->firstOrFail();
+
+    $allocate = app(AllocateReference::class);
+
+    expect($allocate->handle($conference))->toBe('GPCC26-001')
+        ->and($conference->isDirty('submission_counter'))->toBeFalse();
+
+    expect($allocate->handle($concurrent))->toBe('GPCC26-002');
+
+    // The first caller finishes its request and saves its own copy.
+    $conference->save();
+
+    expect(Conference::query()->whereKey($conference->getKey())->firstOrFail()->submission_counter)->toBe(2)
+        ->and($allocate->handle($conference))->toBe('GPCC26-003');
+});
+
+it('opens its own transaction so the locked read and the write are one unit', function () {
+    // lockForUpdate() outside a transaction releases at statement end on MySQL,
+    // so two authors submitting in the same second would read the same counter
+    // and the second insert would hit the unique (conference_id, reference)
+    // index. SQLite ignores the lock clause, so the only thing a local run can
+    // assert is the invariant that makes the lock real: every statement this
+    // action runs is one level deeper than whatever the caller was in.
+    $conference = Conference::factory()->create(['reference_prefix' => 'TXN26']);
+
+    $outer = DB::transactionLevel();
+
+    /** @var list<int> $levels */
+    $levels = [];
+
+    DB::listen(function (QueryExecuted $query) use (&$levels): void {
+        $levels[] = DB::transactionLevel();
+    });
+
+    app(AllocateReference::class)->handle($conference);
+
+    expect($levels)->not->toBeEmpty()
+        ->and(min($levels))->toBeGreaterThan($outer);
 });
 
 it('keeps sequences separate per conference', function () {

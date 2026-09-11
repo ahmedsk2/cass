@@ -46,6 +46,41 @@ it('sniffs a stream without consuming it for the caller', function () {
     fclose($stream);
 });
 
+it('refuses a stream it cannot rewind instead of eating the bytes the caller needs', function () {
+    // Windows has no AF_UNIX socketpair; Linux has no AF_INET one.
+    $pair = @stream_socket_pair(
+        DIRECTORY_SEPARATOR === '\\' ? STREAM_PF_INET : STREAM_PF_UNIX,
+        STREAM_SOCK_STREAM,
+        STREAM_IPPROTO_IP,
+    );
+
+    if (! is_array($pair)) {
+        $this->markTestSkipped('This platform has no socket pair to make a non-seekable handle from.');
+    }
+
+    [$read, $write] = $pair;
+    fwrite($write, "%PDF-1.4\nnot really an abstract\n");
+    fclose($write);
+
+    // A non-local Livewire temporary-upload disk hands StoreSubmissionFile
+    // exactly this: a handle whose ftell() answers 0 and whose rewind() fails.
+    // Sniffing it would consume the head and store a truncated file that had
+    // just passed the MIME check, so the answer is null and the caller falls
+    // back to forPath().
+    expect(SniffedMimeType::forStream($read))->toBeNull()
+        ->and(stream_get_contents($read))->toBe("%PDF-1.4\nnot really an abstract\n");
+
+    fclose($read);
+});
+
+it('refuses a handle that reports itself unseekable', function () {
+    $stream = fopen('php://output', 'w');
+
+    expect(SniffedMimeType::forStream($stream))->toBeNull();
+
+    fclose($stream);
+});
+
 it('lists exactly the extensions the conference form offers', function () {
     expect(SniffedMimeType::allowedExtensions())->toBe(['pdf', 'doc', 'docx']);
 });
