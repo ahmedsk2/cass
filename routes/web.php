@@ -6,6 +6,7 @@ use App\Http\Controllers\Organizer\ConferenceAssetController;
 use App\Http\Controllers\Public\ConferenceController;
 use App\Http\Controllers\Public\ShortLinkController;
 use App\Http\Controllers\Public\SubmissionFileController;
+use App\Livewire\Public\AcceptInvitation;
 use App\Livewire\Public\ContactForm;
 use App\Livewire\Public\RegisterOrganization;
 use App\Livewire\Public\SubmissionForm;
@@ -120,3 +121,21 @@ Route::get('/s/{token}', SubmissionStatus::class)
     ->where('token', '[A-Za-z0-9]{64}')
     ->middleware('throttle:submission-status')
     ->name('submission.status');
+
+// Spec sections 6 and 9. Shared by member and reviewer invitations: one page,
+// one token shape, two tables (App\Support\Invitations\InvitationLookup).
+//
+// No AuthenticateSession and no `auth`: a brand-new reviewer has no account at
+// all, and a signed-in organizer following the link must not be bounced to a
+// login. The component decides which of the four states to render.
+//
+// The throttle is spec section 9's 10/min/IP and sits on the route because a
+// page *view* is what an enumeration attack loops; the component spends the
+// same budget again for its own POSTs, which reach /livewire/update instead.
+//
+// The constraint is the hex alphabet InvitationToken mints, so a path that
+// could not be a token never reaches the database.
+Route::get('/invite/{token}', AcceptInvitation::class)
+    ->where('token', '[A-Za-z0-9]{64}')
+    ->middleware('throttle:invitation-accept')
+    ->name('invitation.accept');
