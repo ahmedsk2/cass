@@ -13,6 +13,17 @@ declare(strict_types=1);
  * A key may use only the placeholders EmailTemplateKey::placeholders() declares
  * for it; tests/Unit/RenderEmailTemplateTest.php enforces that. Adding Arabic
  * is copying this file to lang/ar/mail.php - no code changes (spec section 10).
+ *
+ * `{{status_link}}` and `{{review_link}}` are always written as an explicit
+ * markdown link, `[{{status_link}}]({{status_link}})`, and a translation must
+ * keep them that way. Illuminate\Mail\Markdown::converter() registers
+ * CommonMarkCoreExtension and TableExtension and nothing else - no Autolink -
+ * so a bare URL on its own line renders as a plain paragraph and a client that
+ * does not linkify for itself (Outlook desktop) leaves the recipient with no
+ * clickable route to the page. The URL is its own link text on purpose: the
+ * status link is a bearer credential and the reader should be able to see where
+ * it points before following it. tests/Unit/RenderEmailTemplateTest.php pins
+ * this for every key.
  */
 
 return [
@@ -32,7 +43,7 @@ return [
 
             You can review, edit or withdraw your abstract until the submission deadline ({{deadline}}) here:
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
 
             This link is personal. Anyone who has it can edit your abstract, so please do not forward it.
 
@@ -49,7 +60,7 @@ return [
 
             Continue and submit it here:
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
 
             The submission deadline is {{deadline}}. A draft that is never submitted is not considered.
 
@@ -68,7 +79,7 @@ return [
 
             Accept the invitation and see your queue here:
 
-            {{review_link}}
+            [{{review_link}}]({{review_link}})
 
             Reviews are due by {{deadline}}.
 
@@ -87,7 +98,7 @@ return [
 
             Your queue is here:
 
-            {{review_link}}
+            [{{review_link}}]({{review_link}})
 
             If you can no longer review, please tell us so we can reassign the abstracts.
 
@@ -104,7 +115,7 @@ return [
 
             Please complete them as soon as you can:
 
-            {{review_link}}
+            [{{review_link}}]({{review_link}})
 
             If you can no longer review, please tell us so we can reassign the abstracts.
 
@@ -124,7 +135,7 @@ return [
 
             Details of your session will follow. You can see your abstract here:
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
 
             Congratulations, and we look forward to your presentation.
 
@@ -144,7 +155,7 @@ return [
 
             Poster dimensions and the display schedule will follow. You can see your abstract here:
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
 
             Congratulations, and we look forward to seeing your poster.
 
@@ -163,7 +174,7 @@ return [
 
             You can see your abstract here:
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
 
             Thank you for submitting to {{conference}}.
 
@@ -182,7 +193,7 @@ return [
 
             We know this is disappointing. We hope you will submit again next year.
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
 
             {{organization}}
             MARKDOWN,
@@ -193,7 +204,7 @@ return [
             'body' => <<<'MARKDOWN'
             **{{organization}}** has been approved. You can now create and publish conferences.
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
             MARKDOWN,
         ],
 
@@ -204,7 +215,7 @@ return [
 
             If you think this is a mistake, reply to this email and we will look again.
 
-            {{status_link}}
+            [{{status_link}}]({{status_link}})
             MARKDOWN,
         ],
 

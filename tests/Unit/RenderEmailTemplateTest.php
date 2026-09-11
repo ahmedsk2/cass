@@ -8,6 +8,7 @@ use App\Models\Conference;
 use App\Models\EmailTemplate;
 use App\Support\Mail\DefaultTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\Markdown;
 
 uses(RefreshDatabase::class);
 
@@ -39,6 +40,46 @@ it('keeps link placeholders out of every subject line', function () {
         expect(placeholdersIn(DefaultTemplates::for($key)->subject))
             ->each->toBeIn($key->subjectPlaceholders());
     }
+});
+
+it('renders every link placeholder as a clickable anchor', function () {
+    // Illuminate\Mail\Markdown::converter() registers CommonMarkCoreExtension
+    // and TableExtension and nothing else - no Autolink - so a bare URL on its
+    // own line parses into a plain paragraph. A default written that way
+    // reaches a client that does not linkify for itself (Outlook desktop) with
+    // no clickable route to the status page at all, so every default has to
+    // spell the link out in markdown.
+    //
+    // Collected rather than asserted inside the loop so a failure names every
+    // template that lost its anchor instead of only the first.
+    $unlinked = [];
+    $keysWithoutALink = [];
+
+    foreach (EmailTemplateKey::cases() as $key) {
+        $links = array_values(array_intersect(['status_link', 'review_link'], $key->placeholders()));
+
+        if ($links === []) {
+            // Guards against the loop going vacuous if a key ever drops its
+            // link placeholder: this test would otherwise pass by doing nothing.
+            $keysWithoutALink[] = $key->value;
+
+            continue;
+        }
+
+        $values = $key->sampleValues();
+        $html = (string) Markdown::parse(
+            app(RenderEmailTemplate::class)->handle($key, null, $values)->body,
+        );
+
+        foreach ($links as $link) {
+            if (! str_contains($html, 'href="'.$values[$link].'"')) {
+                $unlinked[] = "{$key->value}.{$link}";
+            }
+        }
+    }
+
+    expect($unlinked)->toBe([])
+        ->and($keysWithoutALink)->toBe([]);
 });
 
 it('substitutes declared placeholders in the subject and the body', function () {

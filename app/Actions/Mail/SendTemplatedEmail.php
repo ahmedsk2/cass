@@ -51,6 +51,10 @@ class SendTemplatedEmail
             // the editor's subject field; this is the belt to that braces, for
             // any path that does not go through the editor at all. The row is
             // listed in the admin panel and is never pruned.
+            //
+            // Redacted here and trimmed to EmailLog::SUBJECT_MAX_LENGTH by the
+            // model's own mutator, in that order: trimming first could cut a
+            // token in half and leave the half this pattern no longer matches.
             'subject' => (string) preg_replace('#/s/[A-Za-z0-9]{64}#', '/s/[redacted]', $rendered->subject),
             'status' => EmailLogStatus::Queued,
         ]);

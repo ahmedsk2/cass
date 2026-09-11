@@ -56,6 +56,30 @@ it('carries organization, conference and submission context on the member notice
         ->and($log->status)->toBe(EmailLogStatus::Sent);
 });
 
+it('trims a long notification subject to the width of the log column', function () {
+    // The listener is the second writer of email_logs.subject and has no
+    // redaction or trimming of its own. NewSubmissionNotice builds its subject
+    // from conferences.name, which is itself varchar(255), so a long conference
+    // name overflows the varchar(255) log column and MySQL strict mode turns
+    // that into an exception inside MessageSending - which aborts the delivery
+    // of a message the application had already decided to send. 8 repeats is
+    // 232 characters, so the conference name itself still fits its own column.
+    $organization = Organization::factory()->approved()->create();
+    $conference = Conference::factory()->for($organization)->published()->create([
+        'name' => str_repeat('Gulf Pediatric Critical Care ', 8),
+    ]);
+    $submission = Submission::factory()->for($conference)->submitted()->create();
+    $member = User::factory()->create(['email' => 'member@example.org']);
+    $organization->addMember($member, OrganizationRole::Member);
+
+    $member->notify(new NewSubmissionNotice($submission));
+
+    $log = EmailLog::query()->where('to_email', 'member@example.org')->firstOrFail();
+
+    expect(mb_strlen($log->subject))->toBeLessThanOrEqual(255)
+        ->and($log->subject)->toStartWith('New abstract for Gulf Pediatric Critical Care');
+});
+
 it('names the abstract and links the panel without leaking the author token', function () {
     $conference = Conference::factory()->published()->create(['name' => 'GPCC 2026']);
     $submission = Submission::factory()->for($conference)->submitted()->withCorrespondingAuthor()->create([

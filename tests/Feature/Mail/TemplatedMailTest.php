@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Mail\RenderEmailTemplate;
 use App\Actions\Mail\SendTemplatedEmail;
 use App\Enums\EmailLogStatus;
 use App\Enums\EmailTemplateKey;
@@ -77,6 +78,35 @@ it('renders the organization logo, colour and the body into the branded layout',
         ->and($html)->toContain('<strong')
         ->and($html)->toContain('>Sara</strong>')
         ->and($html)->not->toContain('**Sara**');
+});
+
+it('delivers the status link as an anchor an email client can click', function () {
+    $organization = Organization::factory()->approved()->create(['name' => 'Gulf Pediatric Society'])->refresh();
+    $conference = Conference::factory()->for($organization)->published()->create(['name' => 'GPCC 2026']);
+    $statusLink = 'https://cass.towardpcc.com/s/'.str_repeat('a', 64);
+
+    $rendered = app(RenderEmailTemplate::class)->handle(EmailTemplateKey::SubmissionReceived, $conference, [
+        'author_name' => 'Sara',
+        'title' => 'A title',
+        'reference' => 'GPCC26-017',
+        'conference' => 'GPCC 2026',
+        'organization' => 'Gulf Pediatric Society',
+        'deadline' => '3 November 2026',
+        'status_link' => $statusLink,
+    ]);
+
+    $html = (string) (new TemplatedMail(
+        logUlid: (string) Str::ulid(),
+        subjectLine: $rendered->subject,
+        body: $rendered->body,
+        organization: $organization,
+        templateKey: EmailTemplateKey::SubmissionReceived->value,
+    ))->render();
+
+    // `[^>]*` because CssToInlineStyles writes a style attribute onto every
+    // element the cass mail theme styles, this anchor included, and it may land
+    // on either side of the href.
+    expect($html)->toMatch('#<a[^>]*href="'.preg_quote($statusLink, '#').'"#');
 });
 
 it('escapes a quote in the organization name instead of injecting an attribute', function () {
@@ -172,4 +202,41 @@ it('never stores an author token in a log subject, whatever the template said', 
 
     expect($log->subject)->not->toMatch('#/s/[A-Za-z0-9]{64}#')
         ->and($log->subject)->toContain('/s/[redacted]');
+});
+
+it('trims a long subject to the width of the log column instead of failing the insert', function () {
+    Mail::fake();
+
+    $conference = Conference::factory()->published()->create();
+
+    // subjectPlaceholders() lets an organizer put {{title}} in a subject, and
+    // submissions.title is itself varchar(255), so this is a subject a real
+    // organizer can produce. email_logs.subject is varchar(255) and MySQL runs
+    // in strict mode (config/database.php), so an untrimmed write throws on the
+    // insert and takes the send - and whatever transaction wraps it - with it.
+    // SQLite does not enforce the width, which is why this asserts the length
+    // rather than merely that the insert succeeded.
+    $template = new EmailTemplate;
+    $template->fill(['subject' => 'Abstract received: {{title}}', 'body' => 'Thank you.']);
+    $template->conference()->associate($conference);
+    $template->key = EmailTemplateKey::SubmissionReceived->value;
+    $template->save();
+
+    $log = app(SendTemplatedEmail::class)->handle(
+        EmailTemplateKey::SubmissionReceived,
+        $conference,
+        'author@example.org',
+        ['title' => str_repeat('a', 255)],
+    );
+
+    expect(mb_strlen($log->subject))->toBeLessThanOrEqual(255)
+        ->and($log->subject)->toStartWith('Abstract received: aaa')
+        ->and(mb_strlen($log->refresh()->subject))->toBeLessThanOrEqual(255);
+
+    // The trim is a property of the log row, not of the message: the recipient
+    // still gets the subject the organizer wrote.
+    Mail::assertQueued(
+        TemplatedMail::class,
+        fn (TemplatedMail $mail): bool => $mail->subjectLine === 'Abstract received: '.str_repeat('a', 255),
+    );
 });
