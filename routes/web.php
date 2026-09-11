@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Public\ConferenceController;
+use App\Http\Controllers\Public\ShortLinkController;
 use App\Livewire\Public\ContactForm;
 use App\Livewire\Public\RegisterOrganization;
 use Illuminate\Session\Middleware\AuthenticateSession;
@@ -28,3 +29,10 @@ Route::get('/c/{organization}/{conference:slug}', [ConferenceController::class, 
     ->scopeBindings()
     ->middleware(AuthenticateSession::class)
     ->name('conference.show');
+
+// No throttle middleware: the cap lives in RecordShortLinkVisit and limits
+// counting only, because spec 5.7 requires the redirect itself to always work
+// (a hall full of people scanning one poster shares a single NAT address).
+Route::get('/q/{code}', ShortLinkController::class)
+    ->where('code', '[A-Za-z0-9]{8}')
+    ->name('shortlink.show');

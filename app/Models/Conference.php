@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -146,6 +147,12 @@ class Conference extends Model
     public function reviewQuestions(): HasManyThrough
     {
         return $this->hasManyThrough(ReviewQuestion::class, ReviewForm::class);
+    }
+
+    /** @return MorphOne<ShortLink, $this> */
+    public function shortLink(): MorphOne
+    {
+        return $this->morphOne(ShortLink::class, 'target');
     }
 
     public function isPubliclyVisible(): bool
