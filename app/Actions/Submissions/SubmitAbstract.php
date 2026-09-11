@@ -45,9 +45,7 @@ class SubmitAbstract
         $reasons = [];
 
         if ($submission->status !== SubmissionStatus::Draft) {
-            $reasons[] = $submission->status === SubmissionStatus::Submitted
-                ? 'This abstract has already been submitted.'
-                : 'An abstract that is '.strtolower($submission->status->getLabel()).' cannot be submitted.';
+            $reasons[] = self::notADraft($submission->status);
         }
 
         if (! $conference->acceptsSubmissions()) {
@@ -135,6 +133,26 @@ class SubmitAbstract
         // queued *after* it commits: a queue worker that picks the job up
         // before the commit lands would read a submission with no reference.
         $submission = DB::transaction(function () use ($submission, $conference): Submission {
+            // blockers() above read the status off the instance the caller is
+            // holding, and nothing has locked or re-read the row since. Two
+            // requests submitting the same draft - a double-clicked button is
+            // enough - would both pass that gate, draw two references and burn
+            // one, and the first confirmation email would quote a number the
+            // row no longer holds while the members got two notices. So the
+            // one transition that must not happen twice is re-checked here,
+            // under the row lock, against what is actually stored. SQLite
+            // ignores the lock clause and serialises writes anyway, so the
+            // stale-status half is what a local test can show.
+            /** @var Submission $locked */
+            $locked = Submission::query()
+                ->whereKey($submission->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($locked->status !== SubmissionStatus::Draft) {
+                throw SubmissionNotAcceptable::because(self::notADraft($locked->status));
+            }
+
             $reference = $this->allocateReference->handle($conference);
 
             $submission->forceFill([
@@ -209,6 +227,19 @@ class SubmitAbstract
             'deadline' => $conference->deadlineInConferenceTimezone()?->format('j F Y, H:i').' ('.$conference->timezone.')',
             'status_link' => $submission->statusUrl($token),
         ];
+    }
+
+    /**
+     * The one wording for "this is not a draft any more", said by blockers()
+     * about the instance the caller holds and again by handle() about the
+     * locked row. One method so the advisory answer and the answer that
+     * actually refuses cannot drift apart.
+     */
+    private static function notADraft(SubmissionStatus $status): string
+    {
+        return $status === SubmissionStatus::Submitted
+            ? 'This abstract has already been submitted.'
+            : 'An abstract that is '.strtolower($status->getLabel()).' cannot be submitted.';
     }
 
     /** @return list<string> */

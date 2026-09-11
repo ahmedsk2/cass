@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Submissions;
 
+use App\Enums\PresentationPreference;
 use App\Enums\SubmissionStatus;
 use App\Models\Conference;
 use App\Models\Submission;
@@ -42,7 +43,7 @@ class SaveSubmissionDraft
                 'title' => trim((string) ($data['title'] ?? '')),
                 'abstract' => $abstract,
                 'track_id' => $this->trackId($conference, $data['track_id'] ?? null),
-                'presentation_preference' => $data['presentation_preference'] ?? null,
+                'presentation_preference' => $this->presentationPreference($data['presentation_preference'] ?? null),
                 'contact_phone' => $this->nullIfBlank($data['contact_phone'] ?? null),
                 'custom_field_values' => $this->customFieldValues($conference, $data['custom_field_values'] ?? null),
             ]);
@@ -136,6 +137,25 @@ class SaveSubmissionDraft
         }
 
         $submission->unsetRelation('authors');
+    }
+
+    /**
+     * A choice the enum does not define is dropped, exactly like a foreign
+     * track, and reported by SubmitAbstract::blockers() instead.
+     *
+     * Not passed straight through: the column is cast to PresentationPreference
+     * and Eloquent's enum cast calls `PresentationPreference::from()` on the way
+     * in, so an unrecognised string is an uncaught ValueError - a 500 on the
+     * public save-draft path, whose own validation covers only the title and
+     * the corresponding address.
+     */
+    private function presentationPreference(mixed $value): ?string
+    {
+        if ($value instanceof PresentationPreference) {
+            return $value->value;
+        }
+
+        return is_string($value) ? PresentationPreference::tryFrom($value)?->value : null;
     }
 
     /** A track must belong to this conference or be absent. */

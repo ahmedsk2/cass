@@ -166,6 +166,25 @@ it('refuses a track that belongs to another conference', function () {
     expect($link->submission->refresh()->track_id)->toBeNull();
 });
 
+it('drops a presentation preference the enum does not define', function () {
+    // Laravel calls PresentationPreference::from() on the way into the cast, so
+    // handing the cast an unknown choice is a ValueError - an uncaught 500 on a
+    // public path whose own validation covers only the title and the
+    // corresponding address. It is dropped exactly like a foreign track and
+    // reported by SubmitAbstract::blockers() where the author can still act.
+    $link = app(SaveSubmissionDraft::class)->handle($this->conference, draftData([
+        'presentation_preference' => 'keynote',
+    ]));
+
+    expect($link->submission->refresh()->presentation_preference)->toBeNull();
+
+    $kept = app(SaveSubmissionDraft::class)->handle($this->conference, draftData([
+        'presentation_preference' => PresentationPreference::Poster->value,
+    ]));
+
+    expect($kept->submission->refresh()->presentation_preference)->toBe(PresentationPreference::Poster);
+});
+
 it('lets the author edit a submitted abstract without changing its status', function () {
     $link = app(SaveSubmissionDraft::class)->handle($this->conference, draftData());
     $submission = $link->submission;

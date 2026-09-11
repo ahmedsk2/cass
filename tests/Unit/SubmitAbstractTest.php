@@ -158,6 +158,11 @@ it('lists every blocker in spec 5.3 rather than stopping at the first', function
     'presentation type the conference does not offer' => [[
         'data' => ['presentation_preference' => PresentationPreference::Either->value],
     ], 'presentation'],
+    'presentation type that is not a known option at all' => [[
+        // Saving this must not be a ValueError out of the enum cast: the draft
+        // drops it like a foreign track and the blocker reports it here.
+        'data' => ['presentation_preference' => 'keynote'],
+    ], 'presentation'],
     'agreement not ticked' => [['agreed' => false], 'terms'],
     'deadline passed' => [[
         'then' => fn (Submission $s, Conference $c) => Carbon::setTestNow($c->submission_deadline->copy()->addMinute()),
@@ -238,6 +243,36 @@ it('refuses to submit an abstract twice', function () {
         ->toThrow(SubmissionNotAcceptable::class);
 
     expect($this->conference->refresh()->submission_counter)->toBe(1);
+});
+
+it('refuses a submit whose draft another request already took', function () {
+    Mail::fake();
+    Notification::fake();
+
+    $link = readyDraft($this->conference);
+
+    // The row moves behind the instance the caller is holding - which is what a
+    // second request submitting the same draft does. blockers() reads the stale
+    // in-memory status and passes, so without a locked re-read inside the
+    // transaction both callers allocate a reference, one number is burned, the
+    // first confirmation email quotes a reference the row no longer holds, and
+    // the members get two notices.
+    Submission::query()->whereKey($link->submission->getKey())->update([
+        'status' => SubmissionStatus::Submitted->value,
+        'reference' => 'GPCC26-001',
+        'submitted_at' => now(),
+    ]);
+
+    expect($link->submission->status)->toBe(SubmissionStatus::Draft);
+
+    expect(fn () => app(SubmitAbstract::class)->handle($link->submission, true, $link->token))
+        ->toThrow(SubmissionNotAcceptable::class);
+
+    expect($link->submission->refresh()->reference)->toBe('GPCC26-001')
+        ->and($this->conference->refresh()->submission_counter)->toBe(0);
+
+    Mail::assertNothingQueued();
+    Notification::assertNothingSent();
 });
 
 it('resends a status link with a fresh token and the template that matches the status', function () {
