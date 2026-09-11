@@ -28,6 +28,10 @@ return [
         // smallest multiple of the module count that reaches this size.
         'png_min_size' => (int) env('CASS_QR_PNG_MIN_SIZE', 1024),
     ],
+    // Spec section 8: downloads only through signed, expiring routes. Long
+    // enough for a mail client that prefetches links, short enough that a
+    // forwarded URL is dead on arrival.
+    'file_url_minutes' => (int) env('CASS_FILE_URL_MINUTES', 30),
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',
