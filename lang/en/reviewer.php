@@ -228,4 +228,16 @@ return [
         ],
     ],
 
+    'remind' => [
+        'action' => 'Remind reviewers',
+        'heading' => 'Email everyone who is behind?',
+        'description' => 'Only reviewers with abstracts they have not reviewed yet are emailed. You can do this again after 12 hours.',
+        'sent' => 'Reminder sent to :count reviewer(s)',
+        'errors' => [
+            'not_reviewing' => 'This conference is not open for reviewing.',
+            'too_soon' => 'A reminder was sent recently. You can send another after :hours hours.',
+            'nobody_behind' => 'Every reviewer has finished, so there is nobody to remind.',
+        ],
+    ],
+
 ];

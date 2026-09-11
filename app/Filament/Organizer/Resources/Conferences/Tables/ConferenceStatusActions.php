@@ -7,8 +7,10 @@ namespace App\Filament\Organizer\Resources\Conferences\Tables;
 use App\Actions\Conferences\ArchiveConference;
 use App\Actions\Conferences\CloseSubmissions;
 use App\Actions\Conferences\PublishConference;
+use App\Actions\Reviews\SendReviewerReminders;
 use App\Enums\ConferenceStatus;
 use App\Enums\ReviewMode;
+use App\Exceptions\ReviewNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Models\Conference;
 use App\Models\User;
@@ -162,9 +164,50 @@ class ConferenceStatusActions
             ->url(fn (Conference $record): string => ConferenceResource::getUrl('assignments', ['record' => $record]));
     }
 
+    public static function remindReviewers(): Action
+    {
+        return Action::make('remindReviewers')
+            ->label(__('reviewer.remind.action'))
+            ->icon(Heroicon::OutlinedBellAlert)
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading(__('reviewer.remind.heading'))
+            ->modalDescription(__('reviewer.remind.description'))
+            // Hidden rather than disabled when it cannot be used: the three
+            // reasons (not reviewing, sent recently, nobody behind) are all
+            // states where the button would be noise.
+            ->visible(fn (Conference $record): bool => Gate::allows('view', $record)
+                && app(SendReviewerReminders::class)->manualBlockers($record) === [])
+            ->action(function (Conference $record, SendReviewerReminders $reminders): void {
+                Gate::authorize('view', $record);
+
+                /** @var User $actor */
+                $actor = auth()->user();
+
+                try {
+                    $sent = $reminders->manual($record, $actor);
+                } catch (ReviewNotAcceptable $exception) {
+                    Notification::make()->danger()
+                        ->title(__('reviewer.notices.refused'))
+                        ->body(e($exception->getMessage()))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()->success()
+                    ->title(__('reviewer.remind.sent', ['count' => $sent]))
+                    ->send();
+            });
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
-        return [static::share(), static::emails(), static::reviewers(), static::assignments(), static::publish(), static::close(), static::archive()];
+        return [
+            static::share(), static::emails(), static::reviewers(), static::assignments(),
+            static::remindReviewers(), static::publish(), static::close(), static::archive(),
+        ];
     }
 }

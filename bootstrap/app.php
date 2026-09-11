@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\SendReviewerRemindersCommand;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -14,6 +15,13 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // `withRouting(commands: routes/console.php)` registers that *file* only;
+    // app/Console/Commands is NOT scanned without this (fact 2). The class is
+    // named rather than the directory, so the registration is greppable and a
+    // second command has to be declared on purpose.
+    ->withCommands([
+        SendReviewerRemindersCommand::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);
 
