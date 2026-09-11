@@ -39,6 +39,18 @@ class Conference extends Model
      *
      * @var list<string>
      */
+    /**
+     * Column-level defaults for the JSON settings: MySQL cannot default a JSON
+     * column, and callers other than the panel form (imports, seeds) must not
+     * have to know these values.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'allowed_file_types' => '["pdf"]',
+        'presentation_types' => '["oral","poster","either"]',
+    ];
+
     protected $fillable = [
         'name', 'short_description', 'description', 'venue', 'city', 'country',
         'starts_at', 'ends_at', 'timezone',
