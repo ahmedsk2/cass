@@ -15,6 +15,14 @@ return [
     // is never refused (spec 5.7); this only stops a script inflating the
     // counter, so a lecture hall behind one NAT still reaches the page.
     'short_link_rate_limit' => (int) env('CASS_SHORT_LINK_RATE_LIMIT', 60),
+    // Second ceiling, per link per minute with no client in the key. The
+    // client IP is read from a header the client sets, so the cap above can
+    // be minted once per request; this one bounds how fast one link's visit
+    // rows can grow whatever address is claimed.
+    'short_link_rate_limit_per_link' => (int) env('CASS_SHORT_LINK_RATE_LIMIT_PER_LINK', 600),
+    // Visit rows older than this are deleted nightly by `model:prune`. The
+    // sharing page reports 30 days, so nothing inside the window is lost.
+    'short_link_visit_retention_days' => (int) env('CASS_SHORT_LINK_VISIT_RETENTION_DAYS', 90),
     'qr' => [
         // The PNG is rendered at whole-module scale, so the real width is the
         // smallest multiple of the module count that reaches this size.

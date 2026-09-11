@@ -19,16 +19,30 @@ class RecordShortLinkVisit
      * address - exactly the moment the QR code exists for. Capping the count
      * still stops a script inflating the total, and the visitor always reaches
      * the page.
+     *
+     * There are two ceilings because the client IP comes from a header the
+     * client controls (CF-Connecting-IP, see App\Support\ClientIp): with only
+     * the per-client one, a single host mints a fresh budget per request and
+     * writes an unbounded number of rows into short_link_visits, which the
+     * organizer sharing page then has to read back. The second key drops the
+     * IP, so a link's rows can only grow at a fixed rate however many
+     * addresses are claimed.
      */
     public function handle(ShortLink $shortLink, string $clientIp): void
     {
-        $key = 'short-link-count:'.$shortLink->id.':'.$clientIp;
+        $perClient = 'short-link-count:'.$shortLink->id.':'.$clientIp;
+        $perLink = 'short-link-count:'.$shortLink->id;
 
-        if (RateLimiter::tooManyAttempts($key, max(1, (int) config('cass.short_link_rate_limit')))) {
+        if (RateLimiter::tooManyAttempts($perClient, max(1, (int) config('cass.short_link_rate_limit')))) {
             return;
         }
 
-        RateLimiter::hit($key, 60);
+        if (RateLimiter::tooManyAttempts($perLink, max(1, (int) config('cass.short_link_rate_limit_per_link')))) {
+            return;
+        }
+
+        RateLimiter::hit($perClient, 60);
+        RateLimiter::hit($perLink, 60);
 
         $shortLink->increment('clicks');
         $shortLink->visits()->create(['visited_at' => now()]);

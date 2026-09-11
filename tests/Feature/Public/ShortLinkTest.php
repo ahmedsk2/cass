@@ -98,3 +98,21 @@ it('caps counting per client ip but never refuses the redirect', function () {
     expect($link->fresh()?->clicks)->toBe(3)
         ->and(ShortLinkVisit::count())->toBe(3);
 });
+
+it('caps counting per link so spoofed addresses cannot grow the visit table', function () {
+    // CF-Connecting-IP is supplied by the client, so the per-IP budget alone
+    // can be minted without limit: one host would otherwise write a row per
+    // request forever, and the sharing page has to read that window back.
+    config(['cass.short_link_rate_limit' => 60, 'cass.short_link_rate_limit_per_link' => 3]);
+
+    $conference = Conference::factory()->for(Organization::factory()->approved())->published()->create();
+    $link = ShortLink::forTarget($conference);
+
+    foreach (range(1, 5) as $index) {
+        get('/q/'.$link->code, ['CF-Connecting-IP' => '203.0.113.'.$index])
+            ->assertRedirect($conference->publicUrl());
+    }
+
+    expect($link->fresh()?->clicks)->toBe(3)
+        ->and(ShortLinkVisit::count())->toBe(3);
+});

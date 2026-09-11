@@ -6,7 +6,10 @@ use App\Models\Conference;
 use App\Models\ShortLink;
 use App\Support\ShortCode;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -97,4 +100,71 @@ it('buckets the daily counts by the day in the requested timezone', function () 
 
     expect($link->dailyVisitCounts(30)['2026-11-30'])->toBe(1)
         ->and($link->dailyVisitCounts(30, 'Asia/Riyadh')['2026-12-01'])->toBe(1);
+});
+
+it('refuses a second short link for the same target at the database level', function () {
+    // The idempotence promise in forTarget() is a select-then-insert, so the
+    // only thing that can keep it true when two publishes race is the index.
+    $conference = Conference::factory()->create();
+    ShortLink::forTarget($conference);
+
+    expect(fn () => DB::table('short_links')->insert([
+        'code' => 'SECONDLK',
+        'target_type' => $conference->getMorphClass(),
+        'target_id' => $conference->getKey(),
+        'clicks' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]))->toThrow(UniqueConstraintViolationException::class);
+});
+
+it('returns the row a concurrent publish inserted for the same target', function () {
+    // The code generator runs after forTarget() has looked for an existing
+    // row, so this closure is exactly the window two publishes race through.
+    $conference = Conference::factory()->create();
+
+    ShortLink::generateCodesUsing(function () use ($conference): string {
+        DB::table('short_links')->insertOrIgnore([
+            'code' => 'RACEWON2',
+            'target_type' => $conference->getMorphClass(),
+            'target_id' => $conference->getKey(),
+            'clicks' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return 'RACELOST';
+    });
+
+    try {
+        $link = ShortLink::forTarget($conference);
+    } finally {
+        ShortLink::generateCodesUsing(null);
+    }
+
+    expect($link->code)->toBe('RACEWON2')
+        ->and(ShortLink::count())->toBe(1);
+});
+
+it('streams the visit rows instead of hydrating the whole window', function () {
+    // /q is unauthenticated and writes one row per counted scan, so the number
+    // of rows in the window is decided by whoever scans, not by the organizer.
+    $link = ShortLink::factory()->create();
+
+    foreach (range(1, 5) as $ignored) {
+        $link->visits()->create(['visited_at' => now()]);
+    }
+
+    $queries = [];
+    DB::listen(function (QueryExecuted $query) use (&$queries): void {
+        if (str_contains($query->sql, 'short_link_visits')) {
+            $queries[] = $query->sql;
+        }
+    });
+
+    $link->dailyVisitCounts(30);
+
+    expect($queries)->toHaveCount(1)
+        ->and($queries[0])->toContain('order by')
+        ->and($queries[0])->toContain('limit');
 });
