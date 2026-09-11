@@ -38,10 +38,8 @@ class SendTemplatedEmail
     ): EmailLog {
         $rendered = $this->render->handle($key, $conference, $values);
 
-        // Never let an author's bearer token into a subject line, whatever a
-        // template said. EmailTemplateKey::subjectPlaceholders() keeps
-        // `status_link` out of the editor's subject field; this is the belt to
-        // that braces, for any path that does not go through the editor at all.
+        // Never let a bearer token into a subject line, whatever a template
+        // said.
         //
         // Redacted *once*, here, and used for both the row and the delivered
         // message. Redacting only the logged copy would be redacting the wrong
@@ -49,7 +47,18 @@ class SendTemplatedEmail
         // travels in clear text through every relay between this process and
         // the author's provider. The body still carries the real link - that is
         // the email.
-        $subject = (string) preg_replace('#/s/[A-Za-z0-9]{64}#', '/s/[redacted]', $rendered->subject);
+        //
+        // Two bearer-token URL shapes now: Plan 3's author status link and Plan
+        // 4's member/reviewer invitation link. Both are credentials, and a
+        // Subject header travels in clear text through every relay between here
+        // and the recipient - and is stored verbatim in email_logs, which an
+        // organizer can read. The editor's subjectPlaceholders() is the braces;
+        // this is the belt, for any path that does not go through the editor.
+        $subject = (string) preg_replace(
+            ['#/s/[A-Za-z0-9]{64}#', '#/invite/[A-Za-z0-9]{64}#'],
+            ['/s/[redacted]', '/invite/[redacted]'],
+            $rendered->subject,
+        );
 
         $log = new EmailLog;
         $log->forceFill([

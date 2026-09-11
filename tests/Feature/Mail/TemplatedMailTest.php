@@ -12,6 +12,7 @@ use App\Models\EmailLog;
 use App\Models\EmailTemplate;
 use App\Models\Organization;
 use App\Models\Submission;
+use App\Support\Tokens\InvitationToken;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
@@ -211,6 +212,39 @@ it('never stores an author token in a log subject, whatever the template said', 
         && str_contains($mail->subjectLine, '/s/[redacted]')
         // The body still carries the real link: that is the whole email.
         && str_contains($mail->body, str_repeat('a', 64)));
+});
+
+it('redacts an invitation token from a subject as well as a status token', function () {
+    Mail::fake();
+
+    $conference = Conference::factory()->published()->create();
+    $token = InvitationToken::generate();
+
+    // Built the same way as the status-token case above rather than through
+    // emailTemplates()->create([...]): EmailTemplate::$fillable is ['subject',
+    // 'body'] and there is no `is_active` column on email_templates, so a mass
+    // assignment of `key` or `is_active` throws under
+    // Model::preventSilentlyDiscardingAttributes().
+    $template = new EmailTemplate;
+    $template->fill([
+        'subject' => 'Review for us: '.route('invitation.accept', ['token' => $token]),
+        'body' => 'Body.',
+    ]);
+    $template->conference()->associate($conference);
+    $template->key = EmailTemplateKey::ReviewerInvitation->value;
+    $template->save();
+
+    app(SendTemplatedEmail::class)->handle(
+        EmailTemplateKey::ReviewerInvitation,
+        $conference,
+        'reviewer@example.org',
+        ['reviewer_name' => 'Dr Omar Khan', 'review_link' => 'https://example.test/invite/'.$token],
+    );
+
+    $log = EmailLog::query()->firstOrFail();
+
+    expect($log->subject)->toContain('/invite/[redacted]')
+        ->and($log->subject)->not->toContain($token);
 });
 
 it('leaves an already-sent log row alone when the job fails afterwards', function () {
