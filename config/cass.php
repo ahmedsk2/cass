@@ -32,6 +32,16 @@ return [
     // enough for a mail client that prefetches links, short enough that a
     // forwarded URL is dead on arrival.
     'file_url_minutes' => (int) env('CASS_FILE_URL_MINUTES', 30),
+    // Spec section 8: 10 MB per file. Under docker/php.ini's
+    // upload_max_filesize=12M and Livewire's own default max:12288, so the
+    // refusal an author meets is this one - with a sentence - rather than a
+    // blank 413 from PHP.
+    'max_file_bytes' => (int) env('CASS_MAX_FILE_BYTES', 10 * 1024 * 1024),
+
+    // Spec section 9: /s/{token} is 20 GETs per minute per address. It lives
+    // here rather than with the submission knobs in Task 7 because the limiter
+    // that reads it is registered in this task, alongside the route.
+    'status_page_rate_limit' => (int) env('CASS_STATUS_PAGE_RATE_LIMIT', 20),
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',

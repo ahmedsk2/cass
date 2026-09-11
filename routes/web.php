@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Http\Controllers\Organizer\ConferenceAssetController;
 use App\Http\Controllers\Public\ConferenceController;
 use App\Http\Controllers\Public\ShortLinkController;
+use App\Http\Controllers\Public\SubmissionFileController;
 use App\Livewire\Public\ContactForm;
 use App\Livewire\Public\RegisterOrganization;
+use App\Livewire\Public\SubmissionStatus;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Facades\Route;
 
@@ -70,3 +72,38 @@ Route::middleware([
 Route::get('/q/{code}', ShortLinkController::class)
     ->where('code', '[A-Za-z0-9]{8}')
     ->name('shortlink.show');
+
+// Spec sections 6 and 8. The signature is the capability, so no auth and no
+// token here; the throttle is what stops a leaked URL being used to hammer the
+// disk.
+//
+// No file extension in the path, for the same reason the conference asset
+// routes have none: docker/nginx.conf answers any URI ending in a static-file
+// extension from disk before PHP sees it. The saved file name comes from
+// Content-Disposition.
+//
+// The constraint is the Crockford base32 alphabet a ULID uses - no I, L, O or
+// U - so a path that could not be a ULID never reaches the database.
+Route::get('/files/{ulid}', SubmissionFileController::class)
+    ->middleware(['signed', 'throttle:file-download'])
+    ->where('ulid', '[0-9A-HJKMNP-TV-Z]{26}')
+    ->name('files.download');
+
+// Registered here rather than with the component (Task 8) because
+// Submission::statusUrl() resolves this name from Task 5 onwards, and every
+// Task 5 test that touches SubmissionLink::url(), SubmitAbstract's placeholders
+// or SendSubmissionStatusLink would otherwise die on RouteNotFoundException.
+// The class this names is a placeholder until Task 8 writes the real page.
+// It has to be a real class today: RouteAction::makeInvokable() calls
+// method_exists() on a string action at *registration*, and
+// RouteListCommand::isVendorRoute() reflects on it, so a dangling name would
+// throw here and break `php artisan route:list` for the whole app.
+//
+// No AuthenticateSession and no auth: there is no account here at all.
+// The throttle is spec section 9's 20/min/IP, and it is on the route rather
+// than in the component because a page *view* has to be counted too - guessing
+// tokens is a GET loop, not a Livewire action.
+Route::get('/s/{token}', SubmissionStatus::class)
+    ->where('token', '[A-Za-z0-9]{64}')
+    ->middleware('throttle:submission-status')
+    ->name('submission.status');

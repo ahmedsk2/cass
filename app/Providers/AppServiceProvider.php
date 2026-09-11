@@ -49,6 +49,19 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('conference-assets', fn (Request $request): Limit => Limit::perMinute(10)
             ->by('user:'.($request->user()?->getAuthIdentifier() ?? ClientIp::from($request))));
 
+        // A signed URL is a bearer capability with a 30-minute life. If one
+        // leaks, this is what keeps it from being used to stream a 10 MB PDF a
+        // thousand times off a four-worker pool.
+        RateLimiter::for('file-download', fn (Request $request): Limit => Limit::perMinute(60)
+            ->by(ClientIp::from($request)));
+
+        // Spec section 9: the author status page, 20/min/IP. The key is the
+        // client address only - not the token - so that enumerating tokens
+        // counts against one budget instead of getting a fresh one per guess.
+        RateLimiter::for('submission-status', fn (Request $request): Limit => Limit::perMinute(
+            (int) config('cass.status_page_rate_limit')
+        )->by(ClientIp::from($request)));
+
         // Registered by hand rather than by Laravel 13's listener discovery:
         // discovery matches one class to one event by the type hint of a
         // `handle()` method, and this listener deliberately has two entry
