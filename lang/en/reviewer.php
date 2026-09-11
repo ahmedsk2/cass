@@ -14,6 +14,80 @@ return [
         'accept' => 'Accept and start reviewing',
     ],
 
+    'page' => [
+        'title' => 'Reviewers',
+        'subheading' => 'Who reviews the abstracts sent to this conference, and who has been invited but has not accepted yet.',
+    ],
+
+    'columns' => [
+        'name' => 'Reviewer',
+        'affiliation' => 'Affiliation',
+        'state' => 'Status',
+        'since' => 'Reviewing since',
+    ],
+
+    'state' => [
+        'invited' => 'Invited',
+        'expired' => 'Invitation expired',
+    ],
+
+    'fields' => [
+        'name' => 'Name',
+        'email' => 'Email address',
+        'affiliation' => 'Affiliation',
+        'affiliation_help' => 'Optional. Used to keep a reviewer away from abstracts from their own institution.',
+        'list' => 'One reviewer per line',
+        'list_help' => 'Either "Dr Omar Khan <omar@example.org>" or just the address. A comma, a semicolon or a tab between a name and an address works too.',
+    ],
+
+    'actions' => [
+        'page_link' => 'Reviewers',
+        'back' => 'Back to the conference',
+        'invite' => 'Invite a reviewer',
+        'invite_heading' => 'Invite a reviewer',
+        'invite_list' => 'Invite a list',
+        'invite_list_heading' => 'Invite several reviewers at once',
+        'invite_list_description' => 'Paste one reviewer per line. Every line is reported back: invited, already reviewing, or not understood.',
+        'remove' => 'Remove',
+        'remove_heading' => 'Remove :name from this conference?',
+        'remove_description' => 'They lose access to these abstracts straight away, and any abstract assigned to them becomes unassigned. Reviews they have already written are kept.',
+        'reinvite' => 'Invite again',
+        'reinvite_heading' => 'Invite this reviewer again?',
+        'resend' => 'Resend',
+        'resend_heading' => 'Send the invitation again?',
+        'resend_description' => 'A new link is emailed. **Any link they already have stops working.**',
+        'revoke' => 'Withdraw',
+        'revoke_heading' => 'Withdraw this invitation?',
+        'revoke_description' => 'The link stops working. If they follow it they are told the invitation was withdrawn.',
+    ],
+
+    'notices' => [
+        'invited' => 'Invitation sent',
+        'invited_body' => 'A link is on its way to :email.',
+        'list_done' => ':count invitation(s) sent',
+        'removed' => 'Reviewer removed',
+        'resent' => 'Invitation sent again',
+        'revoked' => 'Invitation withdrawn',
+        'refused' => 'Nothing changed',
+    ],
+
+    'list' => [
+        'bad_line' => 'Line :line could not be read: ":text"',
+        'duplicate' => ':email appears more than once; it was invited once.',
+        'too_many' => 'Only the first :max reviewers on the list were invited. Paste the rest as a second list.',
+    ],
+
+    'errors' => [
+        'not_allowed' => 'Only a member of this organization can invite reviewers.',
+        'bad_email' => 'That does not look like an email address.',
+        'already_reviewing' => ':email is already reviewing this conference.',
+        'send_limit' => 'Too many invitations have been sent from this account in the last hour. Try again later.',
+    ],
+
+    'mail' => [
+        'no_deadline' => 'a date the organizers will confirm',
+    ],
+
     'queue' => [
         'title' => 'Abstracts to review',
         'model' => 'abstract',

@@ -140,9 +140,19 @@ class ConferenceStatusActions
             ->url(fn (Conference $record): string => ConferenceResource::getUrl('emails', ['record' => $record]));
     }
 
+    public static function reviewers(): Action
+    {
+        return Action::make('reviewers')
+            ->label(__('reviewer.actions.page_link'))
+            ->icon(Heroicon::OutlinedUserGroup)
+            ->color('gray')
+            ->visible(fn (Conference $record): bool => Gate::allows('view', $record))
+            ->url(fn (Conference $record): string => ConferenceResource::getUrl('reviewers', ['record' => $record]));
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
-        return [static::share(), static::emails(), static::publish(), static::close(), static::archive()];
+        return [static::share(), static::emails(), static::reviewers(), static::publish(), static::close(), static::archive()];
     }
 }
