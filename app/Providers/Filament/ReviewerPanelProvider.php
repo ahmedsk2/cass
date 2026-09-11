@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
-use App\Filament\Organizer\Pages\Dashboard;
-use App\Filament\Organizer\Pages\Tenancy\EditOrganizationProfile;
-use App\Models\Organization;
+use App\Filament\Reviewer\Pages\Dashboard;
 use App\Support\Panels\PanelSwitch;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
@@ -24,13 +22,26 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
-class OrganizerPanelProvider extends PanelProvider
+/**
+ * Spec section 6: `/review/...`, its own login, the same `users` table.
+ *
+ * **No tenancy.** A reviewer belongs to conferences, not to organizations, and
+ * may review for several organizations at once; a tenant in the URL would mean
+ * choosing one of them to look at their own queue. What replaces it is
+ * App\Support\Reviews\ReviewerScope (Task 6), which is the single definition of
+ * what this panel may read, plus a policy on every model.
+ *
+ * `discoverResources` points at a directory Task 6 creates. That is safe:
+ * Panel::discoverComponents() returns early when the directory does not exist
+ * (fact 39), so this provider works on its own for the length of this task.
+ */
+class ReviewerPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
         return $panel
-            ->id('organizer')
-            ->path('org')
+            ->id('reviewer')
+            ->path('review')
             ->login()
             ->passwordReset()
             ->emailVerification()
@@ -38,28 +49,28 @@ class OrganizerPanelProvider extends PanelProvider
             ->multiFactorAuthentication([
                 AppAuthentication::make()->recoverable(),
             ])
-            ->tenant(Organization::class, slugAttribute: 'slug')
-            ->tenantProfile(EditOrganizationProfile::class)
-            ->brandName('CASS')
+            ->brandName('CASS Review')
             ->brandLogo(fn () => view('brand.logo'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('favicon.ico'))
             ->colors([
                 'primary' => Color::hex('#176BB8'),
             ])
-            ->discoverResources(in: app_path('Filament/Organizer/Resources'), for: 'App\Filament\Organizer\Resources')
-            ->discoverPages(in: app_path('Filament/Organizer/Pages'), for: 'App\Filament\Organizer\Pages')
+            ->discoverResources(in: app_path('Filament/Reviewer/Resources'), for: 'App\Filament\Reviewer\Resources')
+            ->discoverPages(in: app_path('Filament/Reviewer/Pages'), for: 'App\Filament\Reviewer\Pages')
             ->pages([
                 Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Organizer/Widgets'), for: 'App\Filament\Organizer\Widgets')
+            ->discoverWidgets(in: app_path('Filament/Reviewer/Widgets'), for: 'App\Filament\Reviewer\Widgets')
             ->widgets([
                 AccountWidget::class,
             ])
             // Spec section 6: a user with both roles sees a switch link in the
-            // panel header.
+            // panel header. Filament normalises a MenuItem into an Action
+            // anyway (fact 9), so the Action is built directly and keeps a
+            // stable name the tests can address.
             ->userMenuItems([
-                PanelSwitch::toReviewer(),
+                PanelSwitch::toOrganizer(),
             ])
             ->middleware([
                 EncryptCookies::class,

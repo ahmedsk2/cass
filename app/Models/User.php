@@ -106,6 +106,11 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             // Verification is enforced by the panel's email-verification middleware,
             // which redirects unverified users to the prompt instead of a bare 403.
             'organizer' => $this->organizations()->exists(),
+            // Same shape as the organizer arm, and for the same reason. An
+            // active reviewer of *any* conference may come in, even before the
+            // organizer has started reviewing - there is a dashboard to read
+            // and MFA to set up.
+            'reviewer' => $this->isActiveReviewer(),
             default => false,
         };
     }
