@@ -167,7 +167,10 @@
                     <div class="max-h-48 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-3 text-sm whitespace-pre-line text-slate-700">{{ $conference->terms }}</div>
                 @endif
                 <label class="flex items-start gap-2 text-sm">
-                    <input type="checkbox" wire:model="agreed" class="mt-0.5 rounded border-slate-300">
+                    {{-- `name` as well as `id`: the browser test's check('agreed')
+                         resolves a field by id, name, label or placeholder, and a
+                         checkbox with neither is addressable only by CSS selector. --}}
+                    <input id="agreed" name="agreed" type="checkbox" wire:model="agreed" class="mt-0.5 rounded border-slate-300">
                     <span>{{ __('submission.fields.agreed') }}</span>
                 </label>
                 @error('agreed') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
