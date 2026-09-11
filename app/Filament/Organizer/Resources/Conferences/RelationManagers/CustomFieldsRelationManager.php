@@ -62,6 +62,10 @@ class CustomFieldsRelationManager extends RelationManager
                 ->helperText('Press Enter after each choice.'),
             TextInput::make('help_text')->maxLength(500)->columnSpanFull(),
             Toggle::make('required')->label('Authors must answer this'),
+            Toggle::make('hide_from_reviewers')
+                ->label(__('reviewer.review.hide_from_reviewers'))
+                ->helperText(__('reviewer.review.hide_from_reviewers_help'))
+                ->default(false),
         ]);
     }
 

@@ -102,4 +102,68 @@ class ReviewQuestion extends Model
 
         return false;
     }
+
+    /**
+     * The stable identifier of one Select choice, stored in
+     * `review_answers.choice_key`.
+     *
+     * **The key is the label.** The alternatives are worse: an array index
+     * moves the moment an organizer reorders the Repeater, and a synthetic id
+     * would have to be back-filled onto every `options` JSON blob Plan 2
+     * already wrote. The label is safe because spec section 3 locks the form
+     * the moment the first review is submitted, and a locked question can
+     * neither be edited nor reordered (ReviewQuestion::booted() and
+     * ReviewQuestionPolicy) - so from the instant any answer exists, the label
+     * cannot change. Before the lock, an edited label simply loses its score,
+     * which is visible in the draft rather than silently wrong.
+     *
+     * This method exists so Plan 5 has one place to change if real keys are
+     * ever introduced.
+     *
+     * @param  array<string, mixed>  $option
+     */
+    public static function optionKey(array $option): string
+    {
+        return (string) ($option['label'] ?? '');
+    }
+
+    /** @return list<string> */
+    public function optionKeys(): array
+    {
+        return array_values(array_map(
+            static fn (mixed $option): string => is_array($option) ? static::optionKey($option) : (string) $option,
+            $this->options ?? [],
+        ));
+    }
+
+    /**
+     * Label by key, for a Radio or Select component and for the read-only
+     * render of a submitted review.
+     *
+     * @return array<string, string>
+     */
+    public function optionLabels(): array
+    {
+        $labels = [];
+
+        foreach ($this->optionKeys() as $key) {
+            $labels[$key] = $key;
+        }
+
+        return $labels;
+    }
+
+    /** Spec 5.6: a choice carries an optional score. Plan 5 reads this. */
+    public function optionScore(string $key): int|float|null
+    {
+        foreach ($this->options ?? [] as $option) {
+            if (is_array($option) && static::optionKey($option) === $key) {
+                $score = $option['score'] ?? null;
+
+                return is_numeric($score) ? (int) $score : null;
+            }
+        }
+
+        return null;
+    }
 }

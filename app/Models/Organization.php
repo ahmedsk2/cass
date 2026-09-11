@@ -93,6 +93,12 @@ class Organization extends Model
         return $this->hasMany(Conference::class);
     }
 
+    /** @return HasMany<OrganizationInvitation, $this> */
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(OrganizationInvitation::class);
+    }
+
     /**
      * @return BelongsTo<User, $this>
      */

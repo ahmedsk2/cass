@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ConferenceStatus;
+use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
 use App\Enums\SubmissionStatus;
 use App\Enums\SubmissionWindow;
@@ -73,6 +74,7 @@ class Conference extends Model
             'submission_opens_at' => 'datetime',
             'submission_deadline' => 'datetime',
             'review_deadline' => 'datetime',
+            'reviewer_reminded_at' => 'datetime',
             'published_at' => 'datetime',
             'blind_review' => 'boolean',
             'reviewers_per_submission' => 'integer',
@@ -190,6 +192,97 @@ class Conference extends Model
     public function emailTemplates(): HasMany
     {
         return $this->hasMany(EmailTemplate::class);
+    }
+
+    /** @return HasMany<ReviewerInvitation, $this> */
+    public function reviewerInvitations(): HasMany
+    {
+        return $this->hasMany(ReviewerInvitation::class);
+    }
+
+    /** @return HasMany<ConferenceReviewer, $this> */
+    public function reviewers(): HasMany
+    {
+        return $this->hasMany(ConferenceReviewer::class);
+    }
+
+    /**
+     * The pool. Every reviewer query in Plan 4 starts here, so "active" has one
+     * definition.
+     *
+     * @return HasMany<ConferenceReviewer, $this>
+     */
+    public function activeReviewers(): HasMany
+    {
+        return $this->reviewers()->where('status', ReviewerStatus::Active->value);
+    }
+
+    /** @return HasMany<ReviewerReminder, $this> */
+    public function reviewerReminders(): HasMany
+    {
+        return $this->hasMany(ReviewerReminder::class);
+    }
+
+    /**
+     * Spec 5.4 step 4: "authors hidden when blind". Blind review is a rule
+     * about *reviewers*, not about the conference as a whole - spec section 4
+     * gives every organization member "View submissions and files" with no
+     * caveat, and somebody has to be able to answer an author's email. So this
+     * asks who is looking.
+     *
+     * One method, called by the reviewer's queue, the review page, the file
+     * naming and their tests, so "blind" cannot come to mean four things.
+     */
+    public function hidesAuthorsFrom(?User $user): bool
+    {
+        if ($this->blind_review !== true) {
+            return false;
+        }
+
+        if ($user === null) {
+            return true;
+        }
+
+        if ($user->is_platform_admin === true) {
+            return false;
+        }
+
+        return $user->roleIn($this->organization) === null;
+    }
+
+    /** Timestamps are stored UTC; organizers and reviewers read them locally. */
+    public function reviewDeadlineInConferenceTimezone(): ?CarbonInterface
+    {
+        return $this->review_deadline?->copy()->setTimezone($this->timezone);
+    }
+
+    /** The window in which a reviewer may still change a submitted review. */
+    public function reviewWindowIsOpen(): bool
+    {
+        return $this->review_deadline === null || $this->review_deadline->isFuture();
+    }
+
+    /** Conferences a reviewer may open at all (spec 5.4 step 3). */
+    public function isOpenToReviewers(): bool
+    {
+        return in_array($this->status, [ConferenceStatus::Reviewing, ConferenceStatus::Decided], true);
+    }
+
+    /**
+     * READING a conference is open in Reviewing and in Decided - a reviewer who
+     * wants to see what they said about an abstract after the committee has
+     * decided should be able to. WRITING a review is open in Reviewing only:
+     * once the decisions are out, a new answer would change the evidence the
+     * committee was shown after the fact.
+     *
+     * Kept separate from isOpenToReviewers() on purpose. Every read path
+     * (ReviewerScope::constrain, the queue, the dashboard) asks that one; every
+     * write path (SaveReviewDraft, SubmitReview, ReopenReview, the review form's
+     * read-only rule) asks this one.
+     */
+    public function acceptsReviewWrites(): bool
+    {
+        return $this->status === ConferenceStatus::Reviewing;
     }
 
     /**

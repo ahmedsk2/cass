@@ -5,10 +5,16 @@ declare(strict_types=1);
 use App\Actions\Conferences\CreateDefaultReviewForm;
 use App\Enums\OrganizationRole;
 use App\Models\Conference;
+use App\Models\ConferenceReviewer;
 use App\Models\CustomField;
 use App\Models\Organization;
+use App\Models\OrganizationInvitation;
+use App\Models\Review;
+use App\Models\ReviewAssignment;
+use App\Models\ReviewerInvitation;
 use App\Models\ReviewForm;
 use App\Models\ReviewQuestion;
+use App\Models\Submission;
 use App\Models\Track;
 use App\Models\User;
 use App\Policies\CustomFieldPolicy;
@@ -17,6 +23,9 @@ use App\Policies\ReviewQuestionPolicy;
 use App\Policies\TrackPolicy;
 
 use function Filament\get_authorization_response;
+
+use Illuminate\Database\Eloquent\Model;
+
 use function Pest\Laravel\actingAs;
 
 /**
@@ -27,9 +36,14 @@ use function Pest\Laravel\actingAs;
  * everyone the panel lets in. These tests go through the same helper rather
  * than through Gate, so they see what the panel sees.
  *
- * @param  class-string  $model
+ * A class-string asks the class-level question (viewAny, create, deleteAny);
+ * a Model instance asks the row-level one (view, update, delete on *this*
+ * row), which is the only way to exercise a policy's second argument - and
+ * therefore the only way to prove the soft-deleted-organization guard below.
+ *
+ * @param  class-string|Model  $model
  */
-function panelAllows(string $ability, string $model): bool
+function panelAllows(string $ability, Model|string $model): bool
 {
     return get_authorization_response($ability, $model)->allowed();
 }
@@ -124,4 +138,104 @@ it('refuses every review question bulk ability because the lock needs a record',
             ->and(panelAllows('restoreAny', ReviewQuestion::class))->toBeFalse()
             ->and(panelAllows('forceDeleteAny', ReviewQuestion::class))->toBeFalse();
     }
+});
+
+it('refuses every bulk ability on the five plan 4 models', function () {
+    // Fact 25: Filament treats a missing policy method as ALLOW, and none of
+    // these five models has any bulk UI in any panel, so each policy spells
+    // deleteAny, restoreAny and forceDeleteAny out and answers false for every
+    // organization member and every outsider. deleteAny is the one Filament
+    // actually calls, so it is asserted first rather than left implied.
+    $models = [
+        OrganizationInvitation::class,
+        ReviewerInvitation::class,
+        ConferenceReviewer::class,
+        ReviewAssignment::class,
+        Review::class,
+    ];
+
+    // The platform admin is deliberately NOT in this loop. Unlike the four child
+    // policies this file already covers - Track, CustomField, ReviewForm and
+    // ReviewQuestion, none of which has a before() at all - all five Plan 4
+    // policies declare `before(): ?bool` answering true for is_platform_admin,
+    // and Laravel resolves before() AHEAD of the ability itself
+    // (Gate::resolvePolicyCallback, vendor/laravel/framework/src/Illuminate/
+    // Auth/Access/Gate.php:791-800 returns the non-null before() result without
+    // ever calling the method). An explicit `deleteAny(): false` therefore does
+    // not beat it, exactly as App\Policies\SubmissionPolicy's own docblock
+    // already records and accepts. Asserting otherwise would be asserting
+    // against the design.
+    foreach ([$this->member, $this->outsider] as $user) {
+        actingAs($user);
+
+        foreach ($models as $model) {
+            expect(panelAllows('deleteAny', $model))->toBeFalse("deleteAny on {$model}")
+                ->and(panelAllows('restoreAny', $model))->toBeFalse("restoreAny on {$model}")
+                ->and(panelAllows('forceDeleteAny', $model))->toBeFalse("forceDeleteAny on {$model}");
+        }
+    }
+
+    // What a platform admin actually gets, pinned here so nobody "fixes" the
+    // loop by adding them back, and so Plan 6 adding a screen behind these
+    // policies is a decision rather than a discovery: the read-only admin
+    // resources it brings have to refuse deletion in before() or in the
+    // resource, because the policy method is never reached.
+    actingAs($this->admin);
+
+    foreach ($models as $model) {
+        expect(panelAllows('deleteAny', $model))->toBeTrue("deleteAny on {$model}")
+            ->and(panelAllows('restoreAny', $model))->toBeTrue("restoreAny on {$model}");
+    }
+});
+
+it('refuses a plan 4 ability over a soft-deleted organization instead of throwing', function () {
+    // Organization soft-deletes (app/Models/Organization.php:27) while its
+    // conferences and their rows survive, and User::roleIn() type-hints a
+    // non-nullable Organization (app/Models/User.php:60) - so a policy that
+    // walks conference->organization unguarded turns a gate that must answer
+    // "no" into a TypeError 500. SubmissionPolicy already guards that second
+    // hop and says why in its docblock; these five now do the same.
+    $conference = Conference::factory()->for($this->organization)->create();
+    $submission = Submission::factory()->for($conference)->submitted()->create();
+    $reviewerRow = ConferenceReviewer::factory()->for($conference)->create();
+    $invitation = ReviewerInvitation::factory()->for($conference)->create();
+    $assignment = ReviewAssignment::factory()->for($submission)->create();
+    $review = Review::factory()->for($submission)->create();
+
+    $this->organization->delete();
+
+    actingAs($this->member);
+
+    expect(panelAllows('view', $invitation->fresh()))->toBeFalse()
+        ->and(panelAllows('view', $reviewerRow->fresh()))->toBeFalse()
+        ->and(panelAllows('update', $reviewerRow->fresh()))->toBeFalse()
+        ->and(panelAllows('view', $assignment->fresh()))->toBeFalse()
+        ->and(panelAllows('delete', $assignment->fresh()))->toBeFalse()
+        ->and(panelAllows('view', $review->fresh()))->toBeFalse();
+});
+
+it('lets an owner and admin manage invitations and refuses a plain member', function () {
+    $owner = User::factory()->create();
+    $admin = User::factory()->create();
+    $this->organization->addMember($owner, OrganizationRole::Owner);
+    $this->organization->addMember($admin, OrganizationRole::Admin);
+
+    foreach ([$owner, $admin] as $user) {
+        actingAs($user);
+        expect(panelAllows('create', OrganizationInvitation::class))->toBeTrue()
+            ->and(panelAllows('viewAny', OrganizationInvitation::class))->toBeTrue();
+    }
+
+    // Spec section 4: "Manage organization members" is owner and admin only,
+    // while "Invite reviewers, assign, decide" is every member - so the two
+    // invitation policies deliberately answer differently for the same user.
+    actingAs($this->member);
+    expect(panelAllows('create', OrganizationInvitation::class))->toBeFalse()
+        ->and(panelAllows('create', ReviewerInvitation::class))->toBeTrue()
+        ->and(panelAllows('create', ReviewAssignment::class))->toBeTrue();
+
+    actingAs($this->outsider);
+    expect(panelAllows('create', OrganizationInvitation::class))->toBeFalse()
+        ->and(panelAllows('create', ReviewerInvitation::class))->toBeFalse()
+        ->and(panelAllows('create', ReviewAssignment::class))->toBeFalse();
 });

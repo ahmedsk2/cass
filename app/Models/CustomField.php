@@ -22,7 +22,19 @@ class CustomField extends Model
      *
      * @var list<string>
      */
-    protected $fillable = ['label', 'help_text', 'type', 'options', 'required', 'sort'];
+    protected $fillable = [
+        'label',
+        'help_text',
+        'type',
+        'options',
+        'required',
+        // Spec 5.4 step 4. A blind reviewer must not read the author's
+        // institution out of a question the organizer wrote; Task 6's
+        // ReviewSubmission::getCustomFieldLines() drops every field with this
+        // set when Conference::hidesAuthorsFrom() says the reader is blinded.
+        'hide_from_reviewers',
+        'sort',
+    ];
 
     /** @return array<string, string> */
     protected function casts(): array
@@ -31,6 +43,7 @@ class CustomField extends Model
             'type' => CustomFieldType::class,
             'options' => 'array',
             'required' => 'boolean',
+            'hide_from_reviewers' => 'boolean',
             'sort' => 'integer',
         ];
     }

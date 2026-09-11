@@ -52,6 +52,50 @@ return [
     // here rather than with the submission knobs in Task 7 because the limiter
     // that reads it is registered in this task, alongside the route.
     'status_page_rate_limit' => (int) env('CASS_STATUS_PAGE_RATE_LIMIT', 20),
+
+    // Spec 5.4 step 1 and spec section 9: a 14-day hashed-token invitation,
+    // and the invitation-accept rate limit of 10 per minute per address.
+    'invitations' => [
+        'expiry_days' => (int) env('CASS_INVITATION_EXPIRY_DAYS', 14),
+        'accept_rate_limit' => (int) env('CASS_INVITATION_RATE_LIMIT', 10),
+        // Spec section 9's "login 5/min/email+IP", applied to the password
+        // confirmation on /invite/{token} - the one place outside a Filament
+        // panel where a password is checked at all.
+        'login_rate_limit' => (int) env('CASS_INVITATION_LOGIN_RATE_LIMIT', 5),
+        // A pasted reviewer list is a bulk-mail primitive available to every
+        // organization member: cap one batch and meter the actor, or one member
+        // can spend the platform's sending reputation in a single click.
+        // `list_max` mirrors App\Support\Reviews\ReviewerList::MAX_ENTRIES for
+        // anything that wants to read the bound from configuration; the parser
+        // itself uses the constant, because a parser with no database must not
+        // need a container to answer.
+        'list_max' => (int) env('CASS_INVITATION_LIST_MAX', 100),
+        'send_rate_limit' => (int) env('CASS_INVITATION_SEND_LIMIT', 200),
+    ],
+
+    'review' => [
+        // Spec 5.5 skips a reviewer "whose email domain matches an author's
+        // email domain". Applied literally in this region that rule would skip
+        // almost everybody, because most authors and most reviewers use a free
+        // mailbox. A domain on this list is never treated as a conflict on its
+        // own; an exact email match still is.
+        'free_email_domains' => [
+            'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.co.uk', 'outlook.com',
+            'live.com', 'msn.com', 'yahoo.com', 'yahoo.co.uk', 'ymail.com', 'icloud.com',
+            'me.com', 'aol.com', 'gmx.com', 'proton.me', 'protonmail.com', 'zoho.com',
+            'qq.com', '163.com', 'mail.ru', 'yandex.com',
+        ],
+    ],
+
+    'reminders' => [
+        // Reviewer reminders go out in the first run of the hour at or after
+        // this local hour in the conference's own timezone (spec section 10:
+        // timezone per conference).
+        'send_hour' => (int) env('CASS_REMINDER_HOUR', 7),
+        // The organizer's manual "Send reminder now", per conference.
+        'manual_throttle_hours' => (int) env('CASS_REMINDER_MANUAL_THROTTLE_HOURS', 12),
+    ],
+
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',
