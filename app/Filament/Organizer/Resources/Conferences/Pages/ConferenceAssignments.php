@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Organizer\Resources\Conferences\Pages;
 
 use App\Actions\Reviews\AssignReviewers;
+use App\Actions\Reviews\AutoAssignReviewers;
 use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
 use App\Enums\SubmissionStatus;
@@ -15,7 +16,9 @@ use App\Models\ConferenceReviewer;
 use App\Models\ReviewAssignment;
 use App\Models\Submission;
 use App\Models\User;
+use App\Support\Reviews\AssignmentPlan;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
@@ -28,6 +31,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\HtmlString;
 
 /**
  * Spec 5.5, the manual half.
@@ -237,10 +241,77 @@ class ConferenceAssignments extends Page implements HasTable
         return $options;
     }
 
+    /**
+     * The preview table. Built as an HtmlString and escaped by hand because a
+     * Filament Placeholder renders its content as HTML: every value here is a
+     * title or a name somebody typed.
+     */
+    private function previewHtml(AssignmentPlan $plan): HtmlString
+    {
+        if ($plan->isEmpty()) {
+            return new HtmlString('<p>'.e(__('reviewer.assign.preview_empty')).'</p>');
+        }
+
+        $rows = '';
+
+        foreach ($plan->rows as $row) {
+            $rows .= '<li><strong>'.e($row['label']).'</strong>: '.e(implode(', ', $row['names'])).'</li>';
+        }
+
+        $html = '<p>'.e(__('reviewer.assign.preview_summary', [
+            'count' => $plan->assignments,
+            'submissions' => count($plan->rows),
+        ])).'</p><ul style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.25rem">'.$rows.'</ul>';
+
+        if ($plan->shortfalls !== []) {
+            $html .= '<p style="margin-top:0.75rem">'.e(implode(' ', $plan->shortfalls)).'</p>';
+        }
+
+        return new HtmlString($html);
+    }
+
     /** @return list<Action> */
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('autoAssign')
+                ->label(__('reviewer.assign.actions.auto'))
+                ->icon(Heroicon::OutlinedSparkles)
+                ->visible(fn (): bool => Gate::allows('create', ReviewAssignment::class))
+                ->modalHeading(__('reviewer.assign.actions.auto_heading'))
+                ->modalDescription(__('reviewer.assign.actions.auto_description'))
+                ->modalSubmitActionLabel(__('reviewer.assign.actions.auto_confirm'))
+                ->modalWidth('4xl')
+                // Spec 5.5: "Result is shown for confirmation before saving."
+                // A schema of read-only placeholders rather than a custom view,
+                // so the preview lives next to the action that produces it.
+                ->schema(fn (): array => [
+                    Placeholder::make('plan')
+                        ->hiddenLabel()
+                        ->content(fn (): HtmlString => $this->previewHtml(app(AutoAssignReviewers::class)->plan($this->getConference()))),
+                ])
+                ->action(function (AutoAssignReviewers $auto): void {
+                    Gate::authorize('create', ReviewAssignment::class);
+
+                    // Re-plans rather than applying the preview: between the
+                    // modal opening and this click a reviewer may have been
+                    // removed, and applying a stale plan would assign them.
+                    $plan = $auto->apply($this->getConference(), $this->actor());
+
+                    Notification::make()
+                        ->status($plan->assignments > 0 ? 'success' : 'warning')
+                        ->title(__('reviewer.assign.notices.auto_done', ['count' => $plan->assignments]))
+                        ->body($plan->shortfalls === [] ? null : e(implode(' ', array_slice($plan->shortfalls, 0, 8))))
+                        // duration(), not persistent($condition): persistent()
+                        // takes no arguments in Filament 5.8.1
+                        // (notifications/src/Concerns/HasDuration.php:30), so
+                        // the argument would be discarded and a clean run would
+                        // leave a notification to dismiss by hand. 'persistent'
+                        // is the duration sentinel.
+                        ->duration($plan->shortfalls === [] ? 6000 : 'persistent')
+                        ->send();
+                }),
+
             Action::make('backToConference')
                 ->label(__('reviewer.actions.back'))
                 ->icon(Heroicon::OutlinedCalendarDays)
