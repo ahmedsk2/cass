@@ -235,3 +235,30 @@ it('publishes the contact address once the organization opts in', function () {
         ->assertSee('mailto:abstracts@gps.example.org', escape: false)
         ->assertSee('Contact the organizers');
 });
+
+it('answers a guest with the page itself and never a redirect', function () {
+    // The page is public: no middleware on this route may ever turn a reader
+    // into a trip to a login form.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    $response = get(conferenceUrl($conference));
+
+    expect($response->isRedirect())->toBeFalse();
+    $response->assertOk()->assertSee($conference->name);
+});
+
+it('keeps the page public for a signed-in visitor whose session hash is stale', function () {
+    // AuthenticateSession logs the user out and throws AuthenticationException
+    // when the session's stored password hash no longer matches the user's, so
+    // on a public route it answers a redirect to the organizer login instead of
+    // the page - to a visitor who only wanted to read a call for abstracts.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+    $visitor = User::factory()->create();
+
+    $response = actingAs($visitor)
+        ->withSession(['password_hash_web' => 'a-hash-from-before-the-password-change'])
+        ->get(conferenceUrl($conference));
+
+    expect($response->isRedirect())->toBeFalse();
+    $response->assertOk()->assertSee($conference->name);
+});

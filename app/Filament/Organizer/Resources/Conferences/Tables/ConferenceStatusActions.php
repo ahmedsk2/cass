@@ -30,8 +30,17 @@ class ConferenceStatusActions
             ->icon(Heroicon::OutlinedMegaphone)
             ->color('success')
             ->requiresConfirmation()
-            ->modalHeading('Publish this conference?')
-            ->modalDescription('The public page goes live and a short link and QR code are generated. You can close submissions again at any time.')
+            // The same action serves the first go-live and every later reopen
+            // (the label above already says which), so the confirmation must
+            // ask the question the organizer is actually answering: a
+            // conference with a published_at has been public for weeks and its
+            // short link is printed on posters.
+            ->modalHeading(fn (Conference $record): string => $record->published_at === null
+                ? 'Publish this conference?'
+                : 'Reopen submissions?')
+            ->modalDescription(fn (Conference $record): string => $record->published_at === null
+                ? 'The public page goes live and a short link and QR code are generated. You can close submissions again at any time.'
+                : 'Authors can submit again from now on. The public page and the printed short link are unchanged.')
             ->visible(fn (Conference $record): bool => $record->status->canTransitionTo(ConferenceStatus::Open)
                 && Gate::allows('publish', $record))
             ->action(function (Conference $record, PublishConference $publish): void {

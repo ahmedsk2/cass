@@ -38,6 +38,28 @@ class TrackPolicy
         return $this->view($user, $track);
     }
 
+    /**
+     * Filament checks a bulk action with the record-less `*Any` abilities and
+     * treats a policy that does not define one as allowed, so all three are
+     * spelled out even where the answer is always "no". deleteAny mirrors
+     * delete(); tracks are not soft-deletable, so there is nothing to restore
+     * or force-delete.
+     */
+    public function deleteAny(User $user): bool
+    {
+        return $this->viewAny($user);
+    }
+
+    public function restoreAny(User $user): bool
+    {
+        return false;
+    }
+
+    public function forceDeleteAny(User $user): bool
+    {
+        return false;
+    }
+
     public function reorder(User $user): bool
     {
         return $this->viewAny($user);

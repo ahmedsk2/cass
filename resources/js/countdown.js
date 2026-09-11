@@ -29,12 +29,25 @@ function start(element) {
     badge.className = 'ml-2 font-medium text-[var(--org-accent)]';
     element.after(badge);
 
+    // Both declared before the first tick(): a deadline that is already past
+    // when the page loads takes the finished branch synchronously, and reading
+    // a `const timer` declared below it would throw ReferenceError out of the
+    // temporal dead zone - aborting the DOMContentLoaded handler and with it
+    // every other countdown on the page.
+    let timer = null;
+    let finished = false;
+
     const tick = () => {
         const text = remaining(deadline);
 
         if (text === null) {
+            finished = true;
             badge.remove();
-            window.clearInterval(timer);
+
+            if (timer !== null) {
+                window.clearInterval(timer);
+                timer = null;
+            }
 
             return;
         }
@@ -43,7 +56,10 @@ function start(element) {
     };
 
     tick();
-    const timer = window.setInterval(tick, 60000);
+
+    if (!finished) {
+        timer = window.setInterval(tick, 60000);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

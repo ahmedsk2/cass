@@ -37,4 +37,25 @@ class ReviewFormPolicy
     {
         return false;
     }
+
+    /**
+     * Filament checks a bulk action with the record-less `*Any` abilities and
+     * treats a policy that does not define one as allowed, so all three are
+     * spelled out: a review form is the record of what reviewers were asked and
+     * nobody deletes one, which makes restoring and force-deleting moot too.
+     */
+    public function deleteAny(User $user): bool
+    {
+        return false;
+    }
+
+    public function restoreAny(User $user): bool
+    {
+        return false;
+    }
+
+    public function forceDeleteAny(User $user): bool
+    {
+        return false;
+    }
 }

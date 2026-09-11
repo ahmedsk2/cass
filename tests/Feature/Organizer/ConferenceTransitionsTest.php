@@ -9,6 +9,7 @@ use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Filament\Organizer\Resources\Conferences\Pages\CreateConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
 use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
+use App\Filament\Organizer\Resources\Conferences\Tables\ConferenceStatusActions;
 use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\User;
@@ -218,4 +219,33 @@ it('does not open the view page for another organization conference', function (
     $this->get(ConferenceResource::getUrl(
         'view', ['record' => $theirs->getRouteKey()], tenant: $this->organization
     ))->assertNotFound();
+});
+
+it('asks a reopening question when publish is a reopen rather than a go-live', function () {
+    // The button relabels itself once published_at is set, so the confirmation
+    // it opens must not still promise that "the public page goes live" - the
+    // page has been live for weeks and the organizer is only reopening
+    // submissions on it.
+    $conference = readyConference($this->organization);
+
+    $first = ConferenceStatusActions::publish()->record($conference);
+
+    expect($first->getLabel())->toBe('Publish')
+        ->and($first->getModalHeading())->toBe('Publish this conference?')
+        ->and((string) $first->getModalDescription())->toContain('The public page goes live');
+
+    livewire(ViewConference::class, ['record' => $conference->getRouteKey()])->callAction('publish');
+    livewire(ViewConference::class, ['record' => $conference->fresh()?->getRouteKey()])->callAction('close');
+
+    $closed = $conference->fresh() ?? $conference;
+    $again = ConferenceStatusActions::publish()->record($closed);
+
+    expect($closed->published_at)->not->toBeNull()
+        ->and($again->getLabel())->toBe('Reopen submissions')
+        ->and($again->getModalHeading())->toBe('Reopen submissions?')
+        ->and((string) $again->getModalDescription())->not->toContain('The public page goes live')
+        ->and((string) $again->getModalDescription())->toContain('Authors can submit again');
+
+    livewire(ViewConference::class, ['record' => $closed->getRouteKey()])
+        ->assertActionHasLabel('publish', 'Reopen submissions');
 });

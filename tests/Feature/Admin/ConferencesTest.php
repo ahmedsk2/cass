@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\OrganizationRole;
 use App\Filament\Admin\Resources\Conferences\ConferenceResource as AdminConferenceResource;
 use App\Filament\Admin\Resources\Conferences\Pages\ListConferences as AdminListConferences;
+use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\User;
@@ -65,4 +66,17 @@ it('refuses the admin conference list to an organization owner', function () {
 
     actingAs($owner)->get(AdminConferenceResource::getUrl('index', panel: 'admin'))
         ->assertForbidden();
+});
+
+it('links a conference to an organization page that opens', function () {
+    // The two resources have to agree on how an organization is addressed: the
+    // link is printed here and resolved by OrganizationResource.
+    $conference = Conference::factory()->create();
+    $organizationUrl = OrganizationResource::getUrl('view', ['record' => $conference->organization], panel: 'admin');
+
+    get(AdminConferenceResource::getUrl('view', ['record' => $conference], panel: 'admin'))
+        ->assertOk()
+        ->assertSee($organizationUrl, escape: false);
+
+    get($organizationUrl)->assertOk()->assertSee($conference->organization->name);
 });

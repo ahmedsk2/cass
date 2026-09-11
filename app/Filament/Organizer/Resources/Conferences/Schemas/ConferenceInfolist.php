@@ -11,9 +11,30 @@ use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use WeakMap;
 
 class ConferenceInfolist
 {
+    /**
+     * blockers() runs several queries (the organization's status, the review
+     * form's questions, the submission window), and the checklist section asks
+     * for it twice per render: once to decide whether to show itself and once
+     * for the list itself. Keyed by the record object rather than its id so a
+     * stale answer cannot outlive the instance it was computed for, and weakly
+     * so nothing is held in memory after the render.
+     *
+     * @var WeakMap<Conference, list<string>>|null
+     */
+    private static ?WeakMap $blockers = null;
+
+    /** @return list<string> */
+    private static function blockers(Conference $record): array
+    {
+        self::$blockers ??= new WeakMap;
+
+        return self::$blockers[$record] ??= app(PublishConference::class)->blockers($record);
+    }
+
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
@@ -25,14 +46,14 @@ class ConferenceInfolist
                 // on the table, or every live and archived conference shows a
                 // red go-live checklist it can do nothing about.
                 ->visible(fn (Conference $record): bool => $record->status->canTransitionTo(ConferenceStatus::Open)
-                    && app(PublishConference::class)->blockers($record) !== [])
+                    && self::blockers($record) !== [])
                 ->components([
                     TextEntry::make('publishing_blockers')
                         ->hiddenLabel()
                         ->listWithLineBreaks()
                         ->bulleted()
                         ->color('danger')
-                        ->state(fn (Conference $record): array => app(PublishConference::class)->blockers($record)),
+                        ->state(fn (Conference $record): array => self::blockers($record)),
                 ]),
 
             Section::make('Conference')->columns(2)->components([

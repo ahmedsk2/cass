@@ -20,6 +20,25 @@ use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
+/**
+ * The columns CreateConference does not default itself, so an action-level test
+ * writes a row the database accepts.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function conferenceAttributes(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Test Conference',
+        'timezone' => 'Asia/Riyadh',
+        'word_limit' => 400,
+        'max_files' => 2,
+        'allowed_file_types' => ['pdf'],
+        'presentation_types' => ['oral', 'poster'],
+    ], $overrides);
+}
+
 function publishableConference(): Conference
 {
     $conference = Conference::factory()
@@ -210,4 +229,57 @@ it('archives any live conference and refuses to archive twice', function () {
 
     expect(fn () => app(ArchiveConference::class)->handle($archived, $actor))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('refuses to close a conference that is already under review', function () {
+    // The status graph allows Reviewing -> Closed (a plan 4 rollback), so a
+    // guard that only asks canTransitionTo(Closed) lets "close submissions"
+    // silently undo a move to review. Closing is the Open -> Closed step only.
+    $conference = publishableConference();
+    $actor = User::factory()->create();
+    app(PublishConference::class)->handle($conference, $actor);
+
+    $reviewing = $conference->fresh() ?? $conference;
+    $reviewing->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+    expect(fn () => app(CloseSubmissions::class)->handle($reviewing, $actor))
+        ->toThrow(InvalidArgumentException::class);
+
+    expect($conference->fresh()?->status)->toBe(ConferenceStatus::Reviewing)
+        ->and(Activity::query()->where('description', 'conference.closed')->count())->toBe(0);
+});
+
+it('normalises a chosen web address and suffixes it when it is taken', function () {
+    // The organizer picks the public address by hand (spec 5.2), so what
+    // arrives can be "GPCC 2026" or a slug another conference already holds -
+    // both of which would otherwise be stored verbatim.
+    $organization = Organization::factory()->approved()->create();
+
+    $first = app(CreateConference::class)->handle($organization, conferenceAttributes([
+        'name' => 'Gulf Pediatric Critical Care 2026',
+        'slug' => 'GPCC 2026',
+    ]));
+
+    expect($first->slug)->toBe('gpcc-2026');
+
+    $second = app(CreateConference::class)->handle($organization, conferenceAttributes([
+        'name' => 'Gulf Pediatric Critical Care 2027',
+        'slug' => 'gpcc-2026',
+    ]));
+
+    expect($second->slug)->toBe('gpcc-2026-2');
+});
+
+it('does not hand a chosen web address that a soft-deleted conference holds', function () {
+    // uniqueSlug() counts trashed rows so a printed link can never point at a
+    // different conference than the one it was printed for.
+    $organization = Organization::factory()->approved()->create();
+    Conference::factory()->for($organization)->create(['slug' => 'winter-school'])->delete();
+
+    $conference = app(CreateConference::class)->handle($organization, conferenceAttributes([
+        'name' => 'Winter School 2027',
+        'slug' => 'winter-school',
+    ]));
+
+    expect($conference->slug)->toBe('winter-school-2');
 });

@@ -23,12 +23,16 @@ Route::get('/register', RegisterOrganization::class)->name('register');
 // per organization safe in a URL. Plan 3 registers
 // /c/{organization}/{conference:slug}/submit with the same binding field.
 //
-// AuthenticateSession is on this public route because of the member preview of
-// an unpublished conference: a session stolen before a password change must
-// not keep reading drafts. It is a no-op for guests.
+// No AuthenticateSession here. The page is public, and that middleware throws
+// AuthenticationException for *any* signed-in visitor whose session password
+// hash is stale (a password changed on another device, a session older than the
+// last reset) - which on a public route answers a redirect to the organizer
+// login instead of the call for abstracts. The member preview of an unpublished
+// conference reads auth()->user() and needs no session-password check; the
+// panel and the asset downloads below still run AuthenticateSession, so a
+// stolen session loses access to everything private.
 Route::get('/c/{organization}/{conference:slug}', [ConferenceController::class, 'show'])
     ->scopeBindings()
-    ->middleware(AuthenticateSession::class)
     ->name('conference.show');
 
 // Authenticated but outside the Filament panel, so the URLs are stable and

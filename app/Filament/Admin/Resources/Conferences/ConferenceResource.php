@@ -9,6 +9,7 @@ use App\Filament\Admin\Resources\Conferences\Pages\ViewConference;
 use App\Filament\Admin\Resources\Conferences\Tables\ConferencesTable;
 use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Models\Conference;
+use App\Models\Organization;
 use App\Models\User;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
@@ -53,13 +54,13 @@ class ConferenceResource extends Resource
     {
         return $schema->components([
             Section::make('Conference')->columns(2)->components([
-                // The admin OrganizationResource binds by id while
-                // Organization::getRouteKeyName() is the slug, so this passes
-                // the id itself rather than the model (fact 16).
+                // The record itself, not its id: the admin OrganizationResource
+                // binds by the model's own route key (the slug), so a bare id
+                // here would be looked up in the slug column (fact 16).
                 TextEntry::make('organization.name')->label('Organization')
-                    ->url(fn (Conference $record): string => OrganizationResource::getUrl(
-                        'view', ['record' => $record->organization_id], panel: 'admin'
-                    )),
+                    ->url(fn (Conference $record): ?string => $record->organization instanceof Organization
+                        ? OrganizationResource::getUrl('view', ['record' => $record->organization], panel: 'admin')
+                        : null),
                 TextEntry::make('name'),
                 TextEntry::make('status')->badge(),
                 TextEntry::make('ulid')->label('Public id'),

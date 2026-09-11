@@ -61,7 +61,10 @@ class ConferenceForm
                                     return; // Empty means "derive it from the name".
                                 }
 
-                                if (preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $value) !== 1) {
+                                // \z, not $: `$` also matches just before a
+                                // final newline, so "gpcc26\n" would pass and
+                                // end up in a URL and a printed QR code.
+                                if (preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*\z/', $value) !== 1) {
                                     $fail('Use lower-case letters, numbers and single hyphens, for example gpcc26.');
 
                                     return;

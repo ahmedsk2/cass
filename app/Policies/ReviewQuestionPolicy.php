@@ -45,6 +45,29 @@ class ReviewQuestionPolicy
         return $this->update($user, $reviewQuestion);
     }
 
+    /**
+     * Filament checks a bulk action with the record-less `*Any` abilities and
+     * treats a policy that does not define one as allowed. delete() here turns
+     * on the form's lock, which these cannot see - the same reason `reorder`
+     * is disabled in the relation manager rather than decided here - so a bulk
+     * delete is refused outright instead of guessing. Review questions are not
+     * soft-deletable either.
+     */
+    public function deleteAny(User $user): bool
+    {
+        return false;
+    }
+
+    public function restoreAny(User $user): bool
+    {
+        return false;
+    }
+
+    public function forceDeleteAny(User $user): bool
+    {
+        return false;
+    }
+
     public function reorder(User $user): bool
     {
         return $this->viewAny($user);

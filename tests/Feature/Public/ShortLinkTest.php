@@ -8,14 +8,19 @@ use App\Models\ShortLink;
 use App\Models\ShortLinkVisit;
 
 use function Pest\Laravel\get;
+use function Pest\Laravel\withServerVariables;
 
+// Every redirect assertion here also pins the status to 302. assertRedirect()
+// accepts any 3xx, and a 301 is cached by browsers and by Cloudflare: the
+// second scan of a poster would never reach the app again and scan counting
+// would quietly stop.
 it('redirects to the conference page and counts the scan', function () {
     $organization = Organization::factory()->approved()->create();
     $conference = Conference::factory()->for($organization)->published()->create();
     $link = ShortLink::forTarget($conference);
 
     get('/q/'.$link->code)
-        ->assertRedirect($conference->publicUrl());
+        ->assertRedirect($conference->publicUrl())->assertStatus(302);
 
     $link->refresh();
     expect($link->clicks)->toBe(1)
@@ -39,7 +44,7 @@ it('accepts a lower case code from a hand-typed url', function () {
     $conference = Conference::factory()->for(Organization::factory()->approved())->published()->create();
     $link = ShortLink::forTarget($conference);
 
-    get('/q/'.strtolower($link->code))->assertRedirect($conference->publicUrl());
+    get('/q/'.strtolower($link->code))->assertRedirect($conference->publicUrl())->assertStatus(302);
 });
 
 it('returns 404 for an unknown code without creating a visit', function () {
@@ -80,23 +85,47 @@ it('caps counting per client ip but never refuses the redirect', function () {
     // Spec 5.7: every scan redirects and every visit is counted. A poster in a
     // lecture hall is scanned by a hundred people behind one NAT address, so
     // the cap may only stop *counting*, never answer 429 to a real visitor.
+    //
+    // REMOTE_ADDR is inside TRUSTED_PROXIES here because App\Support\ClientIp
+    // only reads CF-Connecting-IP from a request that came through the proxy
+    // tier - which is what production looks like behind Cloudflare.
     config(['cass.short_link_rate_limit' => 2]);
 
     $conference = Conference::factory()->for(Organization::factory()->approved())->published()->create();
     $link = ShortLink::forTarget($conference);
 
     foreach (range(1, 3) as $ignored) {
-        get('/q/'.$link->code, ['CF-Connecting-IP' => '203.0.113.10'])
-            ->assertRedirect($conference->publicUrl());
+        withServerVariables(['REMOTE_ADDR' => '10.0.0.5'])
+            ->get('/q/'.$link->code, ['CF-Connecting-IP' => '203.0.113.10'])
+            ->assertRedirect($conference->publicUrl())->assertStatus(302);
     }
 
     // A different client has its own budget, so one scanner cannot spend the
     // whole venue's.
-    get('/q/'.$link->code, ['CF-Connecting-IP' => '198.51.100.20'])
-        ->assertRedirect($conference->publicUrl());
+    withServerVariables(['REMOTE_ADDR' => '10.0.0.5'])
+        ->get('/q/'.$link->code, ['CF-Connecting-IP' => '198.51.100.20'])
+        ->assertRedirect($conference->publicUrl())->assertStatus(302);
 
     expect($link->fresh()?->clicks)->toBe(3)
         ->and(ShortLinkVisit::count())->toBe(3);
+});
+
+it('gives a direct caller no extra budget however it forges CF-Connecting-IP', function () {
+    // The header is only trusted from the proxy tier, so a peer talking to the
+    // origin directly spends one budget - its own address - whatever it claims.
+    config(['cass.short_link_rate_limit' => 2, 'cass.short_link_rate_limit_per_link' => 60]);
+
+    $conference = Conference::factory()->for(Organization::factory()->approved())->published()->create();
+    $link = ShortLink::forTarget($conference);
+
+    foreach (range(1, 5) as $index) {
+        withServerVariables(['REMOTE_ADDR' => '203.0.113.200'])
+            ->get('/q/'.$link->code, ['CF-Connecting-IP' => '198.51.100.'.$index])
+            ->assertRedirect($conference->publicUrl())->assertStatus(302);
+    }
+
+    expect($link->fresh()?->clicks)->toBe(2)
+        ->and(ShortLinkVisit::count())->toBe(2);
 });
 
 it('caps counting per link so spoofed addresses cannot grow the visit table', function () {
@@ -109,8 +138,9 @@ it('caps counting per link so spoofed addresses cannot grow the visit table', fu
     $link = ShortLink::forTarget($conference);
 
     foreach (range(1, 5) as $index) {
-        get('/q/'.$link->code, ['CF-Connecting-IP' => '203.0.113.'.$index])
-            ->assertRedirect($conference->publicUrl());
+        withServerVariables(['REMOTE_ADDR' => '10.0.0.5'])
+            ->get('/q/'.$link->code, ['CF-Connecting-IP' => '203.0.113.'.$index])
+            ->assertRedirect($conference->publicUrl())->assertStatus(302);
     }
 
     expect($link->fresh()?->clicks)->toBe(3)

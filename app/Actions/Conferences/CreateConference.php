@@ -29,13 +29,18 @@ class CreateConference
     public function handle(Organization $organization, array $data): Conference
     {
         return DB::transaction(function () use ($organization, $data): Conference {
-            $slug = is_string($data['slug'] ?? null) && $data['slug'] !== '' ? $data['slug'] : null;
+            $slug = is_string($data['slug'] ?? null) && trim($data['slug']) !== '' ? $data['slug'] : null;
             unset($data['slug']);
 
             $conference = new Conference;
             $conference->fill($data);
             $conference->organization()->associate($organization);
-            $conference->slug = $slug ?? Conference::uniqueSlug($organization->id, (string) ($data['name'] ?? ''));
+            // A chosen slug goes through the same uniqueSlug() as a derived
+            // one: the caller is not always the panel form, so "GPCC 2026"
+            // has to become gpcc-2026, and a slug that is already taken in
+            // this organization (a trashed conference included) has to be
+            // suffixed rather than hit the unique index.
+            $conference->slug = Conference::uniqueSlug($organization->id, $slug ?? (string) ($data['name'] ?? ''));
             // Eloquent does not read column defaults back after an INSERT, so
             // an unset status would be null on the instance this returns -
             // and $conference->status->canTransitionTo() in the publish gate

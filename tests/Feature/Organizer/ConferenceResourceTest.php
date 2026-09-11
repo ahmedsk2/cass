@@ -95,6 +95,18 @@ it('takes an optional web address and refuses one already used', function () {
         ->assertHasFormErrors(['slug']);
 });
 
+it('refuses a web address with a trailing newline', function () {
+    // `$` in a PCRE pattern also matches just before a final newline, so a
+    // slug rule anchored with `$` accepts "gpcc26\n" - which then goes into a
+    // URL and a QR code.
+    livewire(CreateConference::class)
+        ->fillForm(['name' => 'Newline Meeting', 'slug' => "gpcc26\n"])
+        ->call('create')
+        ->assertHasFormErrors(['slug']);
+
+    expect(Conference::query()->where('name', 'Newline Meeting')->exists())->toBeFalse();
+});
+
 it('refuses a web address a soft-deleted conference still holds', function () {
     Conference::factory()->for($this->organization)->create(['name' => 'Winter School'])->delete();
 
