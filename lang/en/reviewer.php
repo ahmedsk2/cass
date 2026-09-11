@@ -14,12 +14,46 @@ return [
         'accept' => 'Accept and start reviewing',
     ],
 
-    // The organizer-facing half of the blind-review rule: this key labels the
-    // toggle CustomFieldsRelationManager gains in Task 1 Step 10, and Task 6
-    // reads the column it sets.
+    'queue' => [
+        'title' => 'Abstracts to review',
+        'model' => 'abstract',
+        'model_plural' => 'abstracts',
+        'empty_heading' => 'Nothing waiting',
+        'empty_body' => 'When the organizers open a conference for review, the abstracts you can review appear here.',
+        'columns' => [
+            'reference' => 'Reference',
+            'title' => 'Title',
+            'conference' => 'Conference',
+            'track' => 'Track',
+            'preference' => 'Preference',
+            'files' => 'Files',
+        ],
+        'actions' => [
+            'review' => 'Open',
+        ],
+    ],
+
+    // One group, two audiences. `hide_from_reviewers*` is the organizer-facing
+    // half of the blind-review rule - it labels the toggle
+    // CustomFieldsRelationManager gained in Task 1 Step 10 - and everything
+    // below it is the reviewer's own review page, which reads the column that
+    // toggle sets. A second `review` key would silently replace this one, so
+    // they share it.
     'review' => [
         'hide_from_reviewers' => 'Hide this answer from reviewers',
         'hide_from_reviewers_help' => 'Turn this on for anything that identifies an author - institution, department, funding source. In a blind conference the answer is not shown on the review page.',
+        'abstract' => 'Abstract',
+        'authors' => 'Authors',
+        'blind_notice' => 'This conference is reviewed blind, so the authors and their affiliations are hidden from you. File names are hidden for the same reason.',
+        'extra' => 'Additional answers',
+        'files' => 'Files',
+        'track' => 'Track',
+        'preference' => 'Presentation preference',
+        'phone' => 'Contact phone',
+        'words' => ':count words',
+        'yes' => 'Yes',
+        'no' => 'No',
+        'back' => 'Back to the queue',
     ],
 
     'switch' => [
@@ -41,6 +75,7 @@ return [
         'deadline' => 'Reviews are due by :date (:timezone).',
         'no_deadline' => 'The organizers have not set a review deadline yet.',
         'not_started' => 'Reviewing has not started for this conference yet. Check back after the submission deadline; we email reminders as the review deadline approaches.',
+        'open_queue' => 'Open the abstracts',
     ],
 
 ];

@@ -26,6 +26,14 @@
                         {{ __('reviewer.dashboard.not_started') }}
                     </p>
                 @endunless
+
+                @if ($conference->isOpenToReviewers())
+                    <p style="margin-top:0.75rem">
+                        <x-filament::link :href="\App\Filament\Reviewer\Resources\Submissions\SubmissionResource::urlForConference($conference)">
+                            {{ __('reviewer.dashboard.open_queue') }}
+                        </x-filament::link>
+                    </p>
+                @endif
             </x-filament::section>
         @endforeach
     @endif
