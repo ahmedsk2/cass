@@ -35,17 +35,27 @@ App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, bra
    ```
 
    Nothing should be Pending. Plan 2 is such a release: it adds seven tables (`conferences`, `tracks`, `custom_fields`, `review_forms`, `review_questions`, `short_links`, `short_link_visits`), and until they exist every organizer dashboard (the Conferences widget queries `conferences`) and every `/org/{tenant}/conferences`, `/c/...` and `/q/...` page returns 500.
+
+   Plan 3 is such a release: it adds five tables (`submissions`, `submission_authors`, `submission_files`, `email_templates`, `email_logs`) and two columns on `conferences` (`reference_prefix`, `submission_counter`). Until they exist, `/c/{org}/{conference}/submit`, `/s/{token}`, `/files/{ulid}`, the organizer submission list and the admin email log all return 500, **and every outgoing email fails**, because the mail listener writes an `email_logs` row before the message is sent.
 4. Check https://cass.towardpcc.com/up returns 200, then open the landing page and `/org/login`. **`/org/login` must be styled**: this release is the first image that runs `filament:assets` and publishes Livewire's script, so `/css/filament/filament/app.css` and `/vendor/livewire/livewire.min.js` should both return 200. Cloudflare may still be serving the old 404s — purge `/css/filament/*`, `/js/filament/*`, `/fonts/filament/*` and `/vendor/livewire/*` if so.
 5. Time the public conference page after the deploy. Spec section 10 gives it a 300 ms server budget, which is the reason it is plain Blade instead of Livewire.
 
    ```bash
    C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
-   for i in 1 2 3 4 5; do
-     sudo docker exec "$C" php -r '$c = stream_context_create(["http" => ["header" => "Host: cass.towardpcc.com\r\n"]]); $t = microtime(true); file_get_contents("http://127.0.0.1:8080/c/<org>/<conference>", false, $c); printf("%.3f\n", microtime(true) - $t);'
+   for U in "/c/<org>/<conference>" "/c/<org>/<conference>/submit"; do
+     echo "$U"
+     for i in 1 2 3 4 5; do
+       sudo docker exec "$C" php -r '$c = stream_context_create(["http" => ["header" => "Host: cass.towardpcc.com\r\n"]]); $t = microtime(true); file_get_contents("http://127.0.0.1:8080".$argv[1], false, $c); printf("%.3f\n", microtime(true) - $t);' "$U"
+     done
    done
    ```
 
-   The median must stay under 0.300 s. The first run after a deploy warms OPcache and may be slower. The `Host` header is required because `TrustHosts` only accepts the `APP_URL` host, and the probe runs *inside* the container because the compose file publishes no ports on the host.
+   The same 0.300 s median for both. Spec section 10 puts the submission form on
+   the same budget as the conference page, and it is the one page on that budget
+   that is Livewire rather than plain Blade, so it is the one to re-measure after
+   every change to the form.
+
+   The first run after a deploy warms OPcache and may be slower. The `Host` header is required because `TrustHosts` only accepts the `APP_URL` host, and the probe runs *inside* the container because the compose file publishes no ports on the host.
 
 ## Poster PDF fonts
 
@@ -57,6 +67,151 @@ If a poster download returns a 500, look for `Failed to open stream: Permission 
 C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
 sudo docker exec -it "$C" sh -c 'mkdir -p storage/fonts && chown -R app:app storage/fonts'
 ```
+
+## Cloudflare Turnstile
+
+The public submission form carries a Turnstile widget only when **both**
+`TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are set in the Coolify
+environment. With neither set, the form still has its honeypot, its four-second
+minimum fill time and its 5/min/IP throttle, and no request is made to
+Cloudflare.
+
+To turn it on: Cloudflare dashboard → Turnstile → Add widget, hostname
+`cass.towardpcc.com`, mode Managed. Copy the site key and the secret key into
+Coolify, redeploy, and open the form as a logged-out visitor — the widget should
+render above the "Submit abstract" button.
+
+Verification **fails open** when Cloudflare itself is unreachable: a connection
+error is logged at `warning` with the message "Turnstile verification could not
+reach Cloudflare" and the submission is allowed. An explicit `success: false`
+from Cloudflare, or a 5xx from it, is still a refusal. That choice is
+deliberate — an outage at Cloudflare in the last hour before a deadline would
+otherwise refuse every abstract — so if the log fills with that warning, treat
+it as an incident rather than as noise.
+
+## Author uploads and private storage
+
+Submission files live on the `local` disk, whose root is
+`storage/app/private`. `docker-compose.production.yml` mounts the named volume
+`cass-storage` at `/var/www/html/storage/app`, so uploads are already inside it
+and survive a redeploy. Nothing else needs mounting, and **nothing serves that
+directory**: files are reachable only through `/files/{ulid}`, which requires a
+signature that expires after `CASS_FILE_URL_MINUTES` (30).
+
+Paths are content-addressed: `{first two characters of the sha256}/{ulid}.{ext}`.
+Two submissions holding identical bytes still own separate objects, so deleting
+one never breaks the other.
+
+To see how much the volume holds:
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec "$C" du -sh storage/app/private
+sudo docker exec "$C" sh -c 'find storage/app/private -type f | wc -l'
+```
+
+Back it up with the database, not separately: a file with no row is unreachable
+and a row with no file is a broken link, so the two have to be restored from the
+same moment.
+
+The request-body ceilings are `client_max_body_size 110m` (nginx) and
+`post_max_size=110M` (PHP), sized for the maximum ten files at 10 MB a
+conference may allow in **one** Livewire upload POST — Livewire sends every file
+of a `multiple` input in a single request. They live in the image, so raising a
+conference's `max_files` above 10 would need a rebuild, not just a setting.
+
+## Author status links
+
+The 64 characters after `/s/` are a bearer credential: anyone holding them can
+edit or withdraw that abstract until the deadline. nginx logs that path
+redacted, **and the `Referer` header with it**: `App\Http\Middleware\SecurityHeaders`
+sets `Referrer-Policy: strict-origin-when-cross-origin`, so every same-origin
+request the status page makes — each `/files/{ulid}` click, each
+`/livewire/update` POST — sends the whole status-page URL in `Referer`. Both go
+through a redacting `map` in the `cass` log_format in `docker/nginx.conf`; an
+ordinary referer is still logged verbatim. **Cloudflare still sees the full
+URI** — do not enable Logpush for this zone without a transform rule that
+strips it, and never paste a `/s/...` URL into a ticket. To take a leaked link
+out of circulation, open the submission in the organizer panel and use **Resend
+status link**, which rotates the token and kills the old one.
+
+**One residual the redaction cannot cover: the error log.** `error_log
+/dev/stderr warn` has no configurable format — nginx writes its own, and it
+includes `request: "GET /s/<token> HTTP/1.1"` verbatim. Any status-page request
+that ends in 413, 499, 502 or 504 therefore puts the whole token into the
+Coolify log stream, redaction or no redaction. There is no nginx directive that
+changes this; the options are to accept it (these statuses are rare and the
+stream is not public) or to raise `error_log` to `crit`, which would also hide
+the upstream failures triage needs. It is accepted, and written down here so the
+next person reading a 502 in the log knows what is in front of them: a token
+seen in an error line is a token to rotate with **Resend status link**.
+
+`tests/Feature/AccessLogRedactionTest.php` reads `docker/nginx.conf` and fails
+if that redaction is ever removed, but it does not run nginx. Syntax-check the
+file after every edit to it:
+
+```bash
+cd /c/Users/ahmed/Documents/CASS && MSYS_NO_PATHCONV=1 docker run --rm \
+  -v "$(pwd)/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  nginx:alpine nginx -t 2>&1 | tail -3
+```
+
+Mount it at **`conf.d`**, never at `http.d`. The official `nginx:alpine` image
+includes only `/etc/nginx/conf.d/*.conf` and has no `http.d` directory at all,
+so a file mounted there is never read and `nginx -t` cheerfully reports "syntax
+is ok" for the stock config whatever this file contains. Production is the
+other way round — `apk add nginx` on Alpine includes `/etc/nginx/http.d/*.conf`,
+which is where `Dockerfile:39` copies it — but both are the same `http {}`
+context, so the `conf.d` mount parses the file exactly as production does.
+`MSYS_NO_PATHCONV=1` stops Git Bash rewriting the container-side path into a
+Windows one.
+
+## Email triage
+
+Every message the application sends writes a row to `email_logs` — templated
+conference mail, the member notice, the organization approval mail, password
+resets and verification mail alike. The admin panel lists them at
+`/admin/email-logs`, filterable by status and organization and searchable by
+recipient.
+
+The three statuses mean exactly this:
+
+| Status | Meaning |
+|---|---|
+| `sent` | The transport accepted the message. Not the same as delivered — check the mailbox's own logs for a bounce. |
+| `failed` | The queued job threw, and `error` holds the exception message. Only templated mail (`App\Mail\TemplatedMail`) can reach this state: it has a `failed()` hook. |
+| `queued` | The row was written and the job has not reported back. A few seconds is normal. Hours is not. |
+
+A row **stuck at `queued`** is either a stopped queue worker or a *notification*
+that failed: `Illuminate\Notifications\Notification` has no per-message failure
+hook, so a transport error on one leaves its row where it was. Check both:
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec "$C" supervisorctl status
+sudo docker exec "$C" su-exec app php artisan queue:failed
+```
+
+Every delivered message carries an `X-CASS-Log` header holding the `ulid` of its
+`email_logs` row: `App\Mail\TemplatedMail` sets its own, and
+`App\Listeners\RecordOutgoingEmail::sending()` stamps one on everything else.
+The rest of the `X-CASS-*` set is **not** universal:
+
+| Message | Headers beyond `X-CASS-Log` |
+|---|---|
+| `App\Mail\TemplatedMail` — every conference template | `X-CASS-Template`, `X-CASS-Organization` |
+| `App\Notifications\NewSubmissionNotice` — the member notice | `X-CASS-Organization`, `X-CASS-Conference`, `X-CASS-Submission` |
+| Everything else — `OrganizationApproved`, Filament password resets, verification mail | none |
+
+For templated mail the conference and the submission are columns on the
+`email_logs` row rather than headers on the message, because `SendTemplatedEmail`
+writes that row itself before queueing. When the owner's mailbox shows a bounce,
+`X-CASS-Log` is how the bounce is matched to a row — search the log for the ulid
+rather than guessing from the subject line.
+
+To re-send an author's link after a bounce is fixed, do **not** replay the queue
+job: open the submission in the organizer panel and use **Resend status link**,
+which mints a fresh token. The token in the bounced message is already dead.
 
 ## Brand assets
 

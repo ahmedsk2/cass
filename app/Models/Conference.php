@@ -6,7 +6,9 @@ namespace App\Models;
 
 use App\Enums\ConferenceStatus;
 use App\Enums\ReviewMode;
+use App\Enums\SubmissionStatus;
 use App\Enums\SubmissionWindow;
+use App\Support\Submissions\ReferencePrefix;
 use Carbon\CarbonInterface;
 use Database\Factories\ConferenceFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -57,6 +59,7 @@ class Conference extends Model
         'submission_opens_at', 'submission_deadline', 'review_deadline',
         'review_mode', 'blind_review', 'reviewers_per_submission',
         'word_limit', 'max_files', 'allowed_file_types', 'presentation_types', 'terms',
+        'reference_prefix',
     ];
 
     /** @return array<string, string> */
@@ -77,6 +80,7 @@ class Conference extends Model
             'max_files' => 'integer',
             'allowed_file_types' => 'array',
             'presentation_types' => 'array',
+            'submission_counter' => 'integer',
         ];
     }
 
@@ -85,6 +89,15 @@ class Conference extends Model
         static::creating(function (Conference $conference): void {
             $conference->ulid ??= (string) Str::ulid();
             $conference->slug ??= static::uniqueSlug((int) $conference->organization_id, (string) $conference->name);
+            // Derived once, on create, so an organizer who renames a
+            // conference after the first abstract arrives does not silently
+            // change the prefix printed on every reference already issued.
+            // The form lets them change it by hand while the conference is
+            // still a draft.
+            $conference->reference_prefix ??= ReferencePrefix::derive(
+                (string) $conference->name,
+                $conference->starts_at,
+            );
         });
     }
 
@@ -167,6 +180,75 @@ class Conference extends Model
         return $this->morphOne(ShortLink::class, 'target');
     }
 
+    /** @return HasMany<Submission, $this> */
+    public function submissions(): HasMany
+    {
+        return $this->hasMany(Submission::class);
+    }
+
+    /** @return HasMany<EmailTemplate, $this> */
+    public function emailTemplates(): HasMany
+    {
+        return $this->hasMany(EmailTemplate::class);
+    }
+
+    /**
+     * Rows created before the reference columns existed have none, and the
+     * organizer may have cleared the field; derive rather than return null, so
+     * AllocateReference never has to handle a prefix-less conference.
+     */
+    public function referencePrefix(): string
+    {
+        return $this->reference_prefix !== null && $this->reference_prefix !== ''
+            ? $this->reference_prefix
+            : ReferencePrefix::derive((string) $this->name, $this->starts_at);
+    }
+
+    /**
+     * The extensions an author may attach, never empty - the same
+     * derive-rather-than-return-null rule referencePrefix() follows.
+     *
+     * `?? ['pdf']` at the call sites caught a null column and not an empty
+     * array, and the two readers disagreed about the empty one:
+     * SubmissionForm::uploadRules() built the rule string `extensions:` with no
+     * parameters, which Laravel answers with an InvalidArgumentException - a
+     * 500 on the public form the moment an author picks a file - while
+     * StoreSubmissionFile refused every extension with a sentence naming none.
+     * An empty list is the same "nothing configured" state as null, so both
+     * read it here and both get the same answer.
+     *
+     * @return list<string>
+     */
+    public function allowedFileTypes(): array
+    {
+        /** @var list<string> $types */
+        $types = array_values(array_map('strtolower', (array) ($this->allowed_file_types ?? [])));
+
+        return $types === [] ? ['pdf'] : $types;
+    }
+
+    /**
+     * One grouped query for the four numbers the conference view prints.
+     *
+     * @return array{total: int, draft: int, submitted: int, withdrawn: int}
+     */
+    public function submissionCounts(): array
+    {
+        /** @var array<string, int> $byStatus */
+        $byStatus = $this->submissions()
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status')
+            ->all();
+
+        return [
+            'total' => array_sum($byStatus),
+            'draft' => (int) ($byStatus[SubmissionStatus::Draft->value] ?? 0),
+            'submitted' => (int) ($byStatus[SubmissionStatus::Submitted->value] ?? 0),
+            'withdrawn' => (int) ($byStatus[SubmissionStatus::Withdrawn->value] ?? 0),
+        ];
+    }
+
     public function isPubliclyVisible(): bool
     {
         return $this->status->isPublic();
@@ -216,7 +298,7 @@ class Conference extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['name', 'slug', 'status', 'submission_opens_at', 'submission_deadline', 'review_deadline', 'published_at'])
+            ->logOnly(['name', 'slug', 'status', 'submission_opens_at', 'submission_deadline', 'review_deadline', 'published_at', 'reference_prefix'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
     }

@@ -116,6 +116,33 @@ it('refuses a web address a soft-deleted conference still holds', function () {
         ->assertHasFormErrors(['slug']);
 });
 
+it('derives a reference prefix on create and freezes it once published', function () {
+    livewire(CreateConference::class)
+        ->fillForm(['name' => 'Gulf Pediatric Critical Care', 'starts_at' => '2026-11-03'])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $conference = Conference::query()->where('name', 'Gulf Pediatric Critical Care')->firstOrFail();
+    expect($conference->reference_prefix)->toBe('GPCC26');
+
+    livewire(EditConference::class, ['record' => $conference->getRouteKey()])
+        ->fillForm(['reference_prefix' => 'gpcc'])
+        ->call('save')
+        ->assertHasFormErrors(['reference_prefix']);
+
+    livewire(EditConference::class, ['record' => $conference->getRouteKey()])
+        ->fillForm(['reference_prefix' => 'GPCC27'])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    expect($conference->refresh()->reference_prefix)->toBe('GPCC27');
+
+    $conference->forceFill(['status' => ConferenceStatus::Open])->save();
+
+    livewire(EditConference::class, ['record' => $conference->getRouteKey()])
+        ->assertFormFieldIsDisabled('reference_prefix');
+});
+
 it('asks for reviewers per submission only in assigned mode', function () {
     livewire(CreateConference::class)
         ->fillForm(['review_mode' => ReviewMode::OpenPool->value])

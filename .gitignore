@@ -56,3 +56,6 @@ Thumbs.db
 # dompdf writes converted font metrics here at runtime
 /storage/fonts/*
 !/storage/fonts/.gitignore
+
+# Pest browser plugin
+/tests/Browser/Screenshots

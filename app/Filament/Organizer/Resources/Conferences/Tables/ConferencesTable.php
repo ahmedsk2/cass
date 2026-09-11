@@ -45,6 +45,7 @@ class ConferencesTable
                 ViewAction::make(),
                 EditAction::make(),
                 ConferenceStatusActions::share(),
+                ConferenceStatusActions::emails(),
                 ConferenceStatusActions::publish(),
                 ConferenceStatusActions::close(),
                 ConferenceStatusActions::archive(),

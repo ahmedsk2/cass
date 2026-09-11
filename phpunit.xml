@@ -40,5 +40,15 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="TURNSTILE_SITE_KEY" value=""/>
+        <!-- Both keys empty, so Turnstile is off for every test that does not
+             deliberately switch it on with config()->set(). -->
+        <env name="TURNSTILE_SECRET_KEY" value=""/>
+        <!-- The minimum fill time is a property of mount(): openedAt is
+             #[Locked], so no test can back-date it - Livewire answers a set()
+             on a locked property with CannotUpdateLockedPropertyException. Off
+             for the suite, so every Task 6 case keeps passing unchanged; the
+             one test that owns the gate switches it back on with
+             config()->set() and moves the clock. -->
+        <env name="CASS_SUBMISSION_MIN_SECONDS" value="0"/>
     </php>
 </phpunit>

@@ -9,7 +9,7 @@
 <div class="mt-8">
     @switch($conference->submissionWindow())
         @case(SubmissionWindow::Open)
-            <a href="#"
+            <a href="{{ route('conference.submit', [$conference->organization, $conference]) }}"
                class="inline-flex items-center rounded-lg bg-[var(--org-primary)] px-6 py-3 text-base font-semibold text-[var(--org-on-primary)] shadow-sm hover:opacity-90">
                 Submit abstract
             </a>

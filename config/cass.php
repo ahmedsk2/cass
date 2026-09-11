@@ -28,6 +28,30 @@ return [
         // smallest multiple of the module count that reaches this size.
         'png_min_size' => (int) env('CASS_QR_PNG_MIN_SIZE', 1024),
     ],
+    // Spec section 8: downloads only through signed, expiring routes. Long
+    // enough for a mail client that prefetches links, short enough that a
+    // forwarded URL is dead on arrival.
+    'file_url_minutes' => (int) env('CASS_FILE_URL_MINUTES', 30),
+    // Spec section 8: 10 MB per file. Under docker/php.ini's
+    // upload_max_filesize=12M and Livewire's own default max:12288, so the
+    // refusal an author meets is this one - with a sentence - rather than a
+    // blank 413 from PHP.
+    'max_file_bytes' => (int) env('CASS_MAX_FILE_BYTES', 10 * 1024 * 1024),
+
+    // Spec section 9: "submission 5/min/IP". Applied inside the Livewire
+    // component (a Livewire action is one POST to /livewire/update, so route
+    // middleware cannot tell a save from a submit) with App\Support\ClientIp.
+    'submission_rate_limit' => (int) env('CASS_SUBMISSION_RATE_LIMIT', 5),
+
+    // A form nobody could have read, let alone filled, in this many seconds was
+    // not filled by a person. Four is low enough that a determined author
+    // pasting a prepared abstract still gets through.
+    'submission_min_seconds' => (int) env('CASS_SUBMISSION_MIN_SECONDS', 4),
+
+    // Spec section 9: /s/{token} is 20 GETs per minute per address. It lives
+    // here rather than with the submission knobs in Task 7 because the limiter
+    // that reads it is registered in this task, alongside the route.
+    'status_page_rate_limit' => (int) env('CASS_STATUS_PAGE_RATE_LIMIT', 20),
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',

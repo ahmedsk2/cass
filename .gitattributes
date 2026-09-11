@@ -18,3 +18,4 @@ CHANGELOG.md export-ignore
 *.ttf binary
 *.otf binary
 *.woff binary
+tests/Fixtures/*.pdf binary

@@ -6,11 +6,14 @@ namespace App\Filament\Organizer\Resources\Conferences\Schemas;
 
 use App\Actions\Conferences\PublishConference;
 use App\Enums\ConferenceStatus;
+use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
 use App\Models\Conference;
+use Filament\Actions\Action;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use WeakMap;
 
 class ConferenceInfolist
@@ -33,6 +36,19 @@ class ConferenceInfolist
         self::$blockers ??= new WeakMap;
 
         return self::$blockers[$record] ??= app(PublishConference::class)->blockers($record);
+    }
+
+    /**
+     * @var WeakMap<Conference, array{total: int, draft: int, submitted: int, withdrawn: int}>|null
+     */
+    private static ?WeakMap $counts = null;
+
+    /** @return array{total: int, draft: int, submitted: int, withdrawn: int} */
+    private static function counts(Conference $record): array
+    {
+        self::$counts ??= new WeakMap;
+
+        return self::$counts[$record] ??= $record->submissionCounts();
     }
 
     public static function configure(Schema $schema): Schema
@@ -68,6 +84,30 @@ class ConferenceInfolist
                     ->placeholder('Not published'),
                 TextEntry::make('short_description')->columnSpanFull()->placeholder('-'),
             ]),
+
+            // A section rather than a relation manager: the conference page
+            // needs four numbers and a way through to the list, and a relation
+            // manager would be a second table of the same rows with its own
+            // filters, its own authorization surface and its own tests.
+            Section::make('Submissions')
+                ->headerActions([
+                    Action::make('viewSubmissions')
+                        ->label('Open the list')
+                        ->icon(Heroicon::OutlinedInbox)
+                        ->color('gray')
+                        ->url(fn (Conference $record): string => SubmissionResource::urlForConference($record)),
+                ])
+                ->columns(4)
+                ->components([
+                    TextEntry::make('submissions_total')->label('Total')->badge()
+                        ->state(fn (Conference $record): int => self::counts($record)['total']),
+                    TextEntry::make('submissions_draft')->label('Drafts')->badge()->color('gray')
+                        ->state(fn (Conference $record): int => self::counts($record)['draft']),
+                    TextEntry::make('submissions_submitted')->label('Submitted')->badge()->color('info')
+                        ->state(fn (Conference $record): int => self::counts($record)['submitted']),
+                    TextEntry::make('submissions_withdrawn')->label('Withdrawn')->badge()->color('danger')
+                        ->state(fn (Conference $record): int => self::counts($record)['withdrawn']),
+                ]),
 
             // Every date-time entry names the conference timezone explicitly:
             // Filament otherwise formats in config('app.timezone'), which is

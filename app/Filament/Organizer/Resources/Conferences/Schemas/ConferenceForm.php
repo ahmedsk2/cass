@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Organizer\Resources\Conferences\Schemas;
 
+use App\Enums\ConferenceStatus;
 use App\Enums\ReviewMode;
 use App\Models\Conference;
 use App\Models\Organization;
@@ -144,6 +145,27 @@ class ConferenceForm
                         CheckboxList::make('presentation_types')
                             ->options(['oral' => 'Oral', 'poster' => 'Poster', 'either' => 'Either'])
                             ->default(['oral', 'poster', 'either'])->required()->bulkToggleable(),
+                        TextInput::make('reference_prefix')
+                            ->label('Reference prefix')
+                            ->maxLength(12)
+                            ->placeholder('Derived from the name, for example GPCC26')
+                            // Upper-case letters and digits only: the value is
+                            // printed on badges, read down a phone line and
+                            // pasted into spreadsheets. \z rather than $ for
+                            // the same reason the slug rule uses it - `$` also
+                            // matches before a trailing newline.
+                            ->rule('regex:/^[A-Z0-9]{2,12}\z/')
+                            ->validationMessages([
+                                'regex' => 'Use 2 to 12 upper-case letters and digits, for example GPCC26.',
+                            ])
+                            // Frozen once the conference is live: every
+                            // reference already emailed starts with this.
+                            // draft is the only status where no abstract can
+                            // exist, so it is the only status where changing it
+                            // is safe.
+                            ->disabled(fn (?Conference $record): bool => $record !== null
+                                && $record->status !== ConferenceStatus::Draft)
+                            ->helperText('References look like GPCC26-017. Leave empty to derive it from the conference name. Fixed once the conference is published.'),
                         Textarea::make('terms')->rows(4)->maxLength(2000)->columnSpanFull()
                             ->helperText('Shown on the public page and above the agreement checkbox.'),
                     ]),

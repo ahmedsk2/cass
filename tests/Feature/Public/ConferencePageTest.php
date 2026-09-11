@@ -247,6 +247,26 @@ it('answers a guest with the page itself and never a redirect', function () {
     $response->assertOk()->assertSee($conference->name);
 });
 
+it('links the open call for abstracts at the submission form', function () {
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    get(conferenceUrl($conference))
+        ->assertOk()
+        ->assertSee('Submit abstract')
+        // Plan 2 shipped this CTA pointing at `#`. Plan 3 replaces exactly that
+        // one href; this is the assertion that it happened.
+        ->assertSee(route('conference.submit', [$this->organization, $conference]), escape: false)
+        ->assertDontSee('href="#"', escape: false);
+});
+
+it('does not link the form when the window is not open', function () {
+    $conference = Conference::factory()->for($this->organization)->closed()->create();
+
+    get(conferenceUrl($conference))
+        ->assertOk()
+        ->assertDontSee(route('conference.submit', [$this->organization, $conference]), escape: false);
+});
+
 it('keeps the page public for a signed-in visitor whose session hash is stale', function () {
     // AuthenticateSession logs the user out and throws AuthenticationException
     // when the session's stored password hash no longer matches the user's, so
@@ -261,4 +281,21 @@ it('keeps the page public for a signed-in visitor whose session hash is stale', 
 
     expect($response->isRedirect())->toBeFalse();
     $response->assertOk()->assertSee($conference->name);
+});
+
+it('leaves the public conference and submit pages indexable', function () {
+    // The layout's `noindex` prop defaults to false and only the author status
+    // page passes true. Nothing pinned the default, so flipping it would
+    // quietly de-index every call for abstracts on the platform - the exact
+    // opposite of what a conference page is for - with the whole suite still
+    // green.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    get(conferenceUrl($conference))
+        ->assertOk()
+        ->assertDontSee('name="robots"', escape: false);
+
+    get(conferenceUrl($conference).'/submit')
+        ->assertOk()
+        ->assertDontSee('name="robots"', escape: false);
 });

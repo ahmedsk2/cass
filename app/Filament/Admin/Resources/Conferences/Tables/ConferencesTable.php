@@ -24,6 +24,12 @@ class ConferencesTable
                     ->description(fn (Conference $record): string => $record->slug),
                 TextColumn::make('organization.name')->label('Organization')->searchable()->sortable(),
                 TextColumn::make('status')->badge()->sortable(),
+                TextColumn::make('submissions_count')
+                    ->counts('submissions')
+                    ->label('Abstracts')
+                    ->badge()
+                    ->color('gray')
+                    ->sortable(),
                 TextColumn::make('submission_deadline')->label('Deadline')->dateTime('j M Y, H:i')
                     ->timezone(fn (Conference $record): string => $record->timezone)
                     ->description(fn (Conference $record): string => $record->timezone)
