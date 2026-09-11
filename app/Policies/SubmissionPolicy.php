@@ -134,6 +134,18 @@ class SubmissionPolicy
         return $this->view($user, $submission);
     }
 
+    /**
+     * Spec section 4 puts "Invite reviewers, assign, decide" on **every**
+     * organization member, owner down to plain member, so deciding mirrors
+     * view(). Every application is logged with the actor and appends to the
+     * history, so a mistaken decision is visible and reversible rather than
+     * silent.
+     */
+    public function decide(User $user, Submission $submission): bool
+    {
+        return $this->view($user, $submission);
+    }
+
     /** Exporting is reading every row at once, so it needs the list right. */
     public function export(User $user): bool
     {

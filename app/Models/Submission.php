@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Decision;
 use App\Enums\PresentationPreference;
 use App\Enums\SubmissionStatus;
 use App\Support\Tokens\SubmissionToken;
@@ -46,8 +47,20 @@ class Submission extends Model
         return [
             'status' => SubmissionStatus::class,
             'presentation_preference' => PresentationPreference::class,
+            'decision' => Decision::class,
             'custom_field_values' => 'array',
             'word_count' => 'integer',
+            // Laravel gives a decimal column NUMERIC affinity on SQLite, which
+            // returns int(72) / float(72.5), while MySQL returns "72.00" /
+            // "72.50". The cast makes both a two-decimal string, exactly as
+            // ReviewQuestion::weight is cast, so a value written here reads the
+            // same on both drivers and a test written locally passes in CI.
+            // Every reader that needs arithmetic casts to float itself.
+            'score' => 'decimal:2',
+            'score_spread' => 'decimal:2',
+            'review_count' => 'integer',
+            'scored_at' => 'datetime',
+            'decision_notified_at' => 'datetime',
             'submitted_at' => 'datetime',
             'withdrawn_at' => 'datetime',
             'last_edited_at' => 'datetime',
@@ -138,6 +151,52 @@ class Submission extends Model
     }
 
     /**
+     * The whole history, newest first. Spec 5.6: "Each decision records who and
+     * when and appends to `SubmissionDecision`."
+     *
+     * @return HasMany<SubmissionDecision, $this>
+     */
+    public function decisions(): HasMany
+    {
+        return $this->hasMany(SubmissionDecision::class)->orderByDesc('decided_at')->orderByDesc('id');
+    }
+
+    /**
+     * The row behind `submissions.decision`. Reads the loaded relation when
+     * there is one, so a history list already eager-loaded does not issue a
+     * query per row - the same rule correspondingAuthor() follows.
+     */
+    public function currentDecision(): ?SubmissionDecision
+    {
+        if ($this->relationLoaded('decisions')) {
+            return $this->decisions->first();
+        }
+
+        return $this->decisions()->first();
+    }
+
+    /**
+     * The letter the author may read on /s/{token}, or null.
+     *
+     * Three conditions, all required. `decision_notified_at` on this row is the
+     * one SendDecisionEmails sets, so a half-finished send cannot leak a
+     * letter; `notified_at` and `letter_markdown` on the decision row are what
+     * make it a letter rather than an intention; and a withdrawn abstract never
+     * shows one, because an author who withdrew is not waiting for an answer
+     * and an old decision printed under "Withdrawn" would read as a reversal.
+     */
+    public function decisionLetter(): ?SubmissionDecision
+    {
+        if ($this->decision_notified_at === null || $this->status === SubmissionStatus::Withdrawn) {
+            return null;
+        }
+
+        $decision = $this->currentDecision();
+
+        return $decision?->wasNotified() === true ? $decision : null;
+    }
+
+    /**
      * Exactly one author carries the flag - SubmitAbstract and
      * SaveSubmissionDraft both enforce that - so first() is the answer, not a
      * guess. Reads the loaded collection when there is one so the organizer
@@ -201,7 +260,9 @@ class Submission extends Model
         return LogOptions::defaults()
             // Never `abstract` and never `access_token_hash`: the activity log
             // is readable by the platform admin, and neither belongs there.
-            ->logOnly(['status', 'reference', 'title', 'submitted_at', 'withdrawn_at'])
+            // `decision` and `decision_notified_at` do: spec section 9 lists
+            // decisions among the things that must be audited.
+            ->logOnly(['status', 'reference', 'title', 'submitted_at', 'withdrawn_at', 'decision', 'decision_notified_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
     }

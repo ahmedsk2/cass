@@ -63,6 +63,37 @@ class ConferencePolicy
         return $this->canManage($user, $conference);
     }
 
+    /**
+     * **Narrower than the spec row on purpose, and recorded as an owner
+     * question.** "Send decision emails" is a single click that queues one
+     * email to the corresponding author of every decided abstract in a
+     * conference - the largest bulk-mail primitive in the application, and
+     * unlike a reviewer invitation it is addressed to people who did not ask
+     * for an account and cannot be un-sent. Plan 4 bounded its bulk-mail
+     * primitive with a cap and a rate limit; this one is bounded by role:
+     * owner and admin only, which is spec section 4's own "Manage organization
+     * members" row applied to the one action with the same blast radius.
+     *
+     * It lives HERE and not on SubmissionPolicy for a mechanical reason:
+     * Laravel resolves a policy from the first argument's class
+     * (vendor/laravel/framework/src/Illuminate/Auth/Access/Gate.php:781-785),
+     * every call site passes the Conference, and an ability whose method is not
+     * on the resolved policy answers false for everybody - the send button
+     * would simply never appear and the resend would always throw. Taking the
+     * Conference is itself the right shape: the send is per conference, and a
+     * policy method whose argument is one row would have to be called with an
+     * arbitrary row to authorize an action over all of them.
+     */
+    public function sendDecisions(User $user, Conference $conference): bool
+    {
+        // canManage() is this file's own owner/admin check, the one shape in
+        // this codebase already proven clean at Larastan level 6 - it uses `->`
+        // and not `?->` on the organization, because Larastan types a BelongsTo
+        // accessor as non-nullable and reports a null check here as an
+        // always-true condition.
+        return $this->canManage($user, $conference);
+    }
+
     public function delete(User $user, Conference $conference): bool
     {
         return $this->canManage($user, $conference);

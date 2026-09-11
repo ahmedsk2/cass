@@ -96,6 +96,22 @@ return [
         'manual_throttle_hours' => (int) env('CASS_REMINDER_MANUAL_THROTTLE_HOURS', 12),
     ],
 
+    // Spec 5.6 (decisions) and spec section 10 (the 500-row ranking budget).
+    'decisions' => [
+        // Rows the ranking table shows per page before the organizer asks for
+        // more. 50 is two screens of scrolling and one query; the page also
+        // offers 100, 250 and "all", and "all" over 500 rows is what the
+        // performance test in Task 4 measures.
+        'page_size' => (int) env('CASS_RANKING_PAGE_SIZE', 50),
+        // How many decision emails one "Send decision emails" click queues
+        // before it stops and tells the organizer to click again. The whole run
+        // happens inside one php-fpm request (docker/php.ini's 60-second
+        // budget), and each row is a render, a token mint, an email_logs insert
+        // and a queue push. 200 is comfortably inside it for the conference
+        // sizes this platform is for; raise it only after measuring.
+        'send_chunk' => (int) env('CASS_DECISION_SEND_CHUNK', 200),
+    ],
+
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',

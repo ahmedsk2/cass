@@ -35,6 +35,10 @@ class Review extends Model
     {
         return [
             'status' => ReviewStatus::class,
+            // Written by ComputeSubmissionScore for every review, draft or
+            // submitted; the submission aggregate reads only the submitted
+            // ones. Same decimal:2 reasoning as submissions.score.
+            'score' => 'decimal:2',
             'submitted_at' => 'datetime',
             'reopened_at' => 'datetime',
         ];
