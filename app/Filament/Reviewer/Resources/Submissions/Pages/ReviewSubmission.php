@@ -4,14 +4,23 @@ declare(strict_types=1);
 
 namespace App\Filament\Reviewer\Resources\Submissions\Pages;
 
+use App\Actions\Reviews\ReopenReview;
+use App\Actions\Reviews\SaveReviewDraft;
+use App\Actions\Reviews\SubmitReview;
+use App\Exceptions\ReviewNotAcceptable;
 use App\Filament\Reviewer\Resources\Submissions\SubmissionResource;
 use App\Models\Conference;
+use App\Models\Review;
+use App\Models\ReviewForm;
 use App\Models\Submission;
 use App\Models\SubmissionFile;
 use App\Models\User;
+use App\Support\Reviews\ReviewFormSchema;
 use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,11 +30,11 @@ use Illuminate\Support\Facades\Gate;
  * Spec 5.4 step 4: "Review page shows the abstract (authors hidden when blind),
  * files, and the review form."
  *
- * This task builds everything except the form; Task 7 adds `form()`, the three
- * header actions and the state. The record is resolved through
- * SubmissionResource::getEloquentQuery(), which is ReviewerScope - so an
- * abstract outside this reviewer's pool or assignments is a **404**, not a 403.
- * A reviewer has no business learning that it exists.
+ * The record is resolved through SubmissionResource::getEloquentQuery(), which
+ * is ReviewerScope - so an abstract outside this reviewer's pool or assignments
+ * is a **404**, not a 403. A reviewer has no business learning that it exists.
+ *
+ * @property-read Schema $form
  */
 class ReviewSubmission extends Page
 {
@@ -35,6 +44,9 @@ class ReviewSubmission extends Page
 
     protected string $view = 'filament.reviewer.resources.submissions.pages.review-submission';
 
+    /** @var array<string, mixed>|null */
+    public ?array $data = [];
+
     public function mount(int|string $record): void
     {
         $this->record = $this->resolveRecord($record);
@@ -42,6 +54,62 @@ class ReviewSubmission extends Page
         // Defence in depth behind the scoped query, exactly as on
         // ConferenceShortLink: the policy is the second, independent gate.
         abort_unless(Gate::allows('view', $this->getRecord()), 404);
+
+        $this->form->fill(ReviewFormSchema::fill($this->review()));
+    }
+
+    /**
+     * `defaultForm` runs before `form` (fact 31) and is where the state path
+     * lives; `form` carries only the components.
+     */
+    public function defaultForm(Schema $schema): Schema
+    {
+        return $schema->statePath('data');
+    }
+
+    public function form(Schema $schema): Schema
+    {
+        return $schema
+            ->components(ReviewFormSchema::components($this->reviewForm(), disabled: $this->isReadOnly()))
+            ->columns(1);
+    }
+
+    public function review(): ?Review
+    {
+        $reviewer = $this->reviewer();
+
+        if ($reviewer === null) {
+            return null;
+        }
+
+        return Review::query()
+            ->where('submission_id', $this->getSubmission()->getKey())
+            ->where('reviewer_user_id', $reviewer->getKey())
+            ->first();
+    }
+
+    public function reviewForm(): ReviewForm
+    {
+        return app(SaveReviewDraft::class)->form($this->getSubmission());
+    }
+
+    /**
+     * Submitted, or the conference has moved on: the form renders disabled.
+     *
+     * acceptsReviewWrites(), not isOpenToReviewers(): a Decided conference is
+     * still readable (the reviewer can open the page and see what they wrote)
+     * but is no longer writable, and the three actions behind this all refuse
+     * there too.
+     */
+    public function isReadOnly(): bool
+    {
+        return $this->review()?->isSubmitted() === true
+            || ! $this->getConference()->acceptsReviewWrites();
+    }
+
+    public function deadlineHasPassed(): bool
+    {
+        return ! $this->getConference()->reviewWindowIsOpen();
     }
 
     public function getTitle(): string
@@ -150,11 +218,129 @@ class ReviewSubmission extends Page
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('saveDraft')
+                ->label(__('reviewer.review.save_draft'))
+                ->icon(Heroicon::OutlinedPencilSquare)
+                ->color('gray')
+                ->visible(fn (): bool => ! $this->isReadOnly())
+                ->action(function (SaveReviewDraft $save): void {
+                    // getRawState(), not getState(): a draft is deliberately
+                    // not validated (HasState.php:450 - getState() validates),
+                    // and half an answer has to survive a coffee break.
+                    /** @var array<string, mixed> $state */
+                    $state = $this->form->getRawState();
+
+                    try {
+                        $save->handle($this->getSubmission(), $this->requireReviewer(), $this->answersFrom($state));
+                    } catch (ReviewNotAcceptable $exception) {
+                        $this->refuse($exception);
+
+                        return;
+                    }
+
+                    Notification::make()->success()->title(__('reviewer.notices.draft_saved'))->send();
+                }),
+
+            Action::make('submitReview')
+                ->label(__('reviewer.review.submit'))
+                ->icon(Heroicon::OutlinedCheckCircle)
+                ->requiresConfirmation()
+                ->modalHeading(__('reviewer.review.submit_heading'))
+                ->modalDescription(__('reviewer.review.submit_description'))
+                ->visible(fn (): bool => ! $this->isReadOnly())
+                ->action(function (SubmitReview $submit): void {
+                    /** @var array<string, mixed> $state */
+                    $state = $this->form->getRawState();
+                    $answers = $this->answersFrom($state);
+
+                    try {
+                        $submit->handle($this->getSubmission(), $this->requireReviewer(), $answers);
+                    } catch (ReviewNotAcceptable $exception) {
+                        $this->refuse($exception);
+
+                        return;
+                    }
+
+                    Notification::make()->success()->title(__('reviewer.notices.submitted'))->send();
+                }),
+
+            Action::make('reopenReview')
+                ->label(__('reviewer.review.reopen'))
+                ->icon(Heroicon::OutlinedLockOpen)
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading(__('reviewer.review.reopen_heading'))
+                ->visible(function (): bool {
+                    $review = $this->review();
+
+                    return $review !== null
+                        && Gate::allows('reopen', $review)
+                        && app(ReopenReview::class)->blockers($review) === [];
+                })
+                ->action(function (ReopenReview $reopen): void {
+                    $review = $this->review();
+
+                    if ($review === null) {
+                        return;
+                    }
+
+                    Gate::authorize('reopen', $review);
+
+                    try {
+                        $reopen->handle($review, $this->requireReviewer());
+                    } catch (ReviewNotAcceptable $exception) {
+                        $this->refuse($exception);
+
+                        return;
+                    }
+
+                    Notification::make()->success()->title(__('reviewer.notices.reopened'))->send();
+                }),
+
             Action::make('backToQueue')
                 ->label(__('reviewer.review.back'))
                 ->icon(Heroicon::OutlinedQueueList)
                 ->color('gray')
                 ->url(fn (): string => SubmissionResource::getUrl('index', panel: 'reviewer')),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array<string, mixed>
+     */
+    private function answersFrom(array $state): array
+    {
+        $answers = $state['answers'] ?? [];
+
+        return is_array($answers) ? $answers : [];
+    }
+
+    private function requireReviewer(): User
+    {
+        /** @var User $user */
+        $user = auth()->user();
+
+        return $user;
+    }
+
+    /**
+     * Per-question messages become field errors on the very fields they belong
+     * to, so a reviewer sees "answer this one" beside the question rather than
+     * a banner listing nine prompts.
+     */
+    private function refuse(ReviewNotAcceptable $exception): void
+    {
+        foreach ($exception->fieldErrors as $ulid => $message) {
+            $this->addError('data.answers.'.$ulid, $message);
+        }
+
+        if ($exception->fieldErrors === []) {
+            Notification::make()->danger()
+                ->title(__('reviewer.notices.refused'))
+                ->body(e($exception->getMessage()))
+                ->persistent()
+                ->send();
+        }
     }
 }

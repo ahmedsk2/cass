@@ -16,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 
 /**
  * The reviewer's queue (spec 5.4 step 3).
@@ -74,15 +75,27 @@ class SubmissionResource extends Resource
     {
         $user = auth()->user();
 
-        $query = parent::getEloquentQuery()->with(['conference.organization', 'track']);
-
         // whereRaw(false) rather than an empty result by luck: outside an
         // authenticated reviewer this resource has no meaning, and returning
         // every submission on the platform because auth() happened to be empty
         // is the failure mode this line exists to prevent.
+        //
+        // The guard is above the `with()` below, not beside the return, because
+        // the constrained eager load needs `$user->getKey()`.
         if (! $user instanceof User) {
-            return $query->whereRaw('1 = 0');
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
         }
+
+        $query = parent::getEloquentQuery()->with([
+            'conference.organization',
+            'track',
+            // Constrained to this reviewer: the column reads one row and the
+            // page must not load every reviewer's review of every abstract.
+            // Relation, not HasMany: `with()` declares its constraint closure
+            // as `Closure(Relation<*, *, *>): mixed`, and a narrower parameter
+            // type there is a contravariance error Larastan catches.
+            'reviews' => fn (Relation $reviews) => $reviews->where('reviewer_user_id', $user->getKey()),
+        ]);
 
         return ReviewerScope::constrain($query, $user);
     }

@@ -3,13 +3,17 @@
 declare(strict_types=1);
 
 use App\Actions\Conferences\CreateDefaultReviewForm;
+use App\Actions\Reviews\SubmitReview;
+use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
 use App\Enums\ReviewQuestionType;
 use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Filament\Organizer\Resources\Conferences\RelationManagers\ReviewQuestionsRelationManager;
 use App\Models\Conference;
+use App\Models\ConferenceReviewer;
 use App\Models\Organization;
 use App\Models\ReviewQuestion;
+use App\Models\Submission;
 use App\Models\User;
 use Filament\Forms\Components\Repeater;
 
@@ -149,6 +153,30 @@ it('locks editing, reordering and deleting once reviews exist', function () {
     expect($this->user->can('update', $question))->toBeFalse()
         ->and($this->user->can('delete', $question))->toBeFalse()
         ->and($this->user->can('create', ReviewQuestion::class))->toBeTrue();
+});
+
+it('is locked by a real submitted review, not only by a hand-set timestamp', function () {
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->id]);
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+    $answers = $this->form->questions()->get()
+        ->mapWithKeys(fn (ReviewQuestion $question): array => [$question->ulid => 4])
+        ->all();
+
+    app(SubmitReview::class)->handle($submission->fresh(), $reviewer, $answers);
+
+    $question = $this->form->questions()->first();
+
+    reviewQuestionsManager($this->conference->fresh())
+        ->assertSee('Locked')
+        ->assertTableActionHidden('edit', $question)
+        ->assertTableActionHidden('delete', $question)
+        // Spec section 3: appending is still allowed on a locked form.
+        ->assertTableActionVisible('create');
+
+    expect($this->form->fresh()?->isLocked())->toBeTrue();
 });
 
 it('refuses to reorder questions once the form is locked', function () {

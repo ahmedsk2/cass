@@ -43,6 +43,28 @@ class QueueTable
                     ->badge()->placeholder('-'),
                 TextColumn::make('files_count')->counts('files')->label(__('reviewer.queue.columns.files'))
                     ->badge()->color('gray'),
+                TextColumn::make('review_state')
+                    ->label(__('reviewer.queue.columns.state'))
+                    ->badge()
+                    // Not a relation column: "my review" is one row of a
+                    // HasMany chosen by the current user, and `reviews.status`
+                    // would print every reviewer's state joined together.
+                    ->state(function (Submission $record) use ($user): string {
+                        $review = $user === null
+                            ? null
+                            : $record->reviews->firstWhere('reviewer_user_id', $user->getKey());
+
+                        return match (true) {
+                            $review === null => __('reviewer.queue.state.not_started'),
+                            $review->isSubmitted() => __('reviewer.queue.state.submitted'),
+                            default => __('reviewer.queue.state.draft'),
+                        };
+                    })
+                    ->color(fn (string $state): string => match ($state) {
+                        __('reviewer.queue.state.submitted') => 'success',
+                        __('reviewer.queue.state.draft') => 'warning',
+                        default => 'gray',
+                    }),
             ])
             ->filters([
                 SelectFilter::make('conference_id')
