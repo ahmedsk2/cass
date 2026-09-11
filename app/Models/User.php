@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\OrganizationRole;
+use App\Enums\ReviewerStatus;
 use App\Notifications\QueuedVerifyEmail;
 use Database\Factories\UserFactory;
 use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthentication;
@@ -18,6 +19,7 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Collection;
@@ -57,6 +59,39 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             ->withTimestamps();
     }
 
+    /** @return HasMany<ConferenceReviewer, $this> */
+    public function conferenceReviewerships(): HasMany
+    {
+        return $this->hasMany(ConferenceReviewer::class);
+    }
+
+    /** @return HasMany<Review, $this> */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class, 'reviewer_user_id');
+    }
+
+    /** @return HasMany<ReviewAssignment, $this> */
+    public function reviewAssignments(): HasMany
+    {
+        return $this->hasMany(ReviewAssignment::class, 'reviewer_user_id');
+    }
+
+    /**
+     * The gate on the reviewer panel (wired in Task 5) and on every reviewer
+     * query. A removed reviewer is not one.
+     */
+    public function isActiveReviewer(?Conference $conference = null): bool
+    {
+        $query = $this->conferenceReviewerships()->where('status', ReviewerStatus::Active->value);
+
+        if ($conference !== null) {
+            $query->where('conference_id', $conference->getKey());
+        }
+
+        return $query->exists();
+    }
+
     public function roleIn(Organization $organization): ?OrganizationRole
     {
         $member = $this->organizations()->whereKey($organization)->first();
@@ -71,6 +106,11 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             // Verification is enforced by the panel's email-verification middleware,
             // which redirects unverified users to the prompt instead of a bare 403.
             'organizer' => $this->organizations()->exists(),
+            // Same shape as the organizer arm, and for the same reason. An
+            // active reviewer of *any* conference may come in, even before the
+            // organizer has started reviewing - there is a dashboard to read
+            // and MFA to set up.
+            'reviewer' => $this->isActiveReviewer(),
             default => false,
         };
     }

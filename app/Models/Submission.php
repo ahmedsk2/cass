@@ -119,6 +119,24 @@ class Submission extends Model
         return $this->hasMany(SubmissionFile::class)->orderBy('sort')->orderBy('id');
     }
 
+    /** @return HasMany<Review, $this> */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(Review::class);
+    }
+
+    /** @return HasMany<ReviewAssignment, $this> */
+    public function reviewAssignments(): HasMany
+    {
+        return $this->hasMany(ReviewAssignment::class);
+    }
+
+    /** Spec 5.4 step 3: the queue is every *submitted* abstract. */
+    public function isReviewable(): bool
+    {
+        return in_array($this->status, [SubmissionStatus::Submitted, SubmissionStatus::UnderReview], true);
+    }
+
     /**
      * Exactly one author carries the flag - SubmitAbstract and
      * SaveSubmissionDraft both enforce that - so first() is the answer, not a

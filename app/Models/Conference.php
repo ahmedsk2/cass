@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ConferenceStatus;
+use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
+use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
 use App\Enums\SubmissionWindow;
+use App\Support\Reviews\ReviewerScope;
 use App\Support\Submissions\ReferencePrefix;
 use Carbon\CarbonInterface;
 use Database\Factories\ConferenceFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -73,6 +77,7 @@ class Conference extends Model
             'submission_opens_at' => 'datetime',
             'submission_deadline' => 'datetime',
             'review_deadline' => 'datetime',
+            'reviewer_reminded_at' => 'datetime',
             'published_at' => 'datetime',
             'blind_review' => 'boolean',
             'reviewers_per_submission' => 'integer',
@@ -192,6 +197,104 @@ class Conference extends Model
         return $this->hasMany(EmailTemplate::class);
     }
 
+    /** @return HasMany<ReviewerInvitation, $this> */
+    public function reviewerInvitations(): HasMany
+    {
+        return $this->hasMany(ReviewerInvitation::class);
+    }
+
+    /** @return HasMany<ConferenceReviewer, $this> */
+    public function reviewers(): HasMany
+    {
+        return $this->hasMany(ConferenceReviewer::class);
+    }
+
+    /**
+     * The pool. Every reviewer query in Plan 4 starts here, so "active" has one
+     * definition.
+     *
+     * @return HasMany<ConferenceReviewer, $this>
+     */
+    public function activeReviewers(): HasMany
+    {
+        return $this->reviewers()->where('status', ReviewerStatus::Active->value);
+    }
+
+    /** @return HasMany<ReviewerReminder, $this> */
+    public function reviewerReminders(): HasMany
+    {
+        return $this->hasMany(ReviewerReminder::class);
+    }
+
+    /**
+     * Spec 5.4 step 4: "authors hidden when blind". Blind review is a rule
+     * about *reviewers*, not about the conference as a whole - spec section 4
+     * gives every organization member "View submissions and files" with no
+     * caveat, and somebody has to be able to answer an author's email. So this
+     * asks who is looking.
+     *
+     * One method, called by the reviewer's queue, the review page, the file
+     * naming and their tests, so "blind" cannot come to mean four things.
+     */
+    public function hidesAuthorsFrom(?User $user): bool
+    {
+        if ($this->blind_review !== true) {
+            return false;
+        }
+
+        if ($user === null) {
+            return true;
+        }
+
+        if ($user->is_platform_admin === true) {
+            return false;
+        }
+
+        $organization = $this->organization;
+
+        // Organization soft-deletes while its conferences survive, and
+        // User::roleIn() takes a non-nullable Organization. Stay BLIND when the
+        // hop is gone: "show the authors" is the wrong answer to "membership can
+        // no longer be verified", and this method is the one definition of
+        // blind, so it may not fall open.
+        return $organization === null || $user->roleIn($organization) === null;
+    }
+
+    /** Timestamps are stored UTC; organizers and reviewers read them locally. */
+    public function reviewDeadlineInConferenceTimezone(): ?CarbonInterface
+    {
+        return $this->review_deadline?->copy()->setTimezone($this->timezone);
+    }
+
+    /** The window in which a reviewer may still change a submitted review. */
+    public function reviewWindowIsOpen(): bool
+    {
+        return $this->review_deadline === null || $this->review_deadline->isFuture();
+    }
+
+    /** Conferences a reviewer may open at all (spec 5.4 step 3). */
+    public function isOpenToReviewers(): bool
+    {
+        return in_array($this->status, [ConferenceStatus::Reviewing, ConferenceStatus::Decided], true);
+    }
+
+    /**
+     * READING a conference is open in Reviewing and in Decided - a reviewer who
+     * wants to see what they said about an abstract after the committee has
+     * decided should be able to. WRITING a review is open in Reviewing only:
+     * once the decisions are out, a new answer would change the evidence the
+     * committee was shown after the fact.
+     *
+     * Kept separate from isOpenToReviewers() on purpose. Every read path
+     * (ReviewerScope::constrain, the queue, the dashboard) asks that one; every
+     * write path (SaveReviewDraft, SubmitReview, ReopenReview, the review form's
+     * read-only rule) asks this one.
+     */
+    public function acceptsReviewWrites(): bool
+    {
+        return $this->status === ConferenceStatus::Reviewing;
+    }
+
     /**
      * Rows created before the reference columns existed have none, and the
      * organizer may have cleared the field; derive rather than return null, so
@@ -246,6 +349,157 @@ class Conference extends Model
             'draft' => (int) ($byStatus[SubmissionStatus::Draft->value] ?? 0),
             'submitted' => (int) ($byStatus[SubmissionStatus::Submitted->value] ?? 0),
             'withdrawn' => (int) ($byStatus[SubmissionStatus::Withdrawn->value] ?? 0),
+        ];
+    }
+
+    /**
+     * Spec 5.5: "a coverage summary (submissions with fewer than N reviewers)".
+     *
+     * One grouped query plus one count, rather than a loop over submissions:
+     * spec section 10 budgets for 500 abstracts and this renders on every visit
+     * to the assignments page.
+     *
+     * @return array{target: int, submissions: int, covered: int, under: int, unassigned: int}
+     */
+    public function assignmentCoverage(): array
+    {
+        $target = max(1, (int) $this->reviewers_per_submission);
+
+        /** @var array<int, int> $counts assignment count keyed by submission id */
+        $counts = $this->submissions()
+            ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
+            ->withCount('reviewAssignments')
+            ->pluck('review_assignments_count', 'id')
+            ->map(fn (mixed $count): int => (int) $count)
+            ->all();
+
+        $covered = 0;
+        $unassigned = 0;
+
+        foreach ($counts as $count) {
+            if ($count >= $target) {
+                $covered++;
+            }
+
+            if ($count === 0) {
+                $unassigned++;
+            }
+        }
+
+        $submissions = count($counts);
+
+        return [
+            'target' => $target,
+            'submissions' => $submissions,
+            'covered' => $covered,
+            'under' => $submissions - $covered,
+            'unassigned' => $unassigned,
+        ];
+    }
+
+    /**
+     * Spec 5.4 step 3's "progress", from the organizer's side.
+     *
+     * "Expected" is derived differently by mode, and the difference is the
+     * honest one: in assigned mode the work that was handed out is exactly the
+     * `review_assignments` rows, while in open pool nobody was handed anything
+     * and the conference's own `reviewers_per_submission` target is the only
+     * denominator that means something.
+     *
+     * @return array{expected: int, submitted: int, drafts: int, reviewers: list<array{name: string, submitted: int, expected: int}>}
+     */
+    public function reviewProgress(): array
+    {
+        $reviewableIds = $this->submissions()
+            ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
+            ->pluck('id');
+
+        $assignments = ReviewAssignment::query()->whereIn('submission_id', $reviewableIds)->count();
+
+        $expected = $this->review_mode === ReviewMode::Assigned
+            ? $assignments
+            : $reviewableIds->count() * max(1, (int) $this->reviewers_per_submission);
+
+        /** @var array<string, int> $byStatus */
+        $byStatus = Review::query()
+            ->whereIn('submission_id', $reviewableIds)
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status')
+            ->all();
+
+        // Two grouped queries, read from maps inside the loop - not one or two
+        // counts per reviewer. Each of those counts carried a whereIn over every
+        // reviewable submission id, and spec section 10 budgets for 500
+        // abstracts, so forty reviewers cost about eighty such queries on every
+        // ViewConference and EditConference render. ConferenceInfolist memoises
+        // the call; it cannot memoise the loop inside it.
+        /** @var array<int, int> $submittedByReviewer */
+        $submittedByReviewer = Review::query()
+            ->whereIn('submission_id', $reviewableIds)
+            ->where('status', ReviewStatus::Submitted->value)
+            ->selectRaw('reviewer_user_id, count(*) as aggregate')
+            ->groupBy('reviewer_user_id')
+            ->pluck('aggregate', 'reviewer_user_id')
+            ->map(fn (mixed $count): int => (int) $count)
+            ->all();
+
+        /** @var array<int, int> $assignedByReviewer */
+        $assignedByReviewer = $this->review_mode === ReviewMode::Assigned
+            ? ReviewAssignment::query()
+                ->whereIn('submission_id', $reviewableIds)
+                ->selectRaw('reviewer_user_id, count(*) as aggregate')
+                ->groupBy('reviewer_user_id')
+                ->pluck('aggregate', 'reviewer_user_id')
+                ->map(fn (mixed $count): int => (int) $count)
+                ->all()
+            : [];
+
+        $reviewers = [];
+
+        /** @var ConferenceReviewer $reviewer */
+        foreach ($this->activeReviewers()->with('user')->orderBy('id')->get() as $reviewer) {
+            $userId = (int) $reviewer->user_id;
+
+            $reviewers[] = [
+                // No nullsafe walk and no fallback, for the reason
+                // AutoAssignReviewers::plan() spells out: user_id is NOT NULL
+                // and cascades on delete, so Larastan level 6 rejects
+                // `?->name ?? ...` outright (nullsafe.neverNull).
+                'name' => (string) $reviewer->user->name,
+                'submitted' => $submittedByReviewer[$userId] ?? 0,
+                'expected' => $this->review_mode === ReviewMode::Assigned
+                    ? ($assignedByReviewer[$userId] ?? 0)
+                    : $reviewableIds->count(),
+            ];
+        }
+
+        return [
+            'expected' => $expected,
+            'submitted' => (int) ($byStatus[ReviewStatus::Submitted->value] ?? 0),
+            'drafts' => (int) ($byStatus[ReviewStatus::Draft->value] ?? 0),
+            'reviewers' => $reviewers,
+        ];
+    }
+
+    /**
+     * The same two numbers for one reviewer, for their own dashboard. In open
+     * pool a reviewer's expectation is the whole pool; in assigned mode it is
+     * what they were given.
+     *
+     * @return array{expected: int, submitted: int}
+     */
+    public function reviewProgressFor(User $reviewer): array
+    {
+        $queue = ReviewerScope::submissions($reviewer, $this);
+
+        return [
+            'expected' => (clone $queue)->count(),
+            'submitted' => (clone $queue)
+                ->whereHas('reviews', fn (Builder $reviews): Builder => $reviews
+                    ->where('reviewer_user_id', $reviewer->getKey())
+                    ->where('status', ReviewStatus::Submitted->value))
+                ->count(),
         ];
     }
 

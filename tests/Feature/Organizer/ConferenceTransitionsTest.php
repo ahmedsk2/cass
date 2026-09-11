@@ -11,7 +11,10 @@ use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
 use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
 use App\Filament\Organizer\Resources\Conferences\Tables\ConferenceStatusActions;
 use App\Models\Conference;
+use App\Models\ConferenceReviewer;
 use App\Models\Organization;
+use App\Models\Review;
+use App\Models\Submission;
 use App\Models\User;
 use Filament\Notifications\Notification;
 
@@ -248,4 +251,52 @@ it('asks a reopening question when publish is a reopen rather than a go-live', f
 
     livewire(ViewConference::class, ['record' => $closed->getRouteKey()])
         ->assertActionHasLabel('publish', 'Reopen submissions');
+});
+
+it('starts reviewing from the view page and shows why it cannot', function () {
+    $conference = readyConference($this->organization);
+    $conference->forceFill([
+        'status' => ConferenceStatus::Closed,
+        'review_deadline' => now()->addMonth(),
+    ])->save();
+
+    livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
+        ->callAction('startReviewing')
+        ->assertNotified();
+
+    // Not ready: no reviewers and no abstracts, so the action reports rather
+    // than transitions - exactly as `publish` does.
+    expect($conference->fresh()?->status)->toBe(ConferenceStatus::Closed);
+
+    ConferenceReviewer::factory()->for($conference)->create();
+    Submission::factory()->for($conference)->submitted()->create();
+
+    livewire(ViewConference::class, ['record' => $conference->fresh()->getRouteKey()])
+        ->callAction('startReviewing')
+        ->assertNotified();
+
+    expect($conference->fresh()?->status)->toBe(ConferenceStatus::Reviewing);
+});
+
+it('shows review progress on the conference once reviewing has started', function () {
+    $conference = readyConference($this->organization);
+    $conference->forceFill([
+        'status' => ConferenceStatus::Reviewing,
+        'review_deadline' => now()->addMonth(),
+    ])->save();
+
+    $reviewer = ConferenceReviewer::factory()->for($conference)->create();
+    $submission = Submission::factory()->for($conference)->submitted()->create();
+    Review::factory()->for($submission)->submitted()->create(['reviewer_user_id' => $reviewer->user_id]);
+
+    livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
+        ->assertSee(__('reviewer.progress.heading'))
+        ->assertSee((string) ($reviewer->user?->name ?? '-'));
+});
+
+it('hides start-reviewing from a conference that is not closed', function () {
+    $conference = readyConference($this->organization);
+
+    livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
+        ->assertActionHidden('startReviewing');
 });

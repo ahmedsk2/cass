@@ -177,6 +177,15 @@ jobs:
           curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/css/filament/filament/app.css
           curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/js/filament/filament/app.js
           curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/vendor/livewire/livewire.min.js
+          # The third panel (Plan 4) inside the built image, under route:cache +
+          # config:cache + opcache validate_timestamps=0. A guest on /review must
+          # be redirected to the reviewer login, not 500. The command's own
+          # registration is already covered by
+          # tests/Feature/ReviewerRemindersTest.php and by `schedule:list`, so it
+          # is not repeated here.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://127.0.0.1:8080/review)
+          echo "reviewer panel -> $code"; test "$code" = "302"
+          curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/review/login
           # A guest on an authenticated asset route reaches PHP and is sent to
           # the organizer login (redirectGuestsTo in bootstrap/app.php). This
           # URI has no dot extension, so the static-extension location never

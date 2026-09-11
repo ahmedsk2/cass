@@ -3,13 +3,19 @@
 declare(strict_types=1);
 
 use App\Actions\Conferences\CreateDefaultReviewForm;
+use App\Actions\Reviews\SaveReviewDraft;
+use App\Actions\Reviews\SubmitReview;
+use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
 use App\Enums\ReviewQuestionType;
+use App\Exceptions\ReviewQuestionInUse;
 use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Filament\Organizer\Resources\Conferences\RelationManagers\ReviewQuestionsRelationManager;
 use App\Models\Conference;
+use App\Models\ConferenceReviewer;
 use App\Models\Organization;
 use App\Models\ReviewQuestion;
+use App\Models\Submission;
 use App\Models\User;
 use Filament\Forms\Components\Repeater;
 
@@ -149,6 +155,63 @@ it('locks editing, reordering and deleting once reviews exist', function () {
     expect($this->user->can('update', $question))->toBeFalse()
         ->and($this->user->can('delete', $question))->toBeFalse()
         ->and($this->user->can('create', ReviewQuestion::class))->toBeTrue();
+});
+
+it('is locked by a real submitted review, not only by a hand-set timestamp', function () {
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->id]);
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+    $answers = $this->form->questions()->get()
+        ->mapWithKeys(fn (ReviewQuestion $question): array => [$question->ulid => 4])
+        ->all();
+
+    app(SubmitReview::class)->handle($submission->fresh(), $reviewer, $answers);
+
+    $question = $this->form->questions()->first();
+
+    reviewQuestionsManager($this->conference->fresh())
+        ->assertSee('Locked')
+        ->assertTableActionHidden('edit', $question)
+        ->assertTableActionHidden('delete', $question)
+        // Spec section 3: appending is still allowed on a locked form.
+        ->assertTableActionVisible('create');
+
+    expect($this->form->fresh()?->isLocked())->toBeTrue();
+});
+
+it('refuses to delete a question that already carries a draft answer', function () {
+    // The window nothing covered: SaveReviewDraft writes review_answers rows and
+    // never touches locked_at - only SubmitReview locks - so between the first
+    // draft save and the first submit the form is UNLOCKED, the Delete button
+    // was live, and review_answers.review_question_id is restrictOnDelete. The
+    // click was a foreign-key QueryException 500, not a refusal.
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->id]);
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+    $question = $this->form->questions()->orderBy('sort')->firstOrFail();
+    $untouched = $this->form->questions()->orderBy('sort')->skip(1)->firstOrFail();
+
+    app(SaveReviewDraft::class)->handle($submission->fresh(), $reviewer, [$question->ulid => 4]);
+
+    expect($this->form->fresh()?->isLocked())->toBeFalse()
+        ->and($this->user->can('delete', $question->fresh()))->toBeFalse()
+        // A question nobody has answered is still deletable: the rule is about
+        // the answer rows, not about the form.
+        ->and($this->user->can('delete', $untouched->fresh()))->toBeTrue();
+
+    reviewQuestionsManager($this->conference->fresh())
+        ->assertTableActionHidden('delete', $question)
+        ->assertTableActionVisible('delete', $untouched);
+
+    // And the model refuses for every other path - console, the Plan 6 import -
+    // exactly as the lock does.
+    expect(fn () => $question->fresh()?->delete())->toThrow(ReviewQuestionInUse::class);
+
+    expect(ReviewQuestion::query()->whereKey($question->getKey())->exists())->toBeTrue();
 });
 
 it('refuses to reorder questions once the form is locked', function () {

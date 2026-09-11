@@ -7,6 +7,7 @@ namespace App\Policies;
 use App\Models\Organization;
 use App\Models\SubmissionFile;
 use App\Models\User;
+use App\Support\Reviews\ReviewerScope;
 use Filament\Facades\Filament;
 
 /**
@@ -15,8 +16,11 @@ use Filament\Facades\Filament;
  * is the capability; this keeps an organizer from generating one for another
  * tenant's file in the first place.
  *
- * Plan 4 adds the reviewer case ("assigned or pool only", spec section 4).
- * Today the answer is organization members and the platform admin.
+ * The answer is organization members, the platform admin, and - since Plan 4
+ * Task 6 - a reviewer whose pool or assignments cover the abstract the file
+ * hangs off ("assigned or pool only", spec section 4). That last case is
+ * ReviewerScope and nothing else, so the reviewer panel's file links and its
+ * queue cannot come to disagree.
  */
 class SubmissionFilePolicy
 {
@@ -29,7 +33,12 @@ class SubmissionFilePolicy
     {
         $tenant = Filament::getTenant();
 
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        // Two panels ask this. In the organizer panel the answer is tenant
+        // membership; in the reviewer panel there is no tenant at all and the
+        // answer is "does this person review anywhere" - view() below is what
+        // keeps one reviewer out of another's files.
+        return ($tenant instanceof Organization && $user->roleIn($tenant) !== null)
+            || $user->isActiveReviewer();
     }
 
     /**
@@ -46,9 +55,18 @@ class SubmissionFilePolicy
      */
     public function view(User $user, SubmissionFile $file): bool
     {
-        $organization = $file->submission?->conference?->organization;
+        $submission = $file->submission;
+        $organization = $submission?->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        if ($submission === null || $organization === null) {
+            return false;
+        }
+
+        if ($user->roleIn($organization) !== null) {
+            return true;
+        }
+
+        return ReviewerScope::allows($user, $submission);
     }
 
     /** Files are attached and removed by the author, through the status page. */

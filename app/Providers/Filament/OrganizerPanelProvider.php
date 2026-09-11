@@ -7,6 +7,7 @@ namespace App\Providers\Filament;
 use App\Filament\Organizer\Pages\Dashboard;
 use App\Filament\Organizer\Pages\Tenancy\EditOrganizationProfile;
 use App\Models\Organization;
+use App\Support\Panels\PanelSwitch;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -54,6 +55,11 @@ class OrganizerPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Organizer/Widgets'), for: 'App\Filament\Organizer\Widgets')
             ->widgets([
                 AccountWidget::class,
+            ])
+            // Spec section 6: a user with both roles sees a switch link in the
+            // panel header.
+            ->userMenuItems([
+                PanelSwitch::toReviewer(),
             ])
             ->middleware([
                 EncryptCookies::class,

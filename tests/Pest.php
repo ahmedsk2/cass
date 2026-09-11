@@ -31,7 +31,37 @@ function bootOrganizerPanel(Organization $organization): void
 {
     Filament::setCurrentPanel('organizer');
     Filament::setTenant($organization);
-    Filament::bootCurrentPanel();
+    // Not bootCurrentPanel(): FilamentManager guards it with a one-shot
+    // $isCurrentPanelBooted flag it never resets
+    // (vendor/filament/filament/src/FilamentManager.php:65-73), and
+    // setCurrentPanel() does not reset it either (:885-892). So in a test that
+    // has already booted ANOTHER panel - which is now possible, because
+    // bootReviewerPanel() exists - this call would return immediately and
+    // silently skip registering the organizer panel's tenancy global scope and
+    // its tenant-associating `creating` observer, the two things
+    // withoutTenant() exists to work around. The organizer half of such a test
+    // would then assert against unscoped queries and pass for the wrong reason.
+    //
+    // Re-booting the same panel is safe: registerTenancyModelGlobalScope() is
+    // guarded by hasGlobalScope()
+    // (Resources/Resource/Concerns/BelongsToTenant.php:139), and the
+    // creating/created listeners return early unless this panel is the current
+    // one.
+    Filament::getPanel('organizer')->boot();
+}
+
+/**
+ * Put the request into the reviewer panel, the way that panel's middleware does
+ * in a real request. There is no tenant: the reviewer panel is not
+ * tenant-scoped, and a tenant left over from an earlier bootOrganizerPanel()
+ * call in the same test would make Filament's tenancy global scope fire on
+ * models this panel reads without one.
+ */
+function bootReviewerPanel(): void
+{
+    Filament::setCurrentPanel('reviewer');
+    Filament::setTenant(null, isQuiet: true);
+    Filament::getPanel('reviewer')->boot();
 }
 
 /**

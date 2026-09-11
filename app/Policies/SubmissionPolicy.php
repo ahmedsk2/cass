@@ -7,6 +7,7 @@ namespace App\Policies;
 use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\User;
+use App\Support\Reviews\ReviewerScope;
 use Filament\Facades\Filament;
 
 /**
@@ -26,7 +27,12 @@ class SubmissionPolicy
     {
         $tenant = Filament::getTenant();
 
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        // Two panels ask this. In the organizer panel the answer is tenant
+        // membership; in the reviewer panel there is no tenant at all and the
+        // answer is "does this person review anywhere" - the row-level view()
+        // below is what actually keeps one reviewer out of another's pool.
+        return ($tenant instanceof Organization && $user->roleIn($tenant) !== null)
+            || $user->isActiveReviewer();
     }
 
     /**
@@ -45,13 +51,25 @@ class SubmissionPolicy
      * whenever the tenant itself is in the bin while its conference row
      * survives. roleIn() takes a non-nullable Organization, so walking the
      * whole chain unguarded turns a gate that should answer "no" into a
-     * TypeError 500.
+     * TypeError 500. Both hops stay guarded now that a reviewer reaches this
+     * method too: dropping either one would turn the reviewer's "no" into that
+     * same TypeError before ReviewerScope is ever consulted.
      */
     public function view(User $user, Submission $submission): bool
     {
-        $organization = $submission->conference?->organization;
+        $conference = $submission->conference;
+        $organization = $conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        if ($conference === null || $organization === null) {
+            return false;
+        }
+
+        if ($user->roleIn($organization) !== null) {
+            return true;
+        }
+
+        // Spec section 4: a reviewer sees assigned-or-pool only.
+        return ReviewerScope::allows($user, $submission);
     }
 
     /**

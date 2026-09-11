@@ -213,6 +213,145 @@ To re-send an author's link after a bounce is fixed, do **not** replay the queue
 job: open the submission in the organizer panel and use **Resend status link**,
 which mints a fresh token. The token in the bounced message is already dead.
 
+## Reviewer reminders
+
+`php artisan schedule:work` already runs under supervisord (`docker/supervisord.conf`),
+so nothing new starts at deploy time. The entry added in Plan 4 is:
+
+| Command | Cadence |
+|---|---|
+| `cass:reviewer-reminders` | hourly, `withoutOverlapping(55)` |
+
+**What it does each hour.** For every conference whose status is `reviewing` and
+which has a `review_deadline`, it works in *that conference's* timezone and asks
+two questions: is the local clock at or past `CASS_REMINDER_HOUR` (07:00 by
+default), and is a threshold due that this reviewer has not already been sent?
+The thresholds are 7, 3 and 1 days before the deadline and once after it. The
+latest applicable threshold fires, so a conference that opened for review five
+days before its deadline gets the seven-day reminder late rather than not at all.
+
+**Why hourly and not daily.** One `Schedule` entry carries one timezone, and
+every conference has its own (spec section 10). The hourly pass plus the
+`unique (conference_id, user_id, threshold)` index on `reviewer_reminders` gives
+the same behaviour as "daily at 07:00 local" without picking a timezone, and it
+is self-healing: an outage that spans the send hour catches up on the next run
+the same day.
+
+**Checking it by hand.**
+
+```bash
+docker exec cass su-exec app php artisan schedule:list
+docker exec cass su-exec app php artisan cass:reviewer-reminders
+```
+
+The command is idempotent, so running it by hand is safe. It prints one line per
+conference it sent for and a total.
+
+**If a reviewer says they got nothing**, in order:
+
+1. `select * from reviewer_reminders where conference_id = ? and user_id = ?` —
+   a row means it was sent; find it in `email_logs` by `to_email` and check
+   `status`.
+2. No row: are they `active` in `conference_reviewers`, and does
+   `ReviewerScope` still give them outstanding work? A reviewer who has
+   submitted every review in their queue is deliberately not reminded.
+3. Still nothing: is the conference `reviewing`, and is its `review_deadline`
+   set? A conference in `closed` sends nothing.
+
+To re-send one threshold deliberately, delete that one row and wait for the next
+hourly run — do not edit `sent_at`.
+
+**If nothing is sent for hours and `schedule:list` looks right**, the overlap
+mutex may be stale after a hard restart: an OOM kill or `docker kill` skips the
+signal handler that would have released it, and in production the lock is a
+durable row in the `cache_locks` table (`CACHE_STORE=database`), so a restart
+does not clear it either. Clear it with the framework's own command rather than
+SQL — the row's key carries the cache prefix (`cass-cache-framework/schedule-<sha1>`),
+so a hand-written `LIKE 'framework/%'` query finds nothing:
+
+```bash
+sudo docker exec -it "$C" su-exec app php artisan schedule:list
+sudo docker exec -it "$C" su-exec app php artisan schedule:clear-cache
+```
+
+It expires by itself after 55 minutes in any case, which is why the entry passes
+that value rather than taking Laravel's 1440-minute default.
+
+## Invitations and their tokens
+
+Member invitations (`organization_invitations`) and reviewer invitations
+(`reviewer_invitations`) share one route, `/invite/{token}`, one token shape and
+one accept action. The token is 32 random bytes as 64 hex characters, stored
+**only** as a SHA-256 hash; the plaintext exists in the emailed link and nowhere
+else, so a lost link is re-sent (which mints a new token and kills the old one),
+never recovered.
+
+**Two consequences worth knowing before they surprise somebody.**
+
+- **Accepting an invitation marks the address verified** without sending a
+  verification email. Following a 64-character secret that only ever reached
+  that mailbox is the same proof `VerifyEmail` asks for. This is the only place
+  in CASS that grants verification that way, and it is why accepting while
+  signed in as a *different* account is refused outright.
+- **The plaintext token is in the queued job payload** for as long as the
+  notification or mailable is queued, exactly as author status links already
+  are. The `jobs` table is on the internal-only MySQL network and failed jobs
+  are pruned after 30 days (`queue:prune-failed --hours=720`); if a failed job
+  carrying an invitation is ever exported for debugging, treat the export as
+  containing a live credential until the invitation expires (14 days by default,
+  `CASS_INVITATION_EXPIRY_DAYS`).
+
+**Two bearer-token URL shapes are redacted from stored subjects.** There are now
+two credential-carrying URLs in this application — `/s/{64}` (an author's status
+link) and `/invite/{64}` — and `SendTemplatedEmail` strips both from a rendered
+subject before it is written to `email_logs` and put on the wire, because a
+Subject header travels in clear text through every relay and an organizer can
+read `email_logs`. If you see a live 64-character token in a stored subject, that
+pattern has been narrowed and it is a bug, not a curiosity.
+
+**Two rate-limit buckets protect `/invite/{token}`, not one.** The GET carries
+the route middleware `throttle:invitation-accept`; each Livewire action spends a
+second, separate 10/min/IP budget inside the component, because a Livewire action
+POSTs to `/livewire/update` and no middleware on `/invite/...` ever sees it.
+Laravel stores a named route limiter under `md5($limiterName.$key)`, a private
+format application code must not reproduce, so the two cannot share one counter.
+A 429 on the page itself is the route limiter; "Too many attempts" rendered
+*inside* the page is the component's. Both are the spec's 10/min/IP.
+
+**Signing in on that page does not sign anybody in.** The password field
+*verifies* the account and grants the membership or reviewership; the panel login
+is what issues the session, so the multi-factor challenge cannot be skipped by
+holding an invitation link. An invitee who confirms their password lands on the
+panel's login screen next, and that is intended.
+
+An invitation that is expired, withdrawn or already used is answered with a page
+explaining which, not a 404 — the holder has already proved they have the
+secret, and a 404 there only generates support mail. A token that matches
+nothing is a flat 404.
+
+An invitation is also refused at accept time if whoever minted it no longer
+manages the organization, or minted an Owner invitation and is no longer an
+Owner. `RemoveMember` and `ChangeMemberRole` withdraw those rows on the spot;
+this is the belt to that braces.
+
+## Blind review and file names
+
+When a conference has `blind_review` on, a reviewer sees no authors, no
+affiliations and no contact number — **and no real file names**. The reviewer's
+download link carries `blind=1` inside its HMAC signature, so it cannot be
+stripped, and the file is served as `attachment-1.pdf`. An organizer's link is
+not blinded: spec section 4 gives every organization member full sight of
+submissions and files, the CSV export still contains author addresses, and
+somebody has to be able to answer an author's email.
+
+**Custom fields are the blind spot to check when setting a conference up.** A
+question the organizer wrote themselves — "Institution", "Department", "Funding
+source" — prints its answer on the review page like any other, and only the
+organizer knows which of their questions identify an author. Each custom field
+has a **Hide this answer from reviewers** toggle; turn it on for those, and a
+blind conference stops printing them. It changes nothing for a non-blind
+conference, and nothing for the organizer's own screens or the CSV export.
+
 ## Brand assets
 
 Every brand file is committed and served straight from `public/`. Nothing is generated at deploy time, and no build step touches them — a release that forgets this section still ships the right logo.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\Organization;
+use App\Models\ReviewAnswer;
 use App\Models\ReviewQuestion;
 use App\Models\User;
 use Filament\Facades\Filament;
@@ -40,9 +41,18 @@ class ReviewQuestionPolicy
         return $this->view($user, $reviewQuestion) && ! $reviewQuestion->reviewForm->isLocked();
     }
 
+    /**
+     * Deleting is narrower than updating, and the extra rule is not the lock:
+     * a draft answer is written by SaveReviewDraft, which locks nothing, so a
+     * question can carry answer rows while the form is still unlocked - and
+     * `review_answers.review_question_id` is `restrictOnDelete`. Without this
+     * the button is live and the click is a foreign-key 500.
+     * ReviewQuestion::booted() refuses the same thing for every non-panel path.
+     */
     public function delete(User $user, ReviewQuestion $reviewQuestion): bool
     {
-        return $this->update($user, $reviewQuestion);
+        return $this->update($user, $reviewQuestion)
+            && ! ReviewAnswer::query()->where('review_question_id', $reviewQuestion->getKey())->exists();
     }
 
     /**

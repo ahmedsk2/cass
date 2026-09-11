@@ -7,7 +7,11 @@ namespace App\Filament\Organizer\Resources\Conferences\Tables;
 use App\Actions\Conferences\ArchiveConference;
 use App\Actions\Conferences\CloseSubmissions;
 use App\Actions\Conferences\PublishConference;
+use App\Actions\Conferences\StartReviewing;
+use App\Actions\Reviews\SendReviewerReminders;
 use App\Enums\ConferenceStatus;
+use App\Enums\ReviewMode;
+use App\Exceptions\ReviewNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Models\Conference;
 use App\Models\User;
@@ -140,9 +144,109 @@ class ConferenceStatusActions
             ->url(fn (Conference $record): string => ConferenceResource::getUrl('emails', ['record' => $record]));
     }
 
+    public static function reviewers(): Action
+    {
+        return Action::make('reviewers')
+            ->label(__('reviewer.actions.page_link'))
+            ->icon(Heroicon::OutlinedUserGroup)
+            ->color('gray')
+            ->visible(fn (Conference $record): bool => Gate::allows('view', $record))
+            ->url(fn (Conference $record): string => ConferenceResource::getUrl('reviewers', ['record' => $record]));
+    }
+
+    public static function assignments(): Action
+    {
+        return Action::make('assignments')
+            ->label(__('reviewer.assign.page_link'))
+            ->icon(Heroicon::OutlinedScale)
+            ->color('gray')
+            ->visible(fn (Conference $record): bool => $record->review_mode === ReviewMode::Assigned
+                && Gate::allows('view', $record))
+            ->url(fn (Conference $record): string => ConferenceResource::getUrl('assignments', ['record' => $record]));
+    }
+
+    public static function remindReviewers(): Action
+    {
+        return Action::make('remindReviewers')
+            ->label(__('reviewer.remind.action'))
+            ->icon(Heroicon::OutlinedBellAlert)
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading(__('reviewer.remind.heading'))
+            ->modalDescription(__('reviewer.remind.description'))
+            // Hidden rather than disabled when it cannot be used: the three
+            // reasons (not reviewing, sent recently, nobody behind) are all
+            // states where the button would be noise.
+            ->visible(fn (Conference $record): bool => Gate::allows('view', $record)
+                && app(SendReviewerReminders::class)->manualBlockers($record) === [])
+            ->action(function (Conference $record, SendReviewerReminders $reminders): void {
+                Gate::authorize('view', $record);
+
+                /** @var User $actor */
+                $actor = auth()->user();
+
+                try {
+                    $sent = $reminders->manual($record, $actor);
+                } catch (ReviewNotAcceptable $exception) {
+                    Notification::make()->danger()
+                        ->title(__('reviewer.notices.refused'))
+                        ->body(e($exception->getMessage()))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()->success()
+                    ->title(__('reviewer.remind.sent', ['count' => $sent]))
+                    ->send();
+            });
+    }
+
+    public static function startReviewing(): Action
+    {
+        return Action::make('startReviewing')
+            ->label(__('reviewer.start.action'))
+            ->icon(Heroicon::OutlinedClipboardDocumentCheck)
+            ->color('info')
+            ->requiresConfirmation()
+            ->modalHeading(__('reviewer.start.heading'))
+            ->modalDescription(__('reviewer.start.description'))
+            ->visible(fn (Conference $record): bool => $record->status === ConferenceStatus::Closed
+                && Gate::allows('publish', $record))
+            ->action(function (Conference $record, StartReviewing $start): void {
+                Gate::authorize('publish', $record);
+
+                $blockers = $start->blockers($record);
+
+                if ($blockers !== []) {
+                    // The same shape the publish action uses: report, do not
+                    // throw, and name every missing piece at once.
+                    Notification::make()
+                        ->danger()
+                        ->title(__('reviewer.start.not_ready'))
+                        ->body(implode(' ', array_map('e', $blockers)))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                /** @var User $actor */
+                $actor = auth()->user();
+                $start->handle($record, $actor);
+
+                Notification::make()->success()->title(__('reviewer.start.started'))->send();
+            });
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
-        return [static::share(), static::emails(), static::publish(), static::close(), static::archive()];
+        return [
+            static::share(), static::emails(), static::reviewers(), static::assignments(),
+            static::remindReviewers(), static::publish(), static::startReviewing(),
+            static::close(), static::archive(),
+        ];
     }
 }

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Submissions\ExportSubmissionsCsv;
 use App\Actions\Submissions\IssueSubmissionToken;
+use App\Actions\Submissions\WithdrawSubmission;
 use App\Enums\OrganizationRole;
 use App\Enums\PresentationPreference;
 use App\Enums\SubmissionStatus;
+use App\Exceptions\SubmissionNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
 use App\Filament\Organizer\Resources\Submissions\Pages\ListSubmissions;
 use App\Filament\Organizer\Resources\Submissions\Pages\ViewSubmission;
@@ -165,6 +167,34 @@ it('withdraws on the organizer side and records who did it', function () {
 
     expect($activity->causer_id)->toBe($this->user->id)
         ->and($activity->properties['by'] ?? null)->toBe('organizer');
+});
+
+it('still withdraws an abstract that is under review, but only for the organizer', function () {
+    // The first submitted review writes `under_review`, and until Plan 4 that
+    // silently removed the organizer's ONLY way to take an abstract off the
+    // programme: an author who emails "please pull it" during review could not
+    // be honoured by anybody, and the abstract kept appearing in reviewer
+    // queues, coverage and progress. The author's own exit still stops at
+    // `submitted` - the text is frozen once reviewers are scoring it.
+    $this->submission->forceFill(['status' => SubmissionStatus::UnderReview])->save();
+
+    livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
+        ->assertActionVisible('withdraw')
+        ->callAction('withdraw')
+        ->assertHasNoActionErrors();
+
+    expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
+});
+
+it('refuses an author withdrawal of an abstract that is under review', function () {
+    $this->submission->forceFill(['status' => SubmissionStatus::UnderReview])->save();
+
+    // No actor: this is the status page's own path, and there the text is
+    // frozen because reviewers are already scoring it.
+    expect(fn () => app(WithdrawSubmission::class)->handle($this->submission))
+        ->toThrow(SubmissionNotAcceptable::class);
+
+    expect($this->submission->refresh()->status)->toBe(SubmissionStatus::UnderReview);
 });
 
 it('resends a status link with a new token and kills the old one', function () {
