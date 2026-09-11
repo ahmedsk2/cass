@@ -115,5 +115,10 @@ it('counts submissions on the admin conference list', function () {
 
     livewire(ListConferences::class)
         ->assertCanRenderTableColumn('submissions_count')
-        ->assertSee('3');
+        // assertSee('3') would pass on any page: an inline heroicon path and a
+        // Livewire id both contain a 3. This reads the column's own state for
+        // this record, which is null unless ->counts('submissions') is there.
+        // It compares with assertEquals, so 3 and '3' both pass - SQLite hands
+        // back an int and MySQL a string for the same sub-select.
+        ->assertTableColumnStateSet('submissions_count', 3, $this->conference);
 });
