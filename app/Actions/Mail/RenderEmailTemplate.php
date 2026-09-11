@@ -82,8 +82,18 @@ class RenderEmailTemplate
         return trim((string) preg_replace('/[\r\n]+/', ' ', $rendered));
     }
 
-    /** @param  array<string, string|null>  $values */
-    private function renderBody(string $body, array $values): string
+    /**
+     * Public because the template editor's live preview renders the same body
+     * through the same rule. The `<` escaping on the line below is the only
+     * thing that keeps raw HTML an organizer typed inert - in the delivered
+     * email, where Markdown parses with `html_input: allow`, and in the panel,
+     * where the preview is injected as an HtmlString. A second copy of it in the
+     * editor is a copy that can be deleted without a test going red, so there is
+     * one copy and the editor calls it.
+     *
+     * @param  array<string, string|null>  $values
+     */
+    public function renderBody(string $body, array $values): string
     {
         return str_replace('<', '&lt;', $this->fill($body, $values, escape: true));
     }

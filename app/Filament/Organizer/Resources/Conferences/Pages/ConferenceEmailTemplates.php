@@ -267,8 +267,14 @@ class ConferenceEmailTemplates extends Page implements HasTable
      * The preview renders the text that is **on screen**, not the text that is
      * stored - RenderEmailTemplate::handle() reads the database, and a preview
      * of the saved version while the organizer is typing is a preview that
-     * lies. It reaches the same substitution and the same escaping through
-     * RenderEmailTemplate::fill(), so the two cannot drift.
+     * lies.
+     *
+     * The body goes through RenderEmailTemplate::renderBody(), the same method
+     * the delivered email uses, rather than through a second copy of its rules:
+     * that method's `<` escaping is the only thing making organizer-typed raw
+     * HTML inert, and this preview is handed to the panel as an HtmlString. The
+     * subject is a header in a real email and plain text here, so it is
+     * substituted unescaped and then escaped once, by e(), for display.
      */
     private function preview(EmailTemplateKey $key, string $subject, string $body): HtmlString
     {
@@ -277,10 +283,7 @@ class ConferenceEmailTemplates extends Page implements HasTable
 
         return new HtmlString(
             '<p style="font-weight:600;margin-bottom:.75rem">'.e($render->fill($subject, $values, escape: false)).'</p>'
-            // str_replace, exactly as RenderEmailTemplate::renderBody() does it,
-            // so raw HTML an organizer types is inert in the preview for the
-            // same reason it is inert in the delivered email.
-            .Markdown::parse(str_replace('<', '&lt;', $render->fill($body, $values, escape: true)))->toHtml()
+            .Markdown::parse($render->renderBody($body, $values))->toHtml()
         );
     }
 

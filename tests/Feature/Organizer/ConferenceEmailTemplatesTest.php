@@ -148,6 +148,41 @@ it('previews the finished email with sample values', function () {
         ->assertMountedActionModalSee('{{status_link}}');
 });
 
+it('keeps raw HTML out of the preview', function () {
+    // The preview is injected into the panel as an HtmlString, so the only thing
+    // between an organizer's typing and stored XSS in another organizer's
+    // browser is RenderEmailTemplate::renderBody()'s `<` escaping. Pin it: the
+    // exact bytes must not survive into the modal.
+    EmailTemplate::factory()->for($this->conference)->create([
+        'key' => EmailTemplateKey::SubmissionReceived->value,
+        'subject' => 'Abstract {{reference}}',
+        'body' => "Dear {{author_name}},\n\n<script>alert(1)</script>\n\n**{{title}}** is received.",
+    ]);
+
+    templatesPage($this->conference)
+        ->mountTableAction('edit', EmailTemplateKey::SubmissionReceived->value)
+        ->assertMountedActionModalDontSeeHtml('<script>alert(1)</script>')
+        ->assertMountedActionModalSee('alert(1)');
+});
+
+it('previews the text on screen rather than the text that is stored', function () {
+    // handle() renders what is *stored*; the preview has to render what the
+    // organizer is typing, or it lies about what pressing Save will send.
+    EmailTemplate::factory()->for($this->conference)->create([
+        'key' => EmailTemplateKey::SubmissionReceived->value,
+        'subject' => 'Abstract {{reference}}',
+        'body' => 'The stored body nobody is looking at.',
+    ]);
+
+    templatesPage($this->conference)
+        ->mountTableAction('edit', EmailTemplateKey::SubmissionReceived->value)
+        ->setTableActionData(['body' => 'Typed {{title}}'])
+        // The sample value of {{title}}, substituted into text that exists only
+        // in the form state.
+        ->assertMountedActionModalSee('Typed Early mobilisation after cardiac surgery')
+        ->assertMountedActionModalDontSee('The stored body nobody is looking at.');
+});
+
 it('is invisible and unreachable from another organization', function () {
     $theirs = withoutTenant(fn () => Conference::factory()->create());
 
