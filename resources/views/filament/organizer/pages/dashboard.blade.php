@@ -13,10 +13,17 @@
             <p class="mt-1 text-sm">Contact {{ config('cass.platform_contact_email') }} if you believe this is a mistake.</p>
         </div>
     @else
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-            <p class="font-semibold">Welcome to {{ $this->getOrganization()->name }}.</p>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Conference management arrives in the next release. Your profile and branding are ready.</p>
-        </div>
+        {{-- <x-filament::section>, not Tailwind utilities: a panel loads only
+             Filament's precompiled CSS, which has no general utilities, so
+             `rounded-xl border bg-white p-4` renders as nothing (the existing
+             pending and suspended banners above have the same problem - see
+             the backlog item about an organizer panel theme). --}}
+        <x-filament::section>
+            <p style="font-weight:600">Welcome to {{ $this->getOrganization()->name }}.</p>
+            <p style="margin-top:0.25rem;font-size:0.875rem">
+                Create a conference, set its dates and review form, then publish it to get a public page, a short link and a printable QR poster.
+            </p>
+        </x-filament::section>
     @endif
 
     <x-filament-widgets::widgets :widgets="$this->getVisibleWidgets()" :columns="$this->getColumns()" />
