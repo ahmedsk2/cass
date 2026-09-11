@@ -6,15 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title ? $title.' · ' : '' }}{{ config('cass.platform_name') }}</title>
+    <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <link rel="icon" href="{{ asset('favicon.ico') }}">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen flex flex-col">
     <header class="border-b border-slate-200 bg-white">
         <nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-            <a href="{{ route('landing') }}" class="flex items-center gap-2">
-                <img src="{{ asset('brand/cass-bird.png') }}" alt="" class="h-9 w-auto">
-                <span class="text-xl font-semibold tracking-tight text-brand-700">CASS</span>
+            <a href="{{ route('landing') }}" class="flex items-center">
+                @include('brand.logo')
             </a>
             <div class="flex items-center gap-4 text-sm font-medium">
                 <a href="{{ route('about') }}" class="text-slate-600 hover:text-brand-600">About</a>

@@ -40,7 +40,7 @@ class OrganizerPanelProvider extends PanelProvider
             ->tenant(Organization::class, slugAttribute: 'slug')
             ->tenantProfile(EditOrganizationProfile::class)
             ->brandName('CASS')
-            ->brandLogo(asset('brand/cass-bird.png'))
+            ->brandLogo(fn () => view('brand.logo'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('favicon.ico'))
             ->colors([

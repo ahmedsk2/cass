@@ -58,6 +58,50 @@ C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Na
 sudo docker exec -it "$C" sh -c 'mkdir -p storage/fonts && chown -R app:app storage/fonts'
 ```
 
+## Brand assets
+
+Every brand file is committed and served straight from `public/`. Nothing is generated at deploy time, and no build step touches them — a release that forgets this section still ships the right logo.
+
+Vector sources (authored once, edited by hand):
+
+| File | Use |
+| --- | --- |
+| `resources/brand/cass-mark.svg` | the gradient hummingbird mark — the source every raster below is rendered from |
+| `resources/brand/cass-mark-mono.svg` | flat `#176BB8`, for single-colour contexts |
+| `resources/brand/cass-mark-white.svg` | white, for a dark background (nothing uses it yet; it is here so a dark surface does not get an improvised one) |
+
+`public/brand/` carries a verbatim copy of all three, because `resources/` is not web-served.
+
+Rendered from `resources/brand/cass-mark.svg`, all committed:
+
+| File | Size | Use |
+| --- | --- | --- |
+| `public/brand/cass-mark-144.png` | 86x144 | email header (`resources/views/vendor/mail/html/header.blade.php`) at 36px CSS height; mail clients drop SVG sources |
+| `public/brand/cass-mark-600.png` | 359x600 | large raster for anything that cannot take an SVG (dompdf cannot rasterise SVG gradients) |
+| `public/favicon.ico` | 16, 32, 48 | classic favicon; also `->favicon()` for both Filament panels |
+| `public/favicon.svg` | square viewBox | modern favicon, linked ahead of the ICO |
+| `public/apple-touch-icon.png` | 180x180 | iOS home screen; opaque white because iOS composites alpha onto black |
+| `public/icon-192.png`, `public/icon-512.png` | 192, 512 | web app manifest sizes, transparent |
+
+### Re-rendering the PNG and ICO files
+
+The render script is committed at `docs/brand/build-icons.mjs`. `sharp` and `png-to-ico` are deliberately **not** in `package.json`: they are authoring-only (sharp ships tens of megabytes of prebuilt libvips per platform) and the outputs are committed, so neither CI nor a deploy ever installs them. Run it from a scratch directory outside the repo:
+
+```bash
+mkdir /tmp/cass-icons && cd /tmp/cass-icons
+npm init -y && npm i sharp png-to-ico
+cp /path/to/cass/docs/brand/build-icons.mjs .
+node build-icons.mjs /path/to/cass
+```
+
+It prints the format and dimensions of every file it wrote. The script is copied into the scratch directory rather than run in place because Node resolves a bare `import sharp` from the importing file's own directory upwards, not from the working directory.
+
+sharp rasterises through librsvg, which renders the mark's `objectBoundingBox` gradients correctly. Some other rasterisers (cairosvg among them) drop the gradient and fill the four silhouette paths black — if a render comes out black, that is the renderer, not the SVG.
+
+### The lock-up
+
+`resources/views/brand/logo.blade.php` is the single definition of the mark-plus-wordmark lock-up: mark at 2.25rem beside "CASS" in IBM Plex Sans semibold, `-0.01em` tracking, `#0F4C8A` on light and white under Filament's `.dark`. It is inline-styled because Filament compiles its CSS from its own sources and never sees a Tailwind class written in an app view. Both panel providers pass it via `->brandLogo(fn () => view('brand.logo'))`, and the public layout `@include`s it. `->brandLogoHeight('2.25rem')` stays on both panels: Filament wraps an `Htmlable` logo in a div with that height and falls back to `1.5rem`, which would clip the lock-up.
+
 ## Custom domain for an organization
 
 Not yet supported: trusted hosts are pinned to APP_URL until custom domains ship in Plan 6.
