@@ -81,6 +81,22 @@ it('keeps a track optional and detaches it rather than deleting the submission',
         ->and(Submission::query()->whereKey($submission->getKey())->exists())->toBeTrue();
 });
 
+it('is closed to the author when its conference has been soft deleted', function () {
+    $submission = Submission::factory()->create();
+
+    expect($submission->isOpenToAuthor())->toBeTrue();
+
+    // Conference uses SoftDeletes and both the organizer table and the edit
+    // page carry a DeleteAction, so the belongsTo resolves to null while the
+    // submission row survives (the foreign key restricts hard deletes only).
+    // The public /s/{token} page calls this on every request, so a missing
+    // conference has to close the window rather than fatal on a route nobody
+    // is authenticated for.
+    $submission->conference->delete();
+
+    expect($submission->fresh()?->isOpenToAuthor())->toBeFalse();
+});
+
 it('derives the reference prefix when a conference is created and leaves an explicit one alone', function () {
     $derived = Conference::factory()->create([
         'name' => 'Gulf Pediatric Critical Care',

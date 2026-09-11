@@ -104,10 +104,19 @@ class Submission extends Model
         return $this->authors()->where('is_corresponding', true)->first();
     }
 
-    /** The author may still change this abstract, window permitting. */
+    /**
+     * The author may still change this abstract, window permitting.
+     *
+     * The conference may be gone: it soft deletes, both the organizer table and
+     * the edit page carry a DeleteAction, and the submissions foreign key only
+     * restricts *hard* deletes - so this relation resolves to null while the
+     * row survives. The public /s/{token} page calls this on every request, so
+     * a missing conference closes the window instead of fatalling on a route
+     * nobody is authenticated for.
+     */
     public function isOpenToAuthor(): bool
     {
-        return $this->status->isOpenToAuthor() && $this->conference->acceptsSubmissions();
+        return $this->status->isOpenToAuthor() && ($this->conference?->acceptsSubmissions() ?? false);
     }
 
     /**
