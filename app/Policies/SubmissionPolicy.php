@@ -29,9 +29,22 @@ class SubmissionPolicy
         return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
     }
 
+    /**
+     * `conference` resolves to null more often than the non-nullable column
+     * suggests, and a gate has to answer "no" rather than fatal on 500:
+     * ConferenceResource is tenant-scoped, so Filament registers a *global
+     * scope* on the Conference model
+     * (Resources/Resource/Concerns/BelongsToTenant::registerTenancyModelGlobalScope),
+     * and while the organizer panel is booted with a tenant another
+     * organization's conference does not resolve at all. A soft-deleted
+     * conference does the same thing in production - the case
+     * Submission::isOpenToAuthor() already guards for.
+     */
     public function view(User $user, Submission $submission): bool
     {
-        return $user->roleIn($submission->conference->organization) !== null;
+        $conference = $submission->conference;
+
+        return $conference !== null && $user->roleIn($conference->organization) !== null;
     }
 
     /**

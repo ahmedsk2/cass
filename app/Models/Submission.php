@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -70,6 +71,30 @@ class Submission extends Model
     public function conference(): BelongsTo
     {
         return $this->belongsTo(Conference::class);
+    }
+
+    /**
+     * The tenant, two hops away. A `hasOneThrough` read in the child-to-
+     * grandparent direction: `conference_id` on this row points at a conference
+     * whose `organization_id` points at the organization.
+     *
+     * It exists because the house rule is that every tenant-owned model can
+     * name its organization, and because the infolist and the CSV export read
+     * it. **Filament is deliberately not told to use it for tenancy** - see the
+     * comment on SubmissionResource::$isScopedToTenant.
+     *
+     * @return HasOneThrough<Organization, Conference, $this>
+     */
+    public function organization(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            Organization::class,
+            Conference::class,
+            'id',              // conferences.id ...
+            'id',              // organizations.id ...
+            'conference_id',   // ... matched from submissions.conference_id
+            'organization_id', // ... and from conferences.organization_id
+        );
     }
 
     /** @return BelongsTo<Track, $this> */

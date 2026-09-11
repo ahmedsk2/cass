@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
-use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
+use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -53,16 +53,9 @@ class NewSubmissionNotice extends Notification implements ShouldQueue
             ->line('**Corresponding author:** '.($author->name ?? 'not recorded').' ('.($author->email ?? 'not recorded').')')
             // The panel, never /s/{token}: a committee forwards this mail, and
             // the author's status link is an editing credential.
-            //
-            // This points at the *conference* page because SubmissionResource
-            // does not exist until Task 9. Task 9 Step 8 replaces exactly this
-            // one call with SubmissionResource::getUrl('view', ['record' =>
-            // $this->submission], panel: 'organizer', tenant: $conference->organization)
-            // and changes nothing else in this file - the same discipline Plan 2
-            // used for the public CTA's single href.
-            ->action('Open the conference in the organizer panel', ConferenceResource::getUrl(
+            ->action('Open it in the organizer panel', SubmissionResource::getUrl(
                 'view',
-                ['record' => $conference],
+                ['record' => $this->submission],
                 panel: 'organizer',
                 tenant: $conference->organization,
             ))

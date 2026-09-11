@@ -32,9 +32,18 @@ class SubmissionFilePolicy
         return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
     }
 
+    /**
+     * Same null guard as SubmissionPolicy::view(), for the same reason: the
+     * organizer panel's tenant-scoped ConferenceResource puts a global scope on
+     * the Conference model, so another tenant's conference - and a soft-deleted
+     * one - resolves to null here. This gate decides who may mint a signed
+     * download URL; it denies, it does not fatal.
+     */
     public function view(User $user, SubmissionFile $file): bool
     {
-        return $user->roleIn($file->submission->conference->organization) !== null;
+        $conference = $file->submission->conference;
+
+        return $conference !== null && $user->roleIn($conference->organization) !== null;
     }
 
     /** Files are attached and removed by the author, through the status page. */
