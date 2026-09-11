@@ -49,8 +49,11 @@ it('creates the user, a pending organization, an owner membership and notifies a
     $user = User::query()->where('email', 'sara@example.org')->firstOrFail();
     $org = Organization::query()->where('slug', 'saudi-pediatric-society')->firstOrFail();
 
+    // The registering owner's address is a personal login, and the public
+    // conference page can publish contact_email, so registration leaves it
+    // empty for the organizer to fill in with an address meant to be read.
     expect($org->status)->toBe(OrganizationStatus::Pending)
-        ->and($org->contact_email)->toBe('sara@example.org')
+        ->and($org->contact_email)->toBeNull()
         ->and($user->roleIn($org))->toBe(OrganizationRole::Owner)
         ->and(auth()->id())->toBe($user->id);
 

@@ -27,7 +27,7 @@ class Organization extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'name', 'type', 'country', 'website', 'contact_email', 'purpose',
+        'name', 'type', 'country', 'website', 'contact_email', 'publish_contact_email', 'purpose',
         'logo_path', 'primary_color', 'accent_color',
     ];
 
@@ -36,6 +36,7 @@ class Organization extends Model
         return [
             'type' => OrganizationType::class,
             'status' => OrganizationStatus::class,
+            'publish_contact_email' => 'boolean',
             'approved_at' => 'datetime',
             'custom_domain_verified_at' => 'datetime',
         ];
@@ -108,6 +109,17 @@ class Organization extends Model
     public function isApproved(): bool
     {
         return $this->status === OrganizationStatus::Approved;
+    }
+
+    /**
+     * `contact_email` is how the platform reaches the organization, which for
+     * an organization that has never edited its profile can be the owner's
+     * personal login address. Public pages print it only after the organizer
+     * has explicitly asked for that.
+     */
+    public function publishesContactEmail(): bool
+    {
+        return $this->publish_contact_email === true && filled($this->contact_email);
     }
 
     public function getActivitylogOptions(): LogOptions

@@ -204,3 +204,34 @@ it('does not leak a conference through another organization slug', function () {
     get(conferenceUrl($conference))->assertOk();
     get("/c/{$other->slug}/{$conference->slug}")->assertNotFound();
 });
+
+it('keeps the organization contact address off the public page by default', function () {
+    // contact_email is the address the platform uses to reach an organization,
+    // so for one that never edits its profile it is whatever the owner
+    // registered with - a personal address that is also their login. It reaches
+    // the public page only when the organizer explicitly opts in.
+    $this->organization->forceFill([
+        'contact_email' => 'sara@personal.example.org',
+        'publish_contact_email' => false,
+    ])->save();
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    get(conferenceUrl($conference))
+        ->assertOk()
+        ->assertDontSee('sara@personal.example.org')
+        ->assertDontSee('mailto:', escape: false)
+        ->assertSee(route('contact'), escape: false);
+});
+
+it('publishes the contact address once the organization opts in', function () {
+    $this->organization->forceFill([
+        'contact_email' => 'abstracts@gps.example.org',
+        'publish_contact_email' => true,
+    ])->save();
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    get(conferenceUrl($conference))
+        ->assertOk()
+        ->assertSee('mailto:abstracts@gps.example.org', escape: false)
+        ->assertSee('Contact the organizers');
+});

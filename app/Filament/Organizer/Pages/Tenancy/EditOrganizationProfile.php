@@ -13,6 +13,7 @@ use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Pages\Tenancy\EditTenantProfile;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -44,7 +45,10 @@ class EditOrganizationProfile extends EditTenantProfile
                 Select::make('country')->options(config('cass.countries'))->searchable()->required(),
                 TextInput::make('website')->url()->maxLength(255),
                 TextInput::make('contact_email')->email()->maxLength(255)
-                    ->helperText('Shown to authors and reviewers as the contact for your conferences.'),
+                    ->helperText('How we reach you about your conferences. Use a shared inbox, not a personal address.'),
+                Toggle::make('publish_contact_email')
+                    ->label('Show this address on public conference pages')
+                    ->helperText('Off by default. Anyone - including a scraper - can read an address printed on a public page.'),
             ]),
             Section::make('Branding')->columns(2)->components([
                 FileUpload::make('logo_path')->label('Logo')->disk('branding')->directory('logos')

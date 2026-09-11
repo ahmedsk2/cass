@@ -72,3 +72,23 @@ it('hides the profile page from plain members', function () {
     // tenant profile pages, the same as its tenant-mismatch behaviour above.
     actingAs($member)->get('/org/'.$this->org->slug.'/profile')->assertNotFound();
 });
+
+it('publishes the contact address only when the organizer opts in', function () {
+    // The factory leaves the colour columns to their database defaults, so the
+    // tenant instance has to be read back before the form is filled partially.
+    $this->org->refresh();
+
+    expect($this->org->publish_contact_email)->toBeFalse();
+
+    livewire(EditOrganizationProfile::class)
+        ->fillForm([
+            'contact_email' => 'abstracts@alpha.example.org',
+            'publish_contact_email' => true,
+        ])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    $this->org->refresh();
+    expect($this->org->contact_email)->toBe('abstracts@alpha.example.org')
+        ->and($this->org->publish_contact_email)->toBeTrue();
+});

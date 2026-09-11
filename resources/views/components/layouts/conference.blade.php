@@ -19,7 +19,11 @@
                 @endif
                 <span class="text-lg font-semibold tracking-tight">{{ $organization->name }}</span>
             </div>
-            @if ($organization->contact_email)
+            {{-- contact_email is how the platform reaches the organization, so
+                 it is published here only when the organizer has opted in
+                 (Organization::publishesContactEmail()). Everyone else reaches
+                 them through the CASS contact form in the footer. --}}
+            @if ($organization->publishesContactEmail())
                 <a href="mailto:{{ $organization->contact_email }}"
                    class="text-sm font-medium text-[var(--org-primary)] hover:underline">Contact the organizers</a>
             @endif
@@ -34,6 +38,7 @@
         <div class="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-6 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
             <p>{{ $organization->name }} · powered by <a href="{{ route('landing') }}" class="hover:underline">CASS</a></p>
             <p class="flex gap-4">
+                <a href="{{ route('contact') }}" class="hover:underline">Contact</a>
                 <a href="{{ route('privacy') }}" class="hover:underline">Privacy</a>
                 <a href="{{ route('terms') }}" class="hover:underline">Terms</a>
             </p>
