@@ -8350,10 +8350,20 @@ Nothing in `image` or `smoke` can currently see a missing panel asset, a nginx r
           curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/css/filament/filament/app.css
           curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/js/filament/filament/app.js
           curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/vendor/livewire/livewire.min.js
-          # An asset route must reach PHP (302 to the login page for a guest),
-          # not be answered from disk by the static-extension location.
+          # A guest on an authenticated asset route reaches PHP and is sent to
+          # the organizer login (redirectGuestsTo in bootstrap/app.php). This
+          # URI has no dot extension, so the static-extension location never
+          # sees it - it proves the route and the redirect, nothing about nginx.
           code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://127.0.0.1:8080/conference-assets/01ARZ3NDEKTSV4RRFFQ69G5FAV/qr-svg)
           echo "asset route -> $code"; test "$code" = "302"
+          # A URI that DOES end in a static extension with no file on disk must
+          # fall through to Laravel instead of being 404'd from disk by the
+          # regex location in docker/nginx.conf - the bug that kept Livewire's
+          # /livewire-<hash>/livewire.min.js 404 in production. Both answers are
+          # a 404, so tell them apart by a header only Laravel sends:
+          # X-Content-Type-Options is no use because nginx sends it as well.
+          curl -sI -H 'Host: localhost' http://127.0.0.1:8080/nonexistent-probe.css | tee /tmp/fallthrough
+          grep -qi '^x-frame-options: DENY' /tmp/fallthrough
           # dompdf inside the production image as the php-fpm user: bundled
           # TTFs present, storage/fonts writable by app, GD/CPDF work on Alpine.
           docker exec cass su-exec app php -r '
@@ -8445,7 +8455,8 @@ Expected: `checks rc=0` with `test`, `image` and `smoke` all passing. If `image`
 
 - the build-time `php artisan filament:assets` failed → something in `bootstrap/app.php` or a service provider now needs a `.env` at build time;
 - the panel-asset `curl` 404s → the publish step did not run, or `.dockerignore` grew an entry that removed `public/`;
-- the asset-route probe returned something other than 302 → the nginx static-extension location is still `try_files $uri =404`;
+- the asset-route probe returned something other than 302 → `redirectGuestsTo` is gone from `bootstrap/app.php`, or the route lost its `auth` middleware, or (on a 404) the route itself is missing. It cannot be the nginx static-extension location: `/conference-assets/{ulid}/qr-svg` has no dot before `svg`, so the `\.(css|js|...)$` regex never matches it;
+- the `/nonexistent-probe.css` probe found no `x-frame-options` header → nginx answered that 404 from disk, so the static-extension location is back to `try_files $uri =404` (verified: with the fallthrough the 404 carries Laravel's `SecurityHeaders`, without it only nginx's own `X-Content-Type-Options`). If nginx is unchanged, check `SecurityHeaders` is still global middleware rather than web-group — `tests/Feature/Public/LandingPageTest.php` guards exactly that;
 - the dompdf probe failed at the `fopen(... .ufm)` line → `storage/fonts` is not writable by `app`; if the TTFs themselves are missing, check `.dockerignore` did not gain a `resources` entry.
 
 - [ ] **Step 10: Report and stop**
