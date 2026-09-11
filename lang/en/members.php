@@ -53,4 +53,92 @@ return [
         ],
     ],
 
+    'page' => [
+        'title' => 'Team',
+        'subheading' => 'Everyone who can work on this organization\'s conferences, and everyone who has been invited.',
+    ],
+
+    'columns' => [
+        'name' => 'Name',
+        'role' => 'Role',
+        'state' => 'Status',
+        'joined' => 'Joined',
+        'notify' => 'New-abstract emails',
+    ],
+
+    'state' => [
+        'member' => 'Member',
+        'invited' => 'Invited',
+        'expired' => 'Invitation expired',
+    ],
+
+    'notify' => [
+        'on' => 'On',
+        'off' => 'Off',
+    ],
+
+    'fields' => [
+        'email' => 'Email address',
+        'role' => 'Role',
+        // Deliberately lower-case "owner": this helper text is rendered inside
+        // the invite modal, and MembersPageTest asserts that an admin's modal
+        // does not contain the string OrganizationRole::Owner->getLabel() -
+        // a case-sensitive substring check that a capitalised "Owners" here
+        // would satisfy for the wrong reason, hiding a roleOptions() that had
+        // stopped filtering.
+        'role_help' => 'An owner or an admin manages the team and the organization profile. A member creates conferences, invites reviewers and reads submissions.',
+    ],
+
+    'actions' => [
+        'invite' => 'Invite someone',
+        'invite_heading' => 'Invite someone to this organization',
+        'invite_description' => 'They get an email with a link that works for 14 days. If they already have a CASS account, the link signs them in and adds them.',
+        'change_role' => 'Change role',
+        'change_role_heading' => 'Change the role of :name',
+        'remove' => 'Remove',
+        'remove_heading' => 'Remove :name?',
+        'remove_description' => 'They lose access to this organization straight away. Their CASS account and anything they created stay exactly as they are, and you can invite them again later.',
+        'notifications_on' => 'Email me about new abstracts',
+        'notifications_off' => 'Stop emailing me about new abstracts',
+        'resend' => 'Resend',
+        'resend_heading' => 'Send the invitation again?',
+        'resend_description' => 'A new link is emailed. **Any link they already have stops working**, which is the point when a link was lost.',
+        'revoke' => 'Withdraw',
+        'revoke_heading' => 'Withdraw this invitation?',
+        'revoke_description' => 'The link stops working. If they follow it they are told the invitation was withdrawn.',
+    ],
+
+    'notices' => [
+        'invited' => 'Invitation sent',
+        'invited_body' => 'A link is on its way to :email.',
+        'role_changed' => 'Role updated',
+        'removed' => 'Removed from the organization',
+        'notifications_saved' => 'Preference saved',
+        'resent' => 'Invitation sent again',
+        'revoked' => 'Invitation withdrawn',
+        'refused' => 'Nothing changed',
+    ],
+
+    'errors' => [
+        'not_allowed' => 'Only an owner or an admin can manage the team.',
+        'not_a_member' => 'That person is not a member of this organization.',
+        'own_role' => 'You cannot change your own role. Ask another owner.',
+        'own_membership' => 'You cannot remove yourself. Ask another owner.',
+        'own_notifications' => 'You can only change your own email preference.',
+        'owner_grants_owner' => 'Only an owner can make somebody else an owner.',
+        'owner_only_changes_owner' => 'Only an owner can change or remove another owner.',
+        'last_owner' => 'An organization always needs at least one owner. Make somebody else an owner first.',
+        'already_a_member' => ':email is already a member of this organization.',
+        'bad_email' => 'That does not look like an email address.',
+    ],
+
+    'mail' => [
+        'subject' => 'You have been invited to join :organization on CASS',
+        'greeting' => 'Hello,',
+        'intro' => ':inviter has invited you to join **:organization** on CASS as :role. CASS is where they collect and review conference abstracts.',
+        'action' => 'Accept the invitation',
+        'expiry' => 'This link works for :days days. After that, ask them to send a new one.',
+        'ignore' => 'If you were not expecting this, you can ignore this email and nothing happens.',
+    ],
+
 ];
