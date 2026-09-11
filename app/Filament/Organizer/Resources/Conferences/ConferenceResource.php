@@ -8,6 +8,9 @@ use App\Filament\Organizer\Resources\Conferences\Pages\CreateConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
 use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
+use App\Filament\Organizer\Resources\Conferences\RelationManagers\CustomFieldsRelationManager;
+use App\Filament\Organizer\Resources\Conferences\RelationManagers\ReviewQuestionsRelationManager;
+use App\Filament\Organizer\Resources\Conferences\RelationManagers\TracksRelationManager;
 use App\Filament\Organizer\Resources\Conferences\Schemas\ConferenceForm;
 use App\Filament\Organizer\Resources\Conferences\Schemas\ConferenceInfolist;
 use App\Filament\Organizer\Resources\Conferences\Tables\ConferencesTable;
@@ -69,6 +72,15 @@ class ConferenceResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with('shortLink');
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            TracksRelationManager::class,
+            CustomFieldsRelationManager::class,
+            ReviewQuestionsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
