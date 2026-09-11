@@ -342,6 +342,51 @@ class Conference extends Model
         ];
     }
 
+    /**
+     * Spec 5.5: "a coverage summary (submissions with fewer than N reviewers)".
+     *
+     * One grouped query plus one count, rather than a loop over submissions:
+     * spec section 10 budgets for 500 abstracts and this renders on every visit
+     * to the assignments page.
+     *
+     * @return array{target: int, submissions: int, covered: int, under: int, unassigned: int}
+     */
+    public function assignmentCoverage(): array
+    {
+        $target = max(1, (int) $this->reviewers_per_submission);
+
+        /** @var array<int, int> $counts assignment count keyed by submission id */
+        $counts = $this->submissions()
+            ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
+            ->withCount('reviewAssignments')
+            ->pluck('review_assignments_count', 'id')
+            ->map(fn (mixed $count): int => (int) $count)
+            ->all();
+
+        $covered = 0;
+        $unassigned = 0;
+
+        foreach ($counts as $count) {
+            if ($count >= $target) {
+                $covered++;
+            }
+
+            if ($count === 0) {
+                $unassigned++;
+            }
+        }
+
+        $submissions = count($counts);
+
+        return [
+            'target' => $target,
+            'submissions' => $submissions,
+            'covered' => $covered,
+            'under' => $submissions - $covered,
+            'unassigned' => $unassigned,
+        ];
+    }
+
     public function isPubliclyVisible(): bool
     {
         return $this->status->isPublic();

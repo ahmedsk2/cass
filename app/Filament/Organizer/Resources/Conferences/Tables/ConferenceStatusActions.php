@@ -8,6 +8,7 @@ use App\Actions\Conferences\ArchiveConference;
 use App\Actions\Conferences\CloseSubmissions;
 use App\Actions\Conferences\PublishConference;
 use App\Enums\ConferenceStatus;
+use App\Enums\ReviewMode;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Models\Conference;
 use App\Models\User;
@@ -150,9 +151,20 @@ class ConferenceStatusActions
             ->url(fn (Conference $record): string => ConferenceResource::getUrl('reviewers', ['record' => $record]));
     }
 
+    public static function assignments(): Action
+    {
+        return Action::make('assignments')
+            ->label(__('reviewer.assign.page_link'))
+            ->icon(Heroicon::OutlinedScale)
+            ->color('gray')
+            ->visible(fn (Conference $record): bool => $record->review_mode === ReviewMode::Assigned
+                && Gate::allows('view', $record))
+            ->url(fn (Conference $record): string => ConferenceResource::getUrl('assignments', ['record' => $record]));
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
-        return [static::share(), static::emails(), static::reviewers(), static::publish(), static::close(), static::archive()];
+        return [static::share(), static::emails(), static::reviewers(), static::assignments(), static::publish(), static::close(), static::archive()];
     }
 }
