@@ -93,4 +93,20 @@ return [
         'submitted' => 'Your abstract is submitted. Its reference is :reference.',
     ],
 
+    'status' => [
+        'reference' => 'Reference',
+        'state' => 'Status',
+        'deadline' => 'Submission deadline',
+        'edit' => 'Edit this abstract',
+        'cancel_edit' => 'Cancel and go back',
+        'withdraw' => 'Withdraw this abstract',
+        'confirm_withdraw' => 'Withdraw this abstract? The organizers will be able to see that it was withdrawn, and you cannot undo this yourself.',
+        'withdrawn_flash' => 'Your abstract has been withdrawn.',
+        'withdrawn_notice' => 'This abstract was withdrawn on :date and will not be reviewed.',
+        'draft_warning' => 'This is a draft. It has not been submitted, and a draft is not reviewed. Open it and press "Submit abstract" before the deadline.',
+        'decision_pending' => 'The organizers are handling this abstract. They will email you when there is a decision, and the letter will appear here.',
+        'until_deadline' => 'You can edit or withdraw until the submission deadline.',
+        'keep_link' => 'Keep this link. It is the only way back to this abstract, and anyone who has it can edit it — please do not forward it.',
+    ],
+
 ];

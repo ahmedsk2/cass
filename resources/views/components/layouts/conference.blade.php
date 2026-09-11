@@ -1,4 +1,4 @@
-@props(['organization', 'conference', 'theme'])
+@props(['organization', 'conference', 'theme', 'noindex' => false])
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -6,6 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $conference->name }} · {{ $organization->name }}</title>
     <meta name="description" content="{{ Str::limit((string) $conference->short_description, 155) }}">
+    @if ($noindex)
+        <meta name="robots" content="noindex, nofollow">
+    @endif
     <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <link rel="icon" href="{{ asset('favicon.ico') }}">
     <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
