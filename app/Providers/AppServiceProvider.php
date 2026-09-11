@@ -62,6 +62,13 @@ class AppServiceProvider extends ServiceProvider
             (int) config('cass.status_page_rate_limit')
         )->by(ClientIp::from($request)));
 
+        // Spec section 9: invitation accept, 10/min/IP. Keyed on the address
+        // only - not the token - so guessing tokens counts against one budget
+        // instead of getting a fresh one per guess, exactly as on /s/{token}.
+        RateLimiter::for('invitation-accept', fn (Request $request): Limit => Limit::perMinute(
+            (int) config('cass.invitations.accept_rate_limit')
+        )->by(ClientIp::from($request)));
+
         // Registered by hand rather than by Laravel 13's listener discovery:
         // discovery matches one class to one event by the type hint of a
         // `handle()` method, and this listener deliberately has two entry
