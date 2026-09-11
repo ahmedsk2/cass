@@ -214,6 +214,89 @@ it('requires an address on the row that is actually ticked as corresponding', fu
     expect(Submission::query()->count())->toBe(0);
 });
 
+it('bounds on the draft path every length the columns bound', function () {
+    // MySQL in strict mode answers an over-long value with SQLSTATE 22001 - a
+    // 500 on a public, unauthenticated endpoint - while SQLite silently accepts
+    // it. Every column narrower than the text the author can paste is bounded
+    // here, on the path that validates least.
+    livewire(SubmissionForm::class, ['organization' => $this->organization, 'conference' => $this->conference])
+        ->set('title', 'A work in progress')
+        ->set('abstract', str_repeat('a', 20_001))
+        ->set('contact_phone', str_repeat('9', 41))
+        ->set('authors.0.name', str_repeat('n', 181))
+        ->set('authors.0.email', str_repeat('e', 250).'@example.org')
+        ->set('authors.0.affiliation', str_repeat('f', 256))
+        ->call('saveDraft')
+        ->assertHasErrors([
+            'abstract',
+            'contact_phone',
+            'authors.0.name',
+            'authors.0.email',
+            'authors.0.affiliation',
+        ]);
+
+    expect(Submission::query()->count())->toBe(0);
+});
+
+it('stores an abstract of the longest length it accepts', function () {
+    // 20000 characters of four bytes each is 80000 bytes - past the 65535 MySQL
+    // counts for TEXT, which is why submissions.abstract is mediumText. SQLite
+    // passes this either way; CI's MySQL job is where the column is proved.
+    livewire(SubmissionForm::class, ['organization' => $this->organization, 'conference' => $this->conference])
+        ->set('title', 'A work in progress')
+        ->set('abstract', str_repeat('🙂', 20_000))
+        ->set('authors.0.email', 'sara@example.org')
+        ->call('saveDraft')
+        ->assertHasNoErrors();
+
+    expect(mb_strlen((string) Submission::query()->firstOrFail()->abstract))->toBe(20_000);
+});
+
+it('bounds the abstract by characters as well as by words', function () {
+    // The word rule counts one 100 KB token as one word, so it is not a bound
+    // on what reaches submissions.abstract at all.
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('abstract', str_repeat('a', 20_001))
+        ->call('submit')
+        ->assertHasErrors(['abstract']);
+
+    expect(Submission::query()->count())->toBe(0);
+});
+
+it('caps the author list on both buttons', function () {
+    // `authors` is a public, unlocked property: Livewire fills it wholesale from
+    // the request, so without a cap one unauthenticated call makes
+    // SaveSubmissionDraft::syncAuthors() insert tens of thousands of rows inside
+    // a single transaction.
+    $rows = array_fill(0, 51, [
+        'name' => 'Dr Sara Al-Harbi',
+        'email' => 'sara@example.org',
+        'affiliation' => 'King Fahad Specialist Hospital',
+        'is_presenter' => false,
+        'is_corresponding' => false,
+    ]);
+    $rows[0]['is_corresponding'] = true;
+
+    livewire(SubmissionForm::class, ['organization' => $this->organization, 'conference' => $this->conference])
+        ->set('title', 'A work in progress')
+        ->set('authors', $rows)
+        ->call('saveDraft')
+        ->assertHasErrors(['authors']);
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('authors', $rows)
+        ->call('submit')
+        ->assertHasErrors(['authors']);
+
+    expect(Submission::query()->count())->toBe(0);
+});
+
 it('renders the submission form with a bounded number of queries', function () {
     // Spec section 10 gives this page the same 300 ms server budget as the
     // conference page, and it is the only page on that budget that is Livewire
@@ -297,11 +380,17 @@ it('renders every custom field type and stores the answers under their keys', fu
         ->call('submit')
         ->assertHasNoErrors();
 
-    expect(Submission::query()->firstOrFail()->custom_field_values)->toBe([
+    // Compared by key, not by position: MySQL's JSON type stores object members
+    // in its own order (by key length, then bytewise), so the four answers come
+    // back from CI's database in an order SQLite never produces.
+    $values = (array) Submission::query()->firstOrFail()->custom_field_values;
+    ksort($values);
+
+    expect($values)->toBe([
         'ethics_approval_number' => 'IRB-2026-14',
-        'study_design' => 'Randomised',
         'number_of_centres' => '3',
         'previously_presented' => true,
+        'study_design' => 'Randomised',
     ]);
 });
 
@@ -366,6 +455,21 @@ it('404s a draft conference for the public and previews it for a member', functi
     expect(Submission::query()->count())->toBe(0);
 });
 
+it('shows a member the form it is previewing, not a closed panel', function () {
+    // A draft conference has no window at all (submission_opens_at is null), so
+    // gating the form on the window would hide from the member the one thing the
+    // preview exists to show.
+    $conference = Conference::factory()->for($this->organization)->create();
+    $member = User::factory()->create();
+    $this->organization->addMember($member, OrganizationRole::Member);
+
+    actingAs($member)->get(submitUrl($conference))
+        ->assertOk()
+        ->assertSee('not visible to the public')
+        ->assertSee('Save draft')
+        ->assertSee('Submission dates have not been announced yet');
+});
+
 it('404s an archived conference and one of a suspended organization', function () {
     get(submitUrl($this->conference))->assertOk();
 
@@ -389,6 +493,27 @@ it('shows a closed state instead of the form once the deadline has passed', func
         'organization' => $this->organization,
         'conference' => $this->conference,
     ]))->call('submit')->assertHasErrors();
+
+    expect(Submission::query()->count())->toBe(0);
+
+    Carbon::setTestNow();
+});
+
+it('keeps the form on the page when the deadline passes mid-session', function () {
+    // The author opened the page while the window was open and is still typing.
+    // Swapping the form for the closed panel would throw away everything typed
+    // and hide the very error windowIsOpen() adds.
+    $component = fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]));
+
+    Carbon::setTestNow($this->conference->submission_deadline->copy()->addMinute());
+
+    $component->call('submit')
+        ->assertHasErrors(['title'])
+        ->assertSee('Submissions are closed')
+        ->assertSee('Save draft');
 
     expect(Submission::query()->count())->toBe(0);
 

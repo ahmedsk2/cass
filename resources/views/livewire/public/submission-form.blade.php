@@ -12,6 +12,14 @@
     <h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ $conference->name }}</h1>
     <p class="mt-2 text-slate-600">{{ $organization->name }}</p>
 
+    {{--
+        The notice and the form are two decisions, not one. $showForm is false
+        only for a visitor who has nothing to type into - the window is shut and
+        they did not open the page while it was open - so the notice appears
+        above a form that is still there for a member previewing an unpublished
+        conference and for an author whose deadline passed mid-session. Neither
+        can write: isWritable() and windowIsOpen() refuse with a message.
+    --}}
     @if ($window !== SubmissionWindow::Open)
         <div class="mt-8 rounded-lg border border-slate-300 bg-white p-6">
             <p class="text-lg font-semibold text-slate-700">
@@ -29,12 +37,18 @@
                         {{ __('submission.window.not_configured') }}
                 @endswitch
             </p>
-            <a href="{{ route('conference.show', [$organization, $conference]) }}"
-               class="mt-4 inline-block text-sm font-medium text-[var(--org-primary)] hover:underline">
-                {{ __('submission.window.back') }}
-            </a>
+            @unless ($showForm)
+                {{-- Offered only as a dead end. Above a form the author is still
+                     typing into, a link away from the page is a trap. --}}
+                <a href="{{ route('conference.show', [$organization, $conference]) }}"
+                   class="mt-4 inline-block text-sm font-medium text-[var(--org-primary)] hover:underline">
+                    {{ __('submission.window.back') }}
+                </a>
+            @endunless
         </div>
-    @else
+    @endif
+
+    @if ($showForm)
         <form wire:submit="submit" class="mt-8 space-y-8" novalidate>
             {{-- Task 7 inserts the honeypot, the fill-time field and the Turnstile widget here. --}}
 

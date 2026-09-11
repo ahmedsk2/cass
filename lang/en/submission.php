@@ -59,6 +59,7 @@ return [
         'is_corresponding' => 'Corresponding author',
         'name_of' => 'name of author :position',
         'email_of' => 'email of author :position',
+        'affiliation_of' => 'affiliation of author :position',
     ],
 
     'buttons' => [

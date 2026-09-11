@@ -10,6 +10,7 @@ use App\Actions\Submissions\SubmitAbstract;
 use App\Actions\Submissions\UpdateSubmission;
 use App\Enums\CustomFieldType;
 use App\Enums\PresentationPreference;
+use App\Enums\SubmissionWindow;
 use App\Exceptions\SubmissionNotAcceptable;
 use App\Models\Conference;
 use App\Models\CustomField;
@@ -41,6 +42,24 @@ use Livewire\Component;
  */
 class SubmissionForm extends Component
 {
+    /**
+     * A sanity bound on submissions.abstract, not the rule an author meets:
+     * that one is the conference's own word limit. It exists because the column
+     * is finite and every public write path here has to stay inside it - MySQL
+     * in strict mode answers an over-long value with SQLSTATE 22001, which is a
+     * 500 on an unauthenticated endpoint, while SQLite accepts it silently and
+     * no test would ever show it.
+     */
+    private const ABSTRACT_MAX_CHARACTERS = 20000;
+
+    /**
+     * More authors than any real abstract carries, and far fewer than a crafted
+     * payload would send: `authors` is public and unlocked, so Livewire fills it
+     * wholesale from the request and SaveSubmissionDraft::syncAuthors() inserts
+     * one row per entry inside a single transaction.
+     */
+    private const MAX_AUTHORS = 50;
+
     /** Route-bound, and never re-resolved from the request after mount. */
     #[Locked]
     public Organization $organization;
@@ -68,6 +87,16 @@ class SubmissionForm extends Component
 
     #[Locked]
     public bool $isPreview = false;
+
+    /**
+     * True when the window was open on the request that built this form. The
+     * view keeps rendering the form while it is true, so a deadline that passes
+     * mid-session turns into the error windowIsOpen() adds rather than into a
+     * closed panel where the author's typing used to be. Locked: the server
+     * decides this once, at mount.
+     */
+    #[Locked]
+    public bool $windowWasOpen = false;
 
     public string $title = '';
 
@@ -100,6 +129,7 @@ class SubmissionForm extends Component
         $this->organization = $organization;
         $this->conference = $conference;
         $this->isPreview = ! $isPublic;
+        $this->windowWasOpen = $conference->submissionWindow() === SubmissionWindow::Open;
         $this->submission = $submission;
         $this->token = $token;
 
@@ -164,14 +194,27 @@ class SubmissionForm extends Component
         // The corresponding author is whichever row is ticked, not row zero -
         // SaveSubmissionDraft::syncAuthors() promotes the first ticked row, and
         // an empty address there is an abstract nobody can ever be told about.
+        // `mixed` and not `array`: the property is filled wholesale from the
+        // request, so a hand-made payload can put a scalar in it, and a typed
+        // closure parameter would answer that with a 500 before validation ever
+        // runs. `?? false` is safe on every type PHP can put here.
         $ticked = collect($this->authors)
-            ->search(fn (array $author): bool => (bool) ($author['is_corresponding'] ?? false));
+            ->search(fn (mixed $author): bool => (bool) ($author['is_corresponding'] ?? false));
         $index = $ticked === false ? 0 : (int) $ticked;
 
+        // A draft is deliberately permissive about what is *missing* (spec 5.3:
+        // a title and an address are enough) and just as deliberately strict
+        // about what is too long: every rule below bounds a column, so the same
+        // over-long paste is a field error here and not an SQLSTATE 22001 there.
         $this->validate([
             'title' => ['required', 'string', 'min:3', 'max:255'],
-            'authors.*.email' => ['nullable', 'email:rfc'],
-            "authors.{$index}.email" => ['required', 'email:rfc'],
+            'abstract' => ['nullable', 'string', 'max:'.self::ABSTRACT_MAX_CHARACTERS],
+            'contact_phone' => ['nullable', 'string', 'max:40'],
+            'authors' => ['array', 'min:1', 'max:'.self::MAX_AUTHORS],
+            'authors.*.name' => ['nullable', 'string', 'max:180'],
+            'authors.*.email' => ['nullable', 'email:rfc', 'max:255'],
+            'authors.*.affiliation' => ['nullable', 'string', 'max:255'],
+            "authors.{$index}.email" => ['required', 'email:rfc', 'max:255'],
         ], [], $this->validationAttributes());
 
         if ($this->submission !== null) {
@@ -267,10 +310,19 @@ class SubmissionForm extends Component
     public function render(): mixed
     {
         $theme = OrganizationTheme::for($this->organization);
+        $window = $this->conference->submissionWindow();
 
         return view('livewire.public.submission-form', [
             'theme' => $theme,
-            'window' => $this->conference->submissionWindow(),
+            'window' => $window,
+            // The window notice is shown whenever the window is not open; the
+            // form is a separate decision. A member previewing an unpublished
+            // conference has no window at all and must still see the form the
+            // preview exists for, and an author whose deadline passed while the
+            // page was open must keep the text they typed. Both are refused by
+            // isWritable() / windowIsOpen() on the way in, with a message,
+            // rather than by a view that removes the fields.
+            'showForm' => $this->isPreview || $window === SubmissionWindow::Open || $this->windowWasOpen,
             'tracks' => $this->tracks(),
             'customFields' => $this->customFields(),
             'presentationOptions' => $this->presentationOptions(),
@@ -305,6 +357,10 @@ class SubmissionForm extends Component
             'title' => ['required', 'string', 'min:3', 'max:255'],
             'abstract' => [
                 'required', 'string',
+                // Characters as well as words: the rule below counts one 100 KB
+                // token as a single word, so it bounds the abstract an author
+                // writes but not the bytes the column has to hold.
+                'max:'.self::ABSTRACT_MAX_CHARACTERS,
                 // The server-side word limit, expressed where the author sees
                 // it. SubmitAbstract checks it again against the stored row.
                 function (string $attribute, mixed $value, callable $fail): void {
@@ -319,7 +375,7 @@ class SubmissionForm extends Component
             'track_id' => ['nullable', Rule::in($this->tracks()->pluck('id')->all())],
             'presentation_preference' => ['required', Rule::in($this->presentationOptions()->keys()->all())],
             'contact_phone' => ['nullable', 'string', 'max:40'],
-            'authors' => ['array', 'min:1'],
+            'authors' => ['array', 'min:1', 'max:'.self::MAX_AUTHORS],
             'authors.*.name' => ['required', 'string', 'max:180'],
             'authors.*.email' => ['required', 'email:rfc', 'max:255'],
             'authors.*.affiliation' => ['nullable', 'string', 'max:255'],
@@ -361,6 +417,7 @@ class SubmissionForm extends Component
         foreach (array_keys($this->authors) as $index) {
             $attributes["authors.{$index}.name"] = __('submission.authors.name_of', ['position' => $index + 1]);
             $attributes["authors.{$index}.email"] = __('submission.authors.email_of', ['position' => $index + 1]);
+            $attributes["authors.{$index}.affiliation"] = __('submission.authors.affiliation_of', ['position' => $index + 1]);
         }
 
         return $attributes;

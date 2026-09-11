@@ -30,7 +30,14 @@ return new class extends Migration
             // Plain text, not HTML: the abstract is typed into a textarea, the
             // word count has to match what the author sees, and nothing on the
             // public or panel side ever renders it unescaped.
-            $table->text('abstract');
+            //
+            // mediumText, not text: MySQL counts TEXT's 65535 in *bytes*, and
+            // the form bounds the abstract at 20000 *characters* - Arabic sits
+            // at two bytes each and an emoji at four, so the widest accepted
+            // abstract is 80000 bytes. TEXT would answer that with SQLSTATE
+            // 22001 on a public endpoint; SQLite, where this suite runs, would
+            // never show it.
+            $table->mediumText('abstract');
             $table->unsignedInteger('word_count')->default(0);
             $table->string('presentation_preference', 16)->nullable();
             $table->string('contact_phone', 40)->nullable();
