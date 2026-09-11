@@ -77,7 +77,7 @@ class RenderEmailTemplate
      */
     private function renderSubject(string $subject, array $values): string
     {
-        $rendered = $this->substitute($subject, $values, escape: false);
+        $rendered = $this->fill($subject, $values, escape: false);
 
         return trim((string) preg_replace('/[\r\n]+/', ' ', $rendered));
     }
@@ -85,11 +85,18 @@ class RenderEmailTemplate
     /** @param  array<string, string|null>  $values */
     private function renderBody(string $body, array $values): string
     {
-        return str_replace('<', '&lt;', $this->substitute($body, $values, escape: true));
+        return str_replace('<', '&lt;', $this->fill($body, $values, escape: true));
     }
 
-    /** @param  array<string, string|null>  $values */
-    private function substitute(string $text, array $values, bool $escape): string
+    /**
+     * Public so the template editor can preview text the organizer has typed
+     * but not yet saved. handle() renders what is *stored*; a preview has to
+     * render what is *on screen*, and re-implementing the substitution rules in
+     * the editor is exactly how a preview starts lying about what will be sent.
+     *
+     * @param  array<string, string|null>  $values
+     */
+    public function fill(string $text, array $values, bool $escape): string
     {
         return (string) preg_replace_callback(
             '/\{\{\s*([a-z_]+)\s*\}\}/',

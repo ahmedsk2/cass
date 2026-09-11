@@ -130,9 +130,19 @@ class ConferenceStatusActions
             ->url(fn (Conference $record): string => ConferenceResource::getUrl('short-link', ['record' => $record]));
     }
 
+    public static function emails(): Action
+    {
+        return Action::make('emails')
+            ->label('Email templates')
+            ->icon(Heroicon::OutlinedEnvelope)
+            ->color('gray')
+            ->visible(fn (Conference $record): bool => Gate::allows('view', $record))
+            ->url(fn (Conference $record): string => ConferenceResource::getUrl('emails', ['record' => $record]));
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
-        return [static::share(), static::publish(), static::close(), static::archive()];
+        return [static::share(), static::emails(), static::publish(), static::close(), static::archive()];
     }
 }
