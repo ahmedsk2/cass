@@ -9,6 +9,7 @@ use App\Models\Submission;
 use App\Models\SubmissionFile;
 use App\Support\Files\SniffedMimeType;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -85,7 +86,20 @@ class StoreSubmissionFile
             // objects - so one of them deleting its copy cannot break the other.
             $storedPath = substr($sha, 0, 2).'/'.$ulid.'.'.$extension;
 
-            Storage::disk('local')->writeStream($storedPath, $stream);
+            // The `local` disk is configured throw=false, report=false
+            // (config/filesystems.php), so a write onto a full or read-only
+            // volume comes back as a bare `false` with nothing logged. Saving
+            // the row regardless would tell the author their file is attached
+            // and hand the organizer a 404 download, so this is where it stops.
+            if (Storage::disk('local')->writeStream($storedPath, $stream) === false) {
+                Log::error('Submission file could not be written to the private disk.', [
+                    'submission_id' => $submission->getKey(),
+                    'path' => $storedPath,
+                    'bytes' => $size,
+                ]);
+
+                throw SubmissionFileRejected::storageFailed();
+            }
         } finally {
             if (is_resource($stream)) {
                 fclose($stream);

@@ -44,7 +44,11 @@ it('stores a pdf content-addressed on the private disk', function () {
         ->and($file->sort)->toBe(1)
         ->and($file->path)->toBe(substr($sha, 0, 2).'/'.$file->ulid.'.pdf');
 
-    Storage::disk('local')->assertExists($file->path);
+    // The bytes, not merely the presence of an object: assertExists() alone is
+    // perfectly happy with the 0-byte file a truncated write leaves behind, so
+    // the second argument is what makes a stream-position regression in
+    // SniffedMimeType::forStream() fail here instead of in production.
+    Storage::disk('local')->assertExists($file->path, fixturePdfBytes());
     // The private disk's root is storage/app/private and nothing serves it;
     // the public disk must never see a submission file.
     Storage::disk('public')->assertMissing($file->path);
@@ -105,6 +109,21 @@ it('refuses the same bytes twice in one submission but allows them in another', 
         ->and($second->path)->not->toBe($this->submission->files()->first()?->path);
 });
 
+it('refuses a file the private disk did not actually write', function () {
+    // The `local` disk is configured throw=false, report=false
+    // (config/filesystems.php), so a write that fails on a full or read-only
+    // volume comes back as a bare `false`. Saving the row anyway would tell the
+    // author their file is attached and hand the organizer a 404 download.
+    $disk = Mockery::mock(Storage::disk('local'));
+    $disk->shouldReceive('writeStream')->once()->andReturnFalse();
+    Storage::set('local', $disk);
+
+    expect(fn () => app(StoreSubmissionFile::class)->handle($this->submission, uploadedPdf()))
+        ->toThrow(SubmissionFileRejected::class, 'could not be saved');
+
+    expect(SubmissionFile::query()->count())->toBe(0);
+});
+
 it('deletes the row and the object', function () {
     $file = app(StoreSubmissionFile::class)->handle($this->submission, uploadedPdf());
     $path = (string) $file->path;
@@ -126,7 +145,10 @@ it('serves a signed url as an attachment and nothing else', function () {
 
     expect($response->headers->get('content-disposition'))->toStartWith('attachment;')
         ->toContain('abstract.pdf')
-        ->and($response->headers->get('cache-control'))->toContain('no-store');
+        ->and($response->headers->get('cache-control'))->toContain('no-store')
+        // The whole round trip, byte for byte: a 200 with the right headers over
+        // a truncated body is the failure this route exists to make impossible.
+        ->and($response->streamedContent())->toBe(fixturePdfBytes());
 });
 
 it('refuses an unsigned, an expired and a tampered url', function () {
@@ -172,6 +194,12 @@ it('refuses a ulid that is not a ulid before reaching the controller', function 
     get('/files/not-a-ulid')->assertNotFound();
     get('/files/01ARZ3NDEKTSV4RRFFQ69G5FAU')->assertNotFound();
 });
+
+/** The exact bytes every uploadedPdf() carries, for comparing what was stored and served. */
+function fixturePdfBytes(): string
+{
+    return (string) file_get_contents(base_path('tests/Fixtures/abstract.pdf'));
+}
 
 /** A distinct PDF, so the sha256 differs from the fixture's. */
 function uploadedPdfWithSuffix(string $name, string $suffix): UploadedFile

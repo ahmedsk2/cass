@@ -55,4 +55,14 @@ class SubmissionFileRejected extends RuntimeException
     {
         return new self('That file could not be read. Please try uploading it again.');
     }
+
+    /**
+     * The private disk answered a write with `false` - a full volume, a
+     * permission, a broken mount. The author is told the truth (nothing was
+     * saved) and no operational detail; StoreSubmissionFile logs the rest.
+     */
+    public static function storageFailed(): self
+    {
+        return new self('That file could not be saved. Please try uploading it again, and tell the organizers if it keeps failing.');
+    }
 }
