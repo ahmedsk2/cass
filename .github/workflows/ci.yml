@@ -115,5 +115,24 @@ jobs:
           # is USER in BusyBox's `PID USER TIME COMMAND` layout.
           docker exec cass sh -c 'ps aux' | tee /tmp/ps
           ! awk '$2 == "root"' /tmp/ps | grep -E 'worker process|pool www|artisan'
+          # The panel is unusable without these; they are git-ignored and only
+          # exist because the image publishes them at build time.
+          curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/css/filament/filament/app.css
+          curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/js/filament/filament/app.js
+          curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/vendor/livewire/livewire.min.js
+          # An asset route must reach PHP (302 to the login page for a guest),
+          # not be answered from disk by the static-extension location.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://127.0.0.1:8080/conference-assets/01ARZ3NDEKTSV4RRFFQ69G5FAV/qr-svg)
+          echo "asset route -> $code"; test "$code" = "302"
+          # dompdf inside the production image as the php-fpm user: bundled
+          # TTFs present, storage/fonts writable by app, GD/CPDF work on Alpine.
+          docker exec cass su-exec app php -r '
+            require "vendor/autoload.php";
+            $app = require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $pdf = Barryvdh\DomPDF\Facade\Pdf::loadHTML("<p style=\"font-family: IBM Plex Sans; font-weight: bold\">CASS</p>");
+            App\Support\Pdf\PosterFonts::register($pdf->getDomPDF());
+            exit(str_starts_with($pdf->output(), "%PDF-") ? 0 : 1);'
+          docker exec cass test -s storage/fonts/installed-fonts.json
       - if: always()
         run: docker logs cass | tail -50
