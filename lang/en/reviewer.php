@@ -165,6 +165,9 @@ return [
         'none' => 'Nobody yet',
         'empty_heading' => 'No abstracts to assign',
         'empty_body' => 'Abstracts appear here once authors have submitted them.',
+        'shortfall' => ':label has :have of :target reviewers; there was nobody left without a conflict.',
+        'preview_empty' => 'Every abstract already has the reviewers it needs, so there is nothing to assign.',
+        'preview_summary' => 'This will add :count assignments across :submissions abstracts.',
         'columns' => [
             'reference' => 'Reference',
             'title' => 'Title',
@@ -182,9 +185,14 @@ return [
         'actions' => [
             'assign' => 'Assign',
             'assign_heading' => 'Who reviews :reference?',
+            'auto' => 'Auto-assign',
+            'auto_heading' => 'Assign reviewers automatically',
+            'auto_description' => 'Each abstract is given the reviewers with the fewest assignments so far, skipping anyone who shares an author\'s institution or email domain. Assignments you made by hand are kept.',
+            'auto_confirm' => 'Save these assignments',
         ],
         'notices' => [
             'saved' => 'Assignments saved',
+            'auto_done' => ':count assignments made',
         ],
         'errors' => [
             'open_pool' => 'This conference is in open pool mode, where every reviewer already sees every abstract. Switch it to assigned review first.',

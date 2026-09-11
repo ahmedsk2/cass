@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Reviews\AssignReviewers;
 use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
+use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
 use App\Exceptions\ReviewNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
@@ -217,4 +218,43 @@ it('refuses assignment to somebody with no role in this organization', function 
     actingAs($outsider);
 
     expect($outsider->can('create', ReviewAssignment::class))->toBeFalse();
+});
+
+it('previews the auto-assign plan before saving it', function () {
+    $second = Submission::factory()->for($this->conference)->submitted()->create(['title' => 'Second abstract']);
+    // The preview labels a row by reference when there is one, and
+    // SubmissionFactory::submitted() always sets a random one, so pin it.
+    $second->forceFill(['reference' => 'AAM26-018'])->save();
+
+    assignmentsPage($this->conference)
+        ->mountAction('autoAssign')
+        // assertMountedActionModalSee, not assertSee: after mountAction() a
+        // plain assertSee() reads the html from before the action mounted, and
+        // the preview table lives in the modal partial
+        // (TestsActions.php:512).
+        ->assertMountedActionModalSee('Dr Omar Khan')
+        ->assertMountedActionModalSee('Dr Sara Nasser')
+        ->assertMountedActionModalSee((string) $second->fresh()?->reference);
+
+    // Mounting is a preview and writes nothing.
+    expect(ReviewAssignment::query()->count())->toBe(0);
+
+    assignmentsPage($this->conference)
+        ->callAction('autoAssign')
+        ->assertHasNoActionErrors()
+        ->assertNotified();
+
+    expect($this->submission->reviewAssignments()->count())->toBe(2)
+        ->and($second->reviewAssignments()->count())->toBe(2);
+});
+
+it('re-plans on save, so a reviewer removed since the preview is not assigned', function () {
+    $page = assignmentsPage($this->conference)->mountAction('autoAssign');
+
+    ConferenceReviewer::query()->where('user_id', $this->sara->id)->firstOrFail()
+        ->forceFill(['status' => ReviewerStatus::Removed, 'removed_at' => now()])->save();
+
+    $page->callMountedAction();
+
+    expect($this->submission->reviewAssignments()->pluck('reviewer_user_id')->all())->toBe([$this->omar->id]);
 });
