@@ -39,7 +39,11 @@ it('lists every tenant log row, newest first', function () {
     $new = EmailLog::factory()->for($this->organization)->for($this->conference)->create(['to_email' => 'second@example.org']);
 
     livewire(ListEmailLogs::class)
-        ->assertCanSeeTableRecords([$old, $new])
+        // `inOrder: true`. The default is false, so the bare call asserted only
+        // that both rows are on the page - removing defaultSort('created_at',
+        // 'desc') from EmailLogsTable would have left this test, whose name is
+        // "newest first", perfectly green.
+        ->assertCanSeeTableRecords([$new, $old], inOrder: true)
         ->assertCanRenderTableColumn('to_email')
         ->assertCanRenderTableColumn('status')
         ->assertCanRenderTableColumn('mailable')
@@ -47,7 +51,12 @@ it('lists every tenant log row, newest first', function () {
 });
 
 it('filters by status and by organization and searches by recipient', function () {
-    $failed = EmailLog::factory()->failed()->create(['to_email' => 'bounced@example.org']);
+    // The contrasting row belongs to *another* organization, not to none at
+    // all. Against a row with a null organization_id a filter that merely did
+    // whereNotNull() would pass, so the cross-tenant discrimination this
+    // deliberately un-scoped, platform-wide screen exists for was never proven.
+    $theirs = Organization::factory()->approved()->create(['name' => 'Another Society']);
+    $failed = EmailLog::factory()->failed()->for($theirs)->create(['to_email' => 'bounced@example.org']);
     $sent = EmailLog::factory()->sent()->for($this->organization)->create(['to_email' => 'fine@example.org']);
 
     livewire(ListEmailLogs::class)

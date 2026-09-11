@@ -20,9 +20,23 @@ return [
         // null, so it follows filesystems.default (local -> storage/app/private,
         // inside the cass-storage volume).
         'disk' => null,
-        'rules' => ['required', 'file', 'max:10240'],
+        // Derived from the same environment variable config/cass.php reads,
+        // and not written out: SubmissionForm::uploadRules() takes its cap from
+        // cass.max_file_bytes, so a hard-coded number here means raising
+        // CASS_MAX_FILE_BYTES moves one knob and leaves this endpoint refusing
+        // at the old one with nothing to say the two disagree. The env() call
+        // is repeated rather than shared because a config file cannot call
+        // config() - nothing is loaded yet - so the default must match
+        // config/cass.php's exactly.
+        'rules' => ['required', 'file', 'max:'.(int) floor(((int) env('CASS_MAX_FILE_BYTES', 10 * 1024 * 1024)) / 1024)],
         'directory' => null,
-        'middleware' => 'throttle:'.env('CASS_UPLOAD_RATE_LIMIT', 20).',1',
+        // Cast and floored at 1. Concatenating env() straight in meant an empty
+        // `CASS_UPLOAD_RATE_LIMIT=` line - which is how a variable gets
+        // disabled - produced `throttle:,1`, and ThrottleRequests reads the
+        // missing count as zero attempts: a 429 on every upload from the public
+        // form, with the cause sitting in a .env file nobody would think to
+        // look at.
+        'middleware' => 'throttle:'.max(1, (int) env('CASS_UPLOAD_RATE_LIMIT', 20)).',1',
         // The package's list, unchanged: Filament previews an uploaded logo
         // through livewire.preview-file, which checks it.
         'preview_mimes' => [

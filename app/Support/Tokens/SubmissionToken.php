@@ -32,4 +32,25 @@ final class SubmissionToken
     {
         return hash('sha256', $plain);
     }
+
+    /**
+     * Whether a plaintext a *caller* is holding really belongs to this stored
+     * hash. Both actions that accept a token from their caller check it here
+     * before putting it into a link they email, because an unchecked one is
+     * either a dead link (stale) or - far worse - a working editing credential
+     * for a different abstract mailed to the wrong author.
+     *
+     * This is a comparison in PHP rather than the indexed lookup
+     * Submission::findByPlainToken() uses, so it is hash_equals: the hash on
+     * the left is not a secret, but the habit costs nothing and the next
+     * comparison written here might be.
+     */
+    public static function matches(?string $storedHash, ?string $plain): bool
+    {
+        if ($storedHash === null || $storedHash === '' || $plain === null || $plain === '') {
+            return false;
+        }
+
+        return hash_equals($storedHash, self::hash($plain));
+    }
 }

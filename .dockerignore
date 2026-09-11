@@ -18,6 +18,7 @@ docs
 Dockerfile
 docker-compose*.yml
 phpunit.xml
+phpunit.browser.xml
 phpstan.neon
 pint.json
 CLAUDE.md

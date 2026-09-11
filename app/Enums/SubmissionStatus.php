@@ -65,10 +65,4 @@ enum SubmissionStatus: string implements HasColor, HasLabel
     {
         return in_array($this, [self::Draft, self::Submitted, self::Withdrawn], true);
     }
-
-    /** Counted as "in the pile" by the organizer's conference view. */
-    public function countsAsReceived(): bool
-    {
-        return ! in_array($this, [self::Draft, self::Withdrawn], true);
-    }
 }

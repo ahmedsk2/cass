@@ -28,9 +28,18 @@ class EmailTemplatePolicy
         return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
     }
 
+    /**
+     * The same null guard as SubmissionPolicy::view(): Conference and
+     * Organization both soft delete and the foreign key only restricts a hard
+     * delete, so either hop can be null while this override row survives.
+     * roleIn() takes a non-nullable Organization, so an unguarded walk is a
+     * TypeError 500 out of a gate whose answer should simply be "no".
+     */
     public function view(User $user, EmailTemplate $template): bool
     {
-        return $user->roleIn($template->conference->organization) !== null;
+        $organization = $template->conference?->organization;
+
+        return $organization !== null && $user->roleIn($organization) !== null;
     }
 
     public function create(User $user): bool

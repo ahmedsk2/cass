@@ -26,6 +26,29 @@ $plan3Sources = [
     'app/Livewire/Public/SubmissionStatus.php',
 ];
 
+it('sweeps every public partial, not only the ones this list was written with', function () use ($plan3Sources) {
+    // The list above is hand-written, so a partial added by a later task is
+    // silently outside the sweep and spec section 10 quietly stops being
+    // enforced - invisibly, because the test still passes. The partials
+    // directory belongs entirely to the Plan 3 pages, so its contents are the
+    // one part of the list that can be checked rather than trusted.
+    $partials = glob(base_path('resources/views/livewire/public/partials/*.blade.php')) ?: [];
+
+    expect($partials)->not->toBeEmpty();
+
+    $outside = [];
+
+    foreach ($partials as $path) {
+        $relative = str_replace('\\', '/', substr($path, strlen(base_path()) + 1));
+
+        if (! in_array($relative, $plan3Sources, true)) {
+            $outside[] = $relative;
+        }
+    }
+
+    expect($outside)->toBe([]);
+});
+
 it('resolves every translation key plan 3 uses', function () use ($plan3Sources) {
     $missing = [];
 
@@ -34,7 +57,12 @@ it('resolves every translation key plan 3 uses', function () use ($plan3Sources)
 
         expect(file_exists($path))->toBeTrue("Expected {$relative} to exist.");
 
-        preg_match_all("/__\\(\\s*'((?:submission|mail)\\.[a-z0-9_.]+)'/", (string) file_get_contents($path), $matches);
+        // `__()`, `@lang()` and `trans()`, single- or double-quoted. The
+        // narrower pattern this started as saw only single-quoted `__()`, so
+        // any of the other four spellings was a key nothing checked - and a key
+        // nothing checks renders as `submission.fields.title` in a label while
+        // every test in the suite stays green.
+        preg_match_all('/(?:__|@lang|trans)\(\s*[\'"]((?:submission|mail)\.[a-z0-9_.]+)[\'"]/', (string) file_get_contents($path), $matches);
 
         foreach (array_unique($matches[1]) as $key) {
             if (! Lang::has($key)) {
@@ -79,12 +107,26 @@ it('leaves no visible english hardcoded in the pages plan 3 added', function () 
 
         $compiled = Blade::compileString((string) file_get_contents(base_path($relative)));
 
-        $text = strip_tags((string) preg_replace([
+        $stripped = (string) preg_replace([
             '/<\?php.*?\?>/s',
             '/<\?php.*$/s',
             '/<script\b[^>]*>.*?<\/script>/s',
             '/<style\b[^>]*>.*?<\/style>/s',
-        ], ' ', $compiled));
+        ], ' ', $compiled);
+
+        // strip_tags() throws away attribute values, so a hardcoded
+        // `placeholder`, `title`, `alt` or `aria-label` - all of them visible
+        // to a reader, and the last two the only text a screen reader gets -
+        // would never be flagged. They are pulled out first and checked as
+        // prose. An attribute whose value came from `{{ __(...) }}` is already
+        // an empty string by this point: the PHP that produced it is gone.
+        preg_match_all(
+            '/\b(?:placeholder|title|alt|aria-label)\s*=\s*"([^"]*)"|\b(?:placeholder|title|alt|aria-label)\s*=\s*\'([^\']*)\'/i',
+            $stripped,
+            $attributes,
+        );
+
+        $text = strip_tags($stripped)."\n".implode("\n", [...$attributes[1], ...$attributes[2]]);
 
         foreach (preg_split('/\r?\n/', $text) ?: [] as $line) {
             $line = trim(preg_replace('/\s+/', ' ', $line) ?? '');

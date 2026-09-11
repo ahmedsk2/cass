@@ -39,12 +39,19 @@ class SubmissionPolicy
      * organization's conference does not resolve at all. A soft-deleted
      * conference does the same thing in production - the case
      * Submission::isOpenToAuthor() already guards for.
+     *
+     * The *organization* is guarded for the same reason and not because of the
+     * same cause: Organization soft deletes too, so the second hop is null
+     * whenever the tenant itself is in the bin while its conference row
+     * survives. roleIn() takes a non-nullable Organization, so walking the
+     * whole chain unguarded turns a gate that should answer "no" into a
+     * TypeError 500.
      */
     public function view(User $user, Submission $submission): bool
     {
-        $conference = $submission->conference;
+        $organization = $submission->conference?->organization;
 
-        return $conference !== null && $user->roleIn($conference->organization) !== null;
+        return $organization !== null && $user->roleIn($organization) !== null;
     }
 
     /**
@@ -61,7 +68,14 @@ class SubmissionPolicy
         return false;
     }
 
-    /** Withdrawal is the organizer's tool; deletion is not, in any panel. */
+    /**
+     * Withdrawal is the organizer's tool; deletion is not. Note what these
+     * `false`s do and do not cover: before() returns true for a platform admin
+     * and short-circuits every one of them, so they refuse organization members
+     * only. The platform admin has no submissions screen today - when Plan 6
+     * gives them one, deletion has to be refused there, in before() or in the
+     * resource, because these methods will never be consulted for that role.
+     */
     public function delete(User $user, Submission $submission): bool
     {
         return false;

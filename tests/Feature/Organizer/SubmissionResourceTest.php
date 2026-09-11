@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Submissions\ExportSubmissionsCsv;
 use App\Actions\Submissions\IssueSubmissionToken;
 use App\Enums\OrganizationRole;
 use App\Enums\PresentationPreference;
@@ -307,11 +308,19 @@ it('shows the four submission counts and a link on the conference view', functio
     ])
         ->assertOk()
         ->assertSee('Submissions')
-        // total 4, draft 2, submitted 1, withdrawn 1
-        ->assertSee('4')
+        // Every number beside its own label, in the order the section lays them
+        // out. A bare assertSee('4') was vacuous: every Filament page inlines
+        // heroicons whose viewBox attribute contains a 4, so all four entries
+        // were effectively unasserted and a wrong count would have passed.
+        ->assertSeeTextInOrder(['Total', '4', 'Drafts', '2', 'Submitted', '1', 'Withdrawn', '1'])
         // Through the helper, so the test breaks if the query-string shape
         // drifts away from the one ListRecords actually binds.
         ->assertSee(SubmissionResource::urlForConference($this->conference), escape: false);
+
+    // And the query behind them, so a broken grouping is a failure here rather
+    // than a rendering puzzle.
+    expect($this->conference->submissionCounts())
+        ->toBe(['total' => 4, 'draft' => 2, 'submitted' => 1, 'withdrawn' => 1]);
 });
 
 it('names the export file after the moment it was taken', function () {
@@ -322,4 +331,23 @@ it('names the export file after the moment it was taken', function () {
         ->assertFileDownloaded('submissions-2026-09-11-083000.csv');
 
     Carbon::setTestNow();
+});
+
+it('exports a row whose conference is gone instead of dying mid-stream', function () {
+    // SubmissionResource::getEloquentQuery() uses whereHas('conference'), which
+    // excludes a soft-deleted one - so this action is safe only by the grace of
+    // its one caller. A future caller handing it a plain Submission::query()
+    // got a 500 after the response had already started streaming, which is a
+    // truncated download and no error page.
+    $orphan = Submission::factory()->for($this->conference)->submitted()->create(['title' => 'Orphaned abstract']);
+    $this->conference->delete();
+
+    $response = app(ExportSubmissionsCsv::class)
+        ->handle(Submission::query()->whereKey($orphan->getKey()), 'submissions.csv');
+
+    ob_start();
+    $response->sendContent();
+    $csv = (string) ob_get_clean();
+
+    expect($csv)->toContain('Orphaned abstract');
 });

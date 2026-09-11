@@ -29,3 +29,15 @@ it('counts the words an author would count', function (string $text, int $expect
 it('is not fooled by leading or trailing whitespace', function () {
     expect(WordCounter::count("   Early mobilisation   \n"))->toBe(2);
 });
+
+it('still counts an abstract carrying a byte that is not valid utf-8', function () {
+    // Every preg_* call here carries /u, and PCRE refuses a subject that is not
+    // valid UTF-8 by answering false. Left unhandled that makes count() return
+    // 0, so a 5000-word paste with one stray byte from a bad copy-paste passes
+    // any word limit and is stored as `word_count = 0`. The bad bytes are
+    // dropped and what is left is counted.
+    $text = "Early mobilisation after cardiac surgery in \xFFchildren";
+
+    expect(mb_check_encoding($text, 'UTF-8'))->toBeFalse()
+        ->and(WordCounter::count($text))->toBe(7);
+});

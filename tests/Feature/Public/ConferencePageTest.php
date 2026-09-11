@@ -282,3 +282,20 @@ it('keeps the page public for a signed-in visitor whose session hash is stale', 
     expect($response->isRedirect())->toBeFalse();
     $response->assertOk()->assertSee($conference->name);
 });
+
+it('leaves the public conference and submit pages indexable', function () {
+    // The layout's `noindex` prop defaults to false and only the author status
+    // page passes true. Nothing pinned the default, so flipping it would
+    // quietly de-index every call for abstracts on the platform - the exact
+    // opposite of what a conference page is for - with the whole suite still
+    // green.
+    $conference = Conference::factory()->for($this->organization)->published()->create();
+
+    get(conferenceUrl($conference))
+        ->assertOk()
+        ->assertDontSee('name="robots"', escape: false);
+
+    get(conferenceUrl($conference).'/submit')
+        ->assertOk()
+        ->assertDontSee('name="robots"', escape: false);
+});

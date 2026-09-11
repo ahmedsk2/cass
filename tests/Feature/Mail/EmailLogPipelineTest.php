@@ -127,3 +127,18 @@ it('reaches only the members who opted in', function () {
     Notification::assertSentTo($wants, NewSubmissionNotice::class);
     Notification::assertNotSentTo($doesNot, NewSubmissionNotice::class);
 });
+
+it('holds a queued job back until the surrounding transaction commits', function () {
+    // The database connection is the one production runs on. With
+    // `after_commit` false, a job dispatched inside a transaction is visible to
+    // a worker straight away: the worker can pick the mailable up, deliver it
+    // and fire MessageSent before the email_logs row has committed, at which
+    // point the listener's UPDATE matches zero rows and a delivered email is
+    // reported as stuck at `queued` for ever - and a rolled-back transaction
+    // sends the email anyway.
+    //
+    // Every SendTemplatedEmail call site today queues outside its transaction
+    // on purpose (SubmitAbstract says so in as many words). This is the setting
+    // that makes that a property of the system rather than of the call sites.
+    expect(config('queue.connections.database.after_commit'))->toBeTrue();
+});

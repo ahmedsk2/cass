@@ -54,11 +54,6 @@ class SubmissionFile extends Model
         );
     }
 
-    public function extension(): string
-    {
-        return strtolower(pathinfo((string) $this->original_name, PATHINFO_EXTENSION));
-    }
-
     public function readStream(): mixed
     {
         return Storage::disk('local')->readStream((string) $this->path);

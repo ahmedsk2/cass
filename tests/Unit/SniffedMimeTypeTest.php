@@ -81,6 +81,25 @@ it('refuses a handle that reports itself unseekable', function () {
     fclose($stream);
 });
 
+it('answers null rather than throwing for a path, a handle or a file it cannot read', function () {
+    // The three robustness guards nothing else exercises: forPath()'s @fopen
+    // false branch, forStream()'s is_resource() branch, and an empty file,
+    // whose fread() gives finfo nothing to work with. All three are refusals
+    // that StoreSubmissionFile turns into a message for the author; a refactor
+    // dropping any of them is a warning or a fatal on a public upload.
+    $empty = tempnam(sys_get_temp_dir(), 'cass');
+    $handle = fopen($empty, 'rb');
+
+    expect(SniffedMimeType::forPath(base_path('tests/Fixtures/no-such-file.pdf')))->toBeNull()
+        ->and(SniffedMimeType::forStream('not a resource'))->toBeNull()
+        ->and(SniffedMimeType::forStream(null))->toBeNull()
+        ->and(SniffedMimeType::forStream($handle))->toBeNull()
+        ->and(SniffedMimeType::forPath($empty))->toBeNull();
+
+    fclose($handle);
+    unlink($empty);
+});
+
 it('lists exactly the extensions the conference form offers', function () {
     expect(SniffedMimeType::allowedExtensions())->toBe(['pdf', 'doc', 'docx']);
 });

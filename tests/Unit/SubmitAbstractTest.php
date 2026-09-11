@@ -220,16 +220,75 @@ it('refuses a track from another conference at submit time too', function () {
 it('throws with every reason and changes nothing when it refuses', function () {
     Mail::fake();
 
-    $link = readyDraft($this->conference, ['title' => '  ']);
+    // Three separate refusals at once. Asserting only the exception class would
+    // leave the contract this file is named for - list every reason rather than
+    // stop at the first - green even if blockers() returned early.
+    $link = readyDraft($this->conference, [
+        'title' => '  ',
+        'abstract' => '',
+        'presentation_preference' => null,
+    ]);
 
-    expect(fn () => app(SubmitAbstract::class)->handle($link->submission, agreed: false))
-        ->toThrow(SubmissionNotAcceptable::class);
+    $reasons = [];
+
+    try {
+        app(SubmitAbstract::class)->handle($link->submission, agreed: false);
+    } catch (SubmissionNotAcceptable $exception) {
+        $reasons = $exception->reasons;
+    }
+
+    expect($reasons)->toHaveCount(4)
+        ->and(implode(' ', $reasons))
+        ->toContain('title')
+        ->toContain('Write the abstract')
+        ->toContain('presentation preference')
+        ->toContain('terms');
 
     expect($link->submission->refresh()->status)->toBe(SubmissionStatus::Draft)
         ->and($link->submission->reference)->toBeNull()
         ->and($this->conference->refresh()->submission_counter)->toBe(0);
 
     Mail::assertNothingQueued();
+});
+
+it('will not mail a link built from a token that is not this abstract\'s', function () {
+    Mail::fake();
+    Notification::fake();
+
+    $mine = readyDraft($this->conference);
+    $theirs = readyDraft($this->conference, ['title' => 'Somebody else entirely']);
+
+    $storedHash = (string) $mine->submission->refresh()->access_token_hash;
+
+    // The caller passes a token it holds. Unchecked, a stale one mails a dead
+    // link and another abstract's one mails this author a working editing
+    // credential for somebody else's work.
+    app(SubmitAbstract::class)->handle($mine->submission, true, $theirs->token);
+
+    Mail::assertQueued(TemplatedMail::class, function (TemplatedMail $mail) use ($theirs): bool {
+        return ! str_contains($mail->body, (string) $theirs->token);
+    });
+
+    // A token that does not match is not trusted, so a fresh one is minted for
+    // this abstract - and the other abstract's own link still works.
+    expect((string) $mine->submission->refresh()->access_token_hash)->not->toBe($storedHash)
+        ->and(Submission::findByPlainToken((string) $theirs->token)?->getKey())->toBe($theirs->submission->getKey());
+});
+
+it('keeps a token that really is this abstract\'s', function () {
+    Mail::fake();
+    Notification::fake();
+
+    $link = readyDraft($this->conference);
+    $storedHash = (string) $link->submission->refresh()->access_token_hash;
+
+    app(SubmitAbstract::class)->handle($link->submission, true, $link->token);
+
+    expect((string) $link->submission->refresh()->access_token_hash)->toBe($storedHash);
+
+    Mail::assertQueued(TemplatedMail::class, function (TemplatedMail $mail) use ($link): bool {
+        return str_contains($mail->body, (string) $link->token);
+    });
 });
 
 it('refuses to submit an abstract twice', function () {

@@ -135,6 +135,17 @@ strips it, and never paste a `/s/...` URL into a ticket. To take a leaked link
 out of circulation, open the submission in the organizer panel and use **Resend
 status link**, which rotates the token and kills the old one.
 
+**One residual the redaction cannot cover: the error log.** `error_log
+/dev/stderr warn` has no configurable format — nginx writes its own, and it
+includes `request: "GET /s/<token> HTTP/1.1"` verbatim. Any status-page request
+that ends in 413, 499, 502 or 504 therefore puts the whole token into the
+Coolify log stream, redaction or no redaction. There is no nginx directive that
+changes this; the options are to accept it (these statuses are rare and the
+stream is not public) or to raise `error_log` to `crit`, which would also hide
+the upstream failures triage needs. It is accepted, and written down here so the
+next person reading a 502 in the log knows what is in front of them: a token
+seen in an error line is a token to rotate with **Resend status link**.
+
 `tests/Feature/AccessLogRedactionTest.php` reads `docker/nginx.conf` and fails
 if that redaction is ever removed, but it does not run nginx. Syntax-check the
 file after every edit to it:

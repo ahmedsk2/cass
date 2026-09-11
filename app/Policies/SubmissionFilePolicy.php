@@ -38,12 +38,17 @@ class SubmissionFilePolicy
      * the Conference model, so another tenant's conference - and a soft-deleted
      * one - resolves to null here. This gate decides who may mint a signed
      * download URL; it denies, it does not fatal.
+     *
+     * All three hops are guarded, because all three models soft delete:
+     * `submission()` applies Submission's SoftDeletes scope (which is why
+     * SubmissionFileController treats the same relation as nullable), and
+     * Organization deletes as well.
      */
     public function view(User $user, SubmissionFile $file): bool
     {
-        $conference = $file->submission->conference;
+        $organization = $file->submission?->conference?->organization;
 
-        return $conference !== null && $user->roleIn($conference->organization) !== null;
+        return $organization !== null && $user->roleIn($organization) !== null;
     }
 
     /** Files are attached and removed by the author, through the status page. */
@@ -67,7 +72,24 @@ class SubmissionFilePolicy
         return false;
     }
 
+    /**
+     * The single-record halves are spelled out beside the bulk ones because
+     * Filament treats a policy method it asks for and does not find as ALLOW
+     * (fact 17), and SubmissionPolicy spells both out. Unreachable while no
+     * resource exposes a SubmissionFile record; a default of "yes" is not the
+     * thing to leave lying around for the resource that eventually does.
+     */
+    public function restore(User $user, SubmissionFile $file): bool
+    {
+        return false;
+    }
+
     public function restoreAny(User $user): bool
+    {
+        return false;
+    }
+
+    public function forceDelete(User $user, SubmissionFile $file): bool
     {
         return false;
     }

@@ -8,10 +8,12 @@ use App\Exceptions\SubmissionFileRejected;
 use App\Models\Submission;
 use App\Models\SubmissionFile;
 use App\Support\Files\SniffedMimeType;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Spec section 8: "Uploads are validated by size (10 MB per file), count,
@@ -27,13 +29,22 @@ class StoreSubmissionFile
     {
         $conference = $submission->conference;
 
+        // The conference soft deletes while the abstract survives - the case
+        // Submission::isOpenToAuthor() documents - so this belongsTo resolves
+        // to null on a public, unauthenticated upload. Reading max_files off
+        // null is a warning Laravel promotes to an ErrorException, and the
+        // count check below would then refuse with "this conference does not
+        // accept file attachments", which is not what happened.
+        if ($conference === null) {
+            throw SubmissionFileRejected::conferenceUnavailable();
+        }
+
         $maxFiles = (int) $conference->max_files;
         if ($submission->files()->count() >= $maxFiles) {
             throw SubmissionFileRejected::tooMany($maxFiles);
         }
 
-        /** @var list<string> $allowed */
-        $allowed = array_values(array_map('strtolower', $conference->allowed_file_types ?? ['pdf']));
+        $allowed = $conference->allowedFileTypes();
         $extension = strtolower($file->getClientOriginalExtension());
 
         if (! in_array($extension, $allowed, true)) {
@@ -61,7 +72,11 @@ class StoreSubmissionFile
 
         try {
             // Content, not the client's Content-Type header and not the name.
-            $mime = SniffedMimeType::forStream($stream);
+            // The forPath() fallback is the one SniffedMimeType::forStream()
+            // documents: it refuses a handle it cannot rewind rather than
+            // eating the head this method still has to hash and copy, and the
+            // path is the same bytes read a second time.
+            $mime = SniffedMimeType::forStream($stream) ?? SniffedMimeType::forPath($path);
 
             if (! SniffedMimeType::matches($mime, $extension)) {
                 throw SubmissionFileRejected::contentMismatch($extension);
@@ -119,7 +134,30 @@ class StoreSubmissionFile
             // middle file of three does not give the next upload a taken sort.
             'sort' => ((int) $submission->files()->max('sort')) + 1,
         ]);
-        $record->save();
+
+        // The object is on disk and the row is not, so every way out of this
+        // save that is not success has to take the object with it. Content
+        // addressing means the object belongs to exactly one row; with no row,
+        // nothing will ever reference it and nothing will ever clean it up.
+        try {
+            $record->save();
+        } catch (UniqueConstraintViolationException) {
+            // The duplicate check above is a read, and the unique
+            // (submission_id, sha256) index is the thing that actually decides.
+            // Two uploads of the same bytes in the same second both pass the
+            // read; the loser must meet the same sentence as the author who
+            // attached the file twice slowly, not a raw QueryException 500 on a
+            // public page.
+            Storage::disk('local')->delete($storedPath);
+
+            $duplicate = $submission->files()->where('sha256', $sha)->first();
+
+            throw SubmissionFileRejected::duplicate((string) ($duplicate->original_name ?? $record->original_name));
+        } catch (Throwable $exception) {
+            Storage::disk('local')->delete($storedPath);
+
+            throw $exception;
+        }
 
         return $record;
     }

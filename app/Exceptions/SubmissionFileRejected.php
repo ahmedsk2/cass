@@ -57,6 +57,17 @@ class SubmissionFileRejected extends RuntimeException
     }
 
     /**
+     * The conference soft-deleted while the abstract survived - the case
+     * Submission::isOpenToAuthor() already guards. Not tooMany(0), which would
+     * tell the author this conference accepts no attachments: it did, and it is
+     * simply not there any more.
+     */
+    public static function conferenceUnavailable(): self
+    {
+        return new self('This conference is no longer accepting attachments. Please contact the organizers.');
+    }
+
+    /**
      * The private disk answered a write with `false` - a full volume, a
      * permission, a broken mount. The author is told the truth (nothing was
      * saved) and no operational detail; StoreSubmissionFile logs the rest.

@@ -566,11 +566,74 @@ it('attaches a pdf to the abstract when it is submitted', function () {
 it('shows the count, size and type limits the conference set', function () {
     $this->conference->forceFill(['max_files' => 2, 'allowed_file_types' => ['pdf']])->save();
 
+    // The whole sentence, from the language file. assertSee('2') on its own is
+    // vacuous - a word count, a date, a Livewire id or a heroicon viewBox
+    // carries a 2 on almost any page - so the count placeholder could break
+    // without this test noticing.
     get(submitUrl($this->conference))
         ->assertOk()
-        ->assertSee('PDF')
-        ->assertSee('2')
-        ->assertSee('10 MB');
+        ->assertSee(__('submission.files.limits', ['count' => 2, 'types' => 'PDF', 'size' => 10]));
+});
+
+it('accepts an upload when the conference lists no file types at all', function () {
+    Storage::fake('local');
+
+    // `allowed_file_types` is `?? ['pdf']` on both sides, which catches null and
+    // not an empty array. Empty built the rule string `extensions:` with no
+    // parameters, which Laravel answers with an InvalidArgumentException - a
+    // 500 on the public form the moment an author picks a file. Not reachable
+    // through the organizer form today (the CheckboxList is required), and
+    // nothing else enforced it.
+    $this->conference->forceFill(['max_files' => 2, 'allowed_file_types' => []])->save();
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('uploads', [uploadedFixturePdf()])
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    expect(Submission::query()->firstOrFail()->files)->toHaveCount(1);
+});
+
+it('renders an author row a crafted payload left a key out of', function () {
+    // `authors` is public and unlocked, so Livewire fills it wholesale from the
+    // request and every rule on it is `nullable`. A row with no
+    // `is_corresponding` key therefore reaches the partial, where an undefined
+    // index is a warning Laravel promotes to an ErrorException - a 500 on a
+    // public, unauthenticated page.
+    livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ])
+        ->set('authors', [['name' => 'Dr Sara Al-Harbi', 'email' => 'sara@example.org']])
+        ->assertOk()
+        // The row itself reached the page. The values are not in the markup -
+        // wire:model binds them client-side - so the row's own field ids are
+        // what proves the partial rendered rather than threw.
+        ->assertSee('author-email-0');
+});
+
+it('stops writing when the organization is suspended while the form is open', function () {
+    // mount() checks the organization once. Every later Livewire request
+    // re-checked only the conference window, so a page opened before a
+    // suspension could still create abstracts and queue branded email for an
+    // organization the platform has taken offline - while /s/{token} 404s, so
+    // the author never sees any of it. An archived conference is caught by the
+    // window; a suspended organization was not.
+    $component = fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]));
+
+    $this->organization->forceFill(['status' => OrganizationStatus::Suspended])->save();
+
+    $component->call('submit')->assertHasErrors('title');
+
+    expect(Submission::query()->count())->toBe(0);
+
+    Mail::assertNothingQueued();
 });
 
 it('refuses a renamed image and leaves the abstract as a draft', function () {

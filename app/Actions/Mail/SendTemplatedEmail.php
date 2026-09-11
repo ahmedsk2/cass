@@ -38,6 +38,19 @@ class SendTemplatedEmail
     ): EmailLog {
         $rendered = $this->render->handle($key, $conference, $values);
 
+        // Never let an author's bearer token into a subject line, whatever a
+        // template said. EmailTemplateKey::subjectPlaceholders() keeps
+        // `status_link` out of the editor's subject field; this is the belt to
+        // that braces, for any path that does not go through the editor at all.
+        //
+        // Redacted *once*, here, and used for both the row and the delivered
+        // message. Redacting only the logged copy would be redacting the wrong
+        // one: the row sits behind the admin panel, while the Subject header
+        // travels in clear text through every relay between this process and
+        // the author's provider. The body still carries the real link - that is
+        // the email.
+        $subject = (string) preg_replace('#/s/[A-Za-z0-9]{64}#', '/s/[redacted]', $rendered->subject);
+
         $log = new EmailLog;
         $log->forceFill([
             'organization_id' => $conference->organization_id,
@@ -46,23 +59,17 @@ class SendTemplatedEmail
             'template_key' => $key->value,
             'mailable' => TemplatedMail::class,
             'to_email' => $toEmail,
-            // Never store an author's bearer token, whatever a template said.
-            // EmailTemplateKey::subjectPlaceholders() keeps `status_link` out of
-            // the editor's subject field; this is the belt to that braces, for
-            // any path that does not go through the editor at all. The row is
-            // listed in the admin panel and is never pruned.
-            //
-            // Redacted here and trimmed to EmailLog::SUBJECT_MAX_LENGTH by the
+            // Redacted above and trimmed to EmailLog::SUBJECT_MAX_LENGTH by the
             // model's own mutator, in that order: trimming first could cut a
-            // token in half and leave the half this pattern no longer matches.
-            'subject' => (string) preg_replace('#/s/[A-Za-z0-9]{64}#', '/s/[redacted]', $rendered->subject),
+            // token in half and leave the half the pattern no longer matches.
+            'subject' => $subject,
             'status' => EmailLogStatus::Queued,
         ]);
         $log->save();
 
         Mail::to($toEmail)->queue(new TemplatedMail(
             logUlid: (string) $log->ulid,
-            subjectLine: $rendered->subject,
+            subjectLine: $subject,
             body: $rendered->body,
             organization: $conference->organization,
             templateKey: $key->value,

@@ -202,6 +202,68 @@ it('never stores an author token in a log subject, whatever the template said', 
 
     expect($log->subject)->not->toMatch('#/s/[A-Za-z0-9]{64}#')
         ->and($log->subject)->toContain('/s/[redacted]');
+
+    // And not only in the logged copy. The subject travels as a clear-text
+    // SMTP header through every relay between here and the author's provider,
+    // which is the exposure the redaction exists to stop - redacting the row
+    // and delivering the raw value would be redacting the wrong copy.
+    Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => preg_match('#/s/[A-Za-z0-9]{64}#', $mail->subjectLine) === 0
+        && str_contains($mail->subjectLine, '/s/[redacted]')
+        // The body still carries the real link: that is the whole email.
+        && str_contains($mail->body, str_repeat('a', 64)));
+});
+
+it('leaves an already-sent log row alone when the job fails afterwards', function () {
+    Mail::fake();
+
+    $conference = Conference::factory()->published()->create();
+    $log = app(SendTemplatedEmail::class)->handle(
+        EmailTemplateKey::SubmissionDraftSaved,
+        $conference,
+        'author@example.org',
+        ['author_name' => 'Sara'],
+    );
+
+    // MessageSent already flipped the row: the transport accepted the message.
+    $log->forceFill(['status' => EmailLogStatus::Sent, 'sent_at' => now()])->save();
+
+    $mail = new TemplatedMail(
+        logUlid: (string) $log->ulid,
+        subjectLine: 'x',
+        body: 'x',
+        organization: $conference->organization,
+        templateKey: EmailTemplateKey::SubmissionDraftSaved->value,
+    );
+
+    // A job that throws *after* the transport accepted the message still ends
+    // up in failed(). Rewriting the row would make the admin panel report a
+    // delivered email as failed, and send support chasing a message the author
+    // already has. RecordOutgoingEmail::sent() guards the same way.
+    $mail->failed(new RuntimeException('the job blew up after the send'));
+
+    expect($log->refresh())
+        ->status->toBe(EmailLogStatus::Sent)
+        ->and($log->error)->toBeNull();
+});
+
+it('does not put the internal organization id in a header of every author email', function () {
+    $organization = Organization::factory()->approved()->create();
+
+    $headers = (new TemplatedMail(
+        logUlid: (string) Str::ulid(),
+        subjectLine: 'x',
+        body: 'x',
+        organization: $organization,
+        templateKey: EmailTemplateKey::SubmissionDraftSaved->value,
+    ))->headers();
+
+    // X-CASS-Log is the correlation id the runbook's triage uses and stays.
+    // RecordOutgoingEmail only reads the context headers for a message that has
+    // no X-CASS-Log, which a templated send always has - so the auto-increment
+    // tenant id was read by nothing and travelled to every author anyway.
+    expect($headers->text)->toHaveKey('X-CASS-Log')
+        ->and($headers->text)->toHaveKey('X-CASS-Template')
+        ->and($headers->text)->not->toHaveKey('X-CASS-Organization');
 });
 
 it('trims a long subject to the width of the log column instead of failing the insert', function () {

@@ -43,7 +43,17 @@ return [
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
             'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
-            'after_commit' => false,
+            // The connection production runs on, and the only one this
+            // application uses. `true`, unlike Laravel's default: a job
+            // dispatched inside a transaction must not become visible to a
+            // worker until that transaction commits. Otherwise the worker can
+            // deliver a templated email and fire MessageSent before the
+            // email_logs row exists, the listener's UPDATE matches nothing, and
+            // a delivered message is reported as stuck at `queued` for ever -
+            // and a rolled-back transaction sends the email regardless. Today
+            // every send is queued outside its transaction on purpose; this
+            // makes that a property of the system rather than of the call site.
+            'after_commit' => true,
         ],
 
         'beanstalkd' => [

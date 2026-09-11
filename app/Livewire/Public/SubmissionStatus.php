@@ -88,7 +88,7 @@ class SubmissionStatus extends Component
         $this->submission->refresh();
     }
 
-    public function withdraw(WithdrawSubmission $withdraw): void
+    public function withdraw(WithdrawSubmission $withdraw): mixed
     {
         try {
             // No $actor: nobody is logged in. WithdrawSubmission records "by
@@ -102,11 +102,19 @@ class SubmissionStatus extends Component
         } catch (SubmissionNotAcceptable $exception) {
             $this->addError('withdraw', $exception->getMessage());
 
-            return;
+            return null;
         }
 
         $this->editing = false;
         session()->flash('status', __('submission.status.withdrawn_flash'));
+
+        // A flash with no redirect is read twice: once by the render this
+        // action triggers and again by the next full page load, so reloading
+        // /s/{token} an hour later still announces "your abstract has been
+        // withdrawn". The redirect is to the same URL - the page the author is
+        // already on - so the banner is shown exactly once, which is how every
+        // other flash on this pair of components behaves.
+        return $this->redirect(route('submission.status', ['token' => $this->token]), navigate: false);
     }
 
     public function render(): mixed

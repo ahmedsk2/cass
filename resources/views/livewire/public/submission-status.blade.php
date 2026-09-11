@@ -33,8 +33,12 @@
         </div>
     @elseif ($submission->status === App\Enums\SubmissionStatus::Withdrawn)
         <div class="mt-6 rounded-lg border border-red-300 bg-red-50 p-4 text-red-900">
+            {{-- `->copy()` before `->setTimezone()`, exactly as
+                 Conference::deadlineInConferenceTimezone() does it:
+                 Illuminate\Support\Carbon is mutable, so setting the zone on
+                 the instance a cast handed out is a write, not a read. --}}
             {{ __('submission.status.withdrawn_notice', [
-                'date' => $submission->withdrawn_at?->setTimezone($conference->timezone)->format('j F Y, H:i'),
+                'date' => $submission->withdrawn_at?->copy()->setTimezone($conference->timezone)->format('j F Y, H:i'),
             ]) }}
         </div>
     @elseif (! $submission->status->isDrivenInPlan3())

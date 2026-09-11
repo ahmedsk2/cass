@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\PresentationPreference;
 use App\Enums\SubmissionStatus;
 use App\Models\Conference;
 use App\Models\Organization;
@@ -75,6 +76,13 @@ it('takes an author from the call for abstracts to a reference number', function
         ->press('Submit abstract')
         // The redirect to /s/{token} happens after the action returns, so wait
         // for the thing that can only exist on the other side of it.
+        //
+        // The waiting is not done by this method. `waitForText` is marked
+        // Deprecated in the installed v5.0.1 and is a plain alias for
+        // assertSee; what actually retries is AwaitableWebpage::__call, which
+        // puts every assertion through Execution::waitForExpectation. So any
+        // assertion here would wait the same way - and a v6 that drops the
+        // alias breaks this line without changing the behaviour it relies on.
         ->waitForText('GPCC26-001')
         ->assertPathBeginsWith('/s/')
         ->assertSee('Early mobilisation after paediatric cardiac surgery')
@@ -85,6 +93,12 @@ it('takes an author from the call for abstracts to a reference number', function
 
     expect($submission->status)->toBe(SubmissionStatus::Submitted)
         ->and($submission->reference)->toBe('GPCC26-001')
+        // The two interactions that are not typing, checked on the stored row
+        // rather than only in the DOM: `select` and `radio` could both be
+        // no-ops against a real browser and the assertValue above would still
+        // read back what the page was already showing.
+        ->and($submission->track_id)->toBe($this->track->id)
+        ->and($submission->presentation_preference)->toBe(PresentationPreference::Oral)
         // 23 whitespace-separated tokens, every one containing a letter or a
         // digit - the same count App\Support\Text\WordCounter produces from the
         // abstract alone ("Ventilator-free" is one word), and the same one the

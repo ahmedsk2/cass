@@ -11,6 +11,7 @@ use App\Models\SubmissionFile;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 
 use function Pest\Laravel\get;
 
@@ -132,6 +133,84 @@ it('deletes the row and the object', function () {
 
     Storage::disk('local')->assertMissing($path);
     expect(SubmissionFile::query()->count())->toBe(0);
+});
+
+it('keeps the object when the row delete fails', function () {
+    // The failure the docblock says this action avoids: a live row whose object
+    // is gone, which is a download link the organizer cannot explain. Deleting
+    // the object first put it back - the transaction rolls the row back and the
+    // bytes are already off the disk. The row goes first; an orphan object is
+    // the acceptable half, and the Plan 6 purge sweeps it.
+    $file = app(StoreSubmissionFile::class)->handle($this->submission, uploadedPdf());
+    $path = (string) $file->path;
+
+    SubmissionFile::deleting(function (): void {
+        throw new RuntimeException('the row delete failed');
+    });
+
+    expect(fn () => app(DeleteSubmissionFile::class)->handle($file))->toThrow(RuntimeException::class);
+
+    Storage::disk('local')->assertExists($path);
+    expect(SubmissionFile::query()->count())->toBe(1);
+});
+
+it('refuses an attachment when the conference is gone rather than reading a property on null', function () {
+    // Submission::isOpenToAuthor() documents the case: the conference soft
+    // deletes while the abstract survives, so `$submission->conference` is
+    // null. Reading max_files off that is a warning Laravel promotes to an
+    // ErrorException - a 500 on a public upload - and the count check would
+    // then refuse with "this conference does not accept file attachments",
+    // which is not what happened.
+    $this->conference->delete();
+
+    expect(fn () => app(StoreSubmissionFile::class)->handle($this->submission->fresh(), uploadedPdf()))
+        ->toThrow(SubmissionFileRejected::class, 'no longer accepting');
+
+    expect(SubmissionFile::query()->count())->toBe(0);
+});
+
+it('answers a duplicate that lands between the check and the insert with the friendly message', function () {
+    // The unique (submission_id, sha256) index behind the check-then-insert:
+    // two uploads of the same bytes in the same second both pass the check and
+    // the second insert raises a QueryException, which is a raw 500 on a public
+    // page rather than the sentence the author can act on. The listener below
+    // is the concurrent request, inserting in the gap.
+    $first = app(StoreSubmissionFile::class)->handle($this->submission, uploadedPdf('one.pdf'));
+
+    SubmissionFile::creating(function (SubmissionFile $file) use ($first): void {
+        SubmissionFile::query()->insert([
+            'submission_id' => $this->submission->getKey(),
+            'ulid' => (string) Str::ulid(),
+            'original_name' => 'race.pdf',
+            'path' => 'zz/race.pdf',
+            'mime' => 'application/pdf',
+            'size' => 1,
+            'sha256' => (string) $first->sha256,
+            'sort' => 9,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    // The row the action checked against is gone, so its own duplicate check
+    // passes and the insert is the thing that collides.
+    $first->forceDelete();
+
+    expect(fn () => app(StoreSubmissionFile::class)->handle($this->submission->fresh(), uploadedPdf('two.pdf')))
+        ->toThrow(SubmissionFileRejected::class, 'already attached');
+});
+
+it('does not leave the object behind when the row cannot be written', function () {
+    SubmissionFile::creating(function (): void {
+        throw new RuntimeException('the insert failed');
+    });
+
+    expect(fn () => app(StoreSubmissionFile::class)->handle($this->submission, uploadedPdf()))
+        ->toThrow(RuntimeException::class);
+
+    // Content addressing means the object belongs to exactly one row. With no
+    // row, nothing will ever reference it or clean it up.
+    expect(Storage::disk('local')->allFiles())->toBe([]);
 });
 
 it('serves a signed url as an attachment and nothing else', function () {

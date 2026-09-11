@@ -12,6 +12,7 @@ use App\Support\Submissions\SubmissionLink;
 use App\Support\Text\WordCounter;
 use App\Support\Tokens\SubmissionToken;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 /**
  * The one write path for an abstract's own fields. Both public buttons go
@@ -33,6 +34,20 @@ class SaveSubmissionDraft
      */
     public function handle(Conference $conference, array $data, ?Submission $existing = null): SubmissionLink
     {
+        // conference_id is force-filled below on every save, new row or not, so
+        // a mismatched pair would move an existing abstract into another
+        // organization's conference - and, because the track and custom-field
+        // filters are applied against the conference that was passed in, wipe
+        // both on the way. Nothing but caller discipline prevented it, and a
+        // cross-tenant write is not a thing to leave to discipline. It is an
+        // argument error rather than a SubmissionNotAcceptable: no author can
+        // act on it and no author can cause it.
+        if ($existing !== null && $existing->exists && (int) $existing->conference_id !== (int) $conference->getKey()) {
+            throw new InvalidArgumentException(
+                'This abstract belongs to another conference. An abstract is never moved between conferences.'
+            );
+        }
+
         return DB::transaction(function () use ($conference, $data, $existing): SubmissionLink {
             $submission = $existing ?? new Submission;
             $isNew = ! $submission->exists;

@@ -56,7 +56,16 @@ class AllocateReference
 
         $next = (int) $locked->submission_counter + 1;
 
-        $locked->forceFill(['submission_counter' => $next])->save();
+        // Persisted, not just used. referencePrefix() *derives* one from the
+        // conference name whenever the column is empty - a row the organizer
+        // cleared the field on - so leaving it underived would let a later
+        // rename change the letters on every reference issued after it while
+        // the counter kept running, which is precisely the drift
+        // Conference::booted() derives-once-on-create to prevent. The first
+        // allocation freezes it, under the same row lock as the counter.
+        $prefix = $locked->referencePrefix();
+
+        $locked->forceFill(['submission_counter' => $next, 'reference_prefix' => $prefix])->save();
 
         // Keep the caller's copy honest so a second allocation in the same
         // request does not read a stale counter off it - and sync the original
@@ -65,8 +74,10 @@ class AllocateReference
         // over a concurrent allocation and hand the next author a reference
         // that is already taken.
         $conference->setAttribute('submission_counter', $next);
+        $conference->setAttribute('reference_prefix', $prefix);
         $conference->syncOriginalAttribute('submission_counter');
+        $conference->syncOriginalAttribute('reference_prefix');
 
-        return self::format($locked->referencePrefix(), $next);
+        return self::format($prefix, $next);
     }
 }

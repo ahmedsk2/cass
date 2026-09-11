@@ -205,6 +205,29 @@ class Conference extends Model
     }
 
     /**
+     * The extensions an author may attach, never empty - the same
+     * derive-rather-than-return-null rule referencePrefix() follows.
+     *
+     * `?? ['pdf']` at the call sites caught a null column and not an empty
+     * array, and the two readers disagreed about the empty one:
+     * SubmissionForm::uploadRules() built the rule string `extensions:` with no
+     * parameters, which Laravel answers with an InvalidArgumentException - a
+     * 500 on the public form the moment an author picks a file - while
+     * StoreSubmissionFile refused every extension with a sentence naming none.
+     * An empty list is the same "nothing configured" state as null, so both
+     * read it here and both get the same answer.
+     *
+     * @return list<string>
+     */
+    public function allowedFileTypes(): array
+    {
+        /** @var list<string> $types */
+        $types = array_values(array_map('strtolower', (array) ($this->allowed_file_types ?? [])));
+
+        return $types === [] ? ['pdf'] : $types;
+    }
+
+    /**
      * One grouped query for the four numbers the conference view prints.
      *
      * @return array{total: int, draft: int, submitted: int, withdrawn: int}

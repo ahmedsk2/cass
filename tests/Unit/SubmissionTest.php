@@ -7,6 +7,7 @@ use App\Enums\SubmissionStatus;
 use App\Models\Conference;
 use App\Models\EmailLog;
 use App\Models\EmailTemplate;
+use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\SubmissionAuthor;
 use App\Models\SubmissionFile;
@@ -133,4 +134,29 @@ it('stores a per-conference email template override and an email log row', funct
         ->and($template->conference->is($conference))->toBeTrue()
         ->and($log->refresh()->status->value)->toBe('queued')
         ->and($log->ulid)->toHaveLength(26);
+});
+
+it('names its organization through its conference, lazily and eagerly', function () {
+    // A six-argument hasOneThrough read child-to-grandparent - the key roles
+    // are inverted relative to the usual direction - is exactly the relation
+    // that silently returns the wrong tenant, and nothing read it or tested it.
+    // The decoy rows give a transposed key pair something wrong to land on: the
+    // conference id and the organization id differ for both submissions.
+    $theirs = Organization::factory()->create(['name' => 'Another Society']);
+    Conference::factory()->for($theirs)->create();
+    Conference::factory()->for($theirs)->create();
+
+    $mine = Organization::factory()->create(['name' => 'Alpha Society']);
+    $submission = Submission::factory()->for(Conference::factory()->for($mine))->create();
+    $decoy = Submission::factory()->for(Conference::factory()->for($theirs))->create();
+
+    expect($submission->organization?->getKey())->toBe($mine->getKey())
+        ->and($decoy->organization?->getKey())->toBe($theirs->getKey());
+
+    // The eager path matches rows in PHP rather than in the where clause, which
+    // is a different half of the relation and the half a panel would use.
+    $loaded = Submission::query()->with('organization')->get()->keyBy('id');
+
+    expect($loaded[$submission->id]->organization?->getKey())->toBe($mine->getKey())
+        ->and($loaded[$decoy->id]->organization?->getKey())->toBe($theirs->getKey());
 });

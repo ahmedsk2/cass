@@ -15,6 +15,7 @@ use App\Models\Submission;
 use App\Models\User;
 use App\Notifications\NewSubmissionNotice;
 use App\Support\Text\WordCounter;
+use App\Support\Tokens\SubmissionToken;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -115,8 +116,10 @@ class SubmitAbstract
 
     /**
      * @param  string|null  $plainToken  the author's existing token, when the caller has it.
-     *                                   Passing null mints a new one and kills every
-     *                                   link already in circulation.
+     *                                   It is checked against the stored hash before it is
+     *                                   used; passing null - or anything that does not
+     *                                   match - mints a new one and kills every link
+     *                                   already in circulation.
      */
     public function handle(Submission $submission, bool $agreed, ?string $plainToken = null): Submission
     {
@@ -165,7 +168,7 @@ class SubmitAbstract
             return $submission;
         });
 
-        $token = $plainToken ?? $this->issueToken->handle($submission);
+        $token = $this->tokenFor($submission, $plainToken);
 
         $author = $submission->correspondingAuthor();
 
@@ -184,6 +187,24 @@ class SubmitAbstract
         activity()->performedOn($submission)->log('submission.submitted');
 
         return $submission->refresh();
+    }
+
+    /**
+     * The token the confirmation email will carry.
+     *
+     * A caller-supplied plaintext is checked against the stored hash before it
+     * is trusted, because the value ends up in a link this method mails to an
+     * author: a stale one would send a dead link, and one belonging to a
+     * *different* abstract would send this author a working editing credential
+     * for somebody else's work. Anything that does not match is discarded and a
+     * fresh token is minted, which is the safe failure - the author's old links
+     * stop resolving and the email carries one that does.
+     */
+    private function tokenFor(Submission $submission, ?string $plainToken): string
+    {
+        return SubmissionToken::matches($submission->access_token_hash, $plainToken)
+            ? (string) $plainToken
+            : $this->issueToken->handle($submission);
     }
 
     /**

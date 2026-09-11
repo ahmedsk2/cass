@@ -185,11 +185,21 @@ class ConferenceEmailTemplates extends Page implements HasTable
                     ->rows(14)
                     ->maxLength(10000)
                     ->live(onBlur: true)
-                    ->helperText('Markdown: **bold**, _italic_, - lists, and [links](https://example.org). Raw HTML is removed.')
+                    // "shown as text", not "removed": RenderEmailTemplate::renderBody()
+                    // escapes `<`, so a tag an organizer types is delivered to
+                    // the recipient as visible characters rather than stripped.
+                    // Telling them it is removed would have them paste a tag,
+                    // see nothing in the preview they expected, and send it.
+                    ->helperText('Markdown: **bold**, _italic_, - lists, and [links](https://example.org). Raw HTML is not rendered - it is shown as text.')
                     ->rule(fn (): Closure => $this->placeholderRule($record['key'])),
 
                 Section::make('Preview')
-                    ->description('With sample values, in the layout the recipient sees.')
+                    // The wording, with sample values. Not the layout: the
+                    // preview renders the Markdown on its own, without the mail
+                    // template, the organization header or the theme, so
+                    // promising "the layout the recipient sees" would be a
+                    // promise this section does not keep.
+                    ->description('The wording, with sample values filled in. The email itself is sent in your organization\'s branded layout.')
                     ->components([
                         Placeholder::make('preview')
                             ->hiddenLabel()
@@ -201,11 +211,23 @@ class ConferenceEmailTemplates extends Page implements HasTable
                     ]),
             ])
             ->action(function (array $record, array $data, SaveEmailTemplate $save): void {
-                Gate::authorize('create', EmailTemplate::class);
+                $key = EmailTemplateKey::from($record['key']);
+
+                // The ability has to match what the save actually does.
+                // Authorizing `create` for every save made
+                // EmailTemplatePolicy::update() unreachable dead code, so any
+                // later tightening of it - Plan 4 gives reviewers a role, and
+                // spec section 4 may yet narrow who edits wording - would have
+                // silently not applied to the one screen that edits wording.
+                $existing = $this->getConference()->emailTemplates()->where('key', $key->value)->first();
+
+                $existing instanceof EmailTemplate
+                    ? Gate::authorize('update', $existing)
+                    : Gate::authorize('create', EmailTemplate::class);
 
                 $save->handle(
                     $this->getConference(),
-                    EmailTemplateKey::from($record['key']),
+                    $key,
                     (string) $data['subject'],
                     (string) $data['body'],
                 );

@@ -44,7 +44,11 @@
                     </label>
                     <label class="flex items-center gap-2">
                         {{-- A radio, not a checkbox: exactly one corresponding author. --}}
-                        <input type="radio" name="corresponding" @checked($author['is_corresponding'])
+                        {{-- `?? false`: `authors` is public and unlocked, so a
+                             crafted payload can send a row without this key,
+                             and an undefined index here is an ErrorException -
+                             a 500 on a public page. --}}
+                        <input type="radio" name="corresponding" @checked($author['is_corresponding'] ?? false)
                                wire:click="makeCorresponding({{ $index }})" class="border-slate-300">
                         {{ __('submission.authors.is_corresponding') }}
                     </label>

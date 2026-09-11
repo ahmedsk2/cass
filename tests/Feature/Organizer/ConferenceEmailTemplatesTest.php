@@ -11,6 +11,7 @@ use App\Models\Conference;
 use App\Models\EmailTemplate;
 use App\Models\Organization;
 use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Features\SupportTesting\Testable;
 
 use function Pest\Laravel\actingAs;
@@ -231,4 +232,59 @@ it('refuses a link placeholder in a subject line', function () {
         ->assertHasActionErrors(['subject']);
 
     expect(EmailTemplate::query()->where('key', 'submission_draft_saved')->exists())->toBeFalse();
+});
+
+it('warns about a placeholder the key does not declare in the body as well', function () {
+    // Only the subject's rejection path was exercised, so deleting the body's
+    // own ->rule() left every test in this file green while an undeclared
+    // placeholder rendered literally in an author's inbox.
+    templatesPage($this->conference)
+        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+            'subject' => 'We have your abstract, {{author_name}}',
+            'body' => 'Dear {{author_name}}, ask {{reviewer_name}} about it.',
+        ])
+        ->assertHasActionErrors(['body']);
+
+    expect(EmailTemplate::query()->count())->toBe(0);
+});
+
+it('authorizes a save over an existing override as an update of that row', function () {
+    EmailTemplate::factory()->for($this->conference)->create([
+        'key' => EmailTemplateKey::SubmissionReceived->value,
+        'subject' => 'Our own subject',
+        'body' => 'Our own body',
+    ]);
+
+    // Saving over an override authorized `create`, so EmailTemplatePolicy's
+    // update() was unreachable and any later tightening of it would silently
+    // not apply. Gate::before short-circuits the ability being asked for,
+    // whatever the policy would have answered, so this asserts the *question*
+    // the page asks.
+    Gate::before(
+        fn ($user, string $ability): ?bool => $ability === 'update' ? false : null
+    );
+
+    templatesPage($this->conference)
+        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+            'subject' => 'A newer subject',
+            'body' => 'A newer body',
+        ])
+        ->assertForbidden();
+
+    expect(EmailTemplate::query()->firstOrFail()->subject)->toBe('Our own subject');
+});
+
+it('still authorizes a first override as a create', function () {
+    Gate::before(
+        fn ($user, string $ability): ?bool => $ability === 'update' ? false : null
+    );
+
+    templatesPage($this->conference)
+        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+            'subject' => 'A first subject',
+            'body' => 'A first body',
+        ])
+        ->assertHasNoActionErrors();
+
+    expect(EmailTemplate::query()->firstOrFail()->subject)->toBe('A first subject');
 });

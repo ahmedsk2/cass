@@ -396,3 +396,59 @@ it('reports a refusal instead of a 500 when the abstract is withdrawn mid-edit',
         ->title->toBe('Early mobilisation after cardiac surgery')
         ->status->toBe(SubmissionStatus::Withdrawn);
 });
+
+it('shows the withdrawal date in conference time without rewriting the model', function () {
+    $this->conference->forceFill(['timezone' => 'Asia/Riyadh'])->save();
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Withdrawn,
+        'withdrawn_at' => Carbon::parse('2026-10-01 21:30:00', 'UTC'),
+    ])->save();
+
+    $component = livewire(StatusPage::class, ['token' => $this->token]);
+
+    // Riyadh is UTC+3, so the reader sees the first of October at half past
+    // midnight the next day.
+    $component->assertSee('2 October 2026, 00:30');
+
+    // Illuminate\Support\Carbon is mutable and Eloquent caches the cast
+    // attribute, so `->setTimezone()` on it rewrites the instance the whole
+    // request then carries - the reason Conference::deadlineInConferenceTimezone()
+    // copies first.
+    expect($component->instance()->submission->withdrawn_at?->getTimezone()->getName())->toBe('UTC');
+});
+
+it('redirects after a withdrawal so the banner is shown once', function () {
+    // session()->flash() without a redirect paints the banner in this render
+    // *and* again on the next request, so a plain reload of /s/{token} repeats
+    // "Your abstract has been withdrawn" over an abstract that was withdrawn
+    // minutes ago. Every other flash on this page is followed by a redirect.
+    livewire(StatusPage::class, ['token' => $this->token])
+        ->call('withdraw')
+        ->assertHasNoErrors()
+        // The redirect is the whole of it: with one, the banner belongs to the
+        // page the author lands on and is consumed there. Without one it is
+        // painted by this render *and* left in the session for the next
+        // request, so a reload an hour later repeats it.
+        ->assertRedirect(route('submission.status', ['token' => $this->token]));
+
+    expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
+});
+
+it('saves an edit when the status page did not hand the form a token', function () {
+    // `token` is nullable on the component, and route('submission.status') with
+    // a null parameter is a UrlGenerationException - a 500 over an edit that
+    // was already written. submit() guards exactly this case; saveDraft() did
+    // not.
+    livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+        'submission' => $this->submission,
+        'token' => null,
+    ])
+        ->set('title', 'A revised title')
+        ->call('saveDraft')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('conference.show', [$this->organization, $this->conference]));
+
+    expect($this->submission->refresh()->title)->toBe('A revised title');
+});

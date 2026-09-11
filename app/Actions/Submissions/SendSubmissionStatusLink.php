@@ -10,6 +10,7 @@ use App\Enums\SubmissionStatus;
 use App\Exceptions\SubmissionNotAcceptable;
 use App\Models\EmailLog;
 use App\Models\Submission;
+use App\Support\Tokens\SubmissionToken;
 
 /**
  * Two jobs, one class: the email an author gets when a draft is first saved,
@@ -18,7 +19,11 @@ use App\Models\Submission;
  *
  * `$plainToken` follows exactly the rule SubmitAbstract::handle() follows: pass
  * the token you already hold and the author's existing link keeps working; pass
- * null and a new one is minted, which kills every link already in circulation.
+ * null - or anything that does not match the stored hash - and a new one is
+ * minted, which kills every link already in circulation. The check matters
+ * because the value goes into a link this class *emails*: an unverified token
+ * from another abstract would hand this author an editing credential for
+ * somebody else's work.
  * The public form passes the token SaveSubmissionDraft just returned, so the
  * "your draft is saved" email and the page the author is redirected to are the
  * same URL. The organizer's "Resend status link" passes null, because support
@@ -46,7 +51,9 @@ class SendSubmissionStatusLink
             throw SubmissionNotAcceptable::because('This abstract has no corresponding author with a usable email address to send a link to.');
         }
 
-        $token = $plainToken ?? $this->issueToken->handle($submission);
+        $token = SubmissionToken::matches($submission->access_token_hash, $plainToken)
+            ? (string) $plainToken
+            : $this->issueToken->handle($submission);
 
         // The wording has to match what the author will actually see when they
         // follow the link: "your draft is saved" over a submitted abstract

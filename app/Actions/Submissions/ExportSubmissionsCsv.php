@@ -67,11 +67,20 @@ class ExportSubmissionsCsv
     private function row(Submission $submission): array
     {
         $corresponding = $submission->correspondingAuthor();
-        $timezone = (string) $submission->conference->timezone;
+
+        // Conference soft deletes, and the foreign key only restricts a *hard*
+        // delete, so this relation resolves to null while the row survives.
+        // Today the only caller is SubmissionResource::getEloquentQuery(),
+        // whose whereHas('conference') excludes exactly those rows - so this
+        // was safe by the grace of one caller. A future caller handing in a
+        // plain Submission::query() got a fatal *after* the response had begun
+        // streaming: a truncated download, and no error page to explain it.
+        $conference = $submission->conference;
+        $timezone = (string) ($conference->timezone ?? config('app.timezone'));
 
         return array_map($this->guard(...), [
             (string) $submission->reference,
-            (string) $submission->conference->name,
+            (string) ($conference->name ?? ''),
             (string) $submission->title,
             $submission->status->getLabel(),
             // `->` and not `?->` on the left of a `??`: the null coalesce
@@ -90,8 +99,11 @@ class ExportSubmissionsCsv
             (string) $submission->word_count,
             $submission->files->pluck('original_name')->implode('; '),
             $this->extraAnswers($submission),
-            $submission->submitted_at?->setTimezone($timezone)->format('Y-m-d H:i') ?? '',
-            $submission->last_edited_at?->setTimezone($timezone)->format('Y-m-d H:i') ?? '',
+            // `->copy()` first, the rule Conference::deadlineInConferenceTimezone()
+            // sets: Illuminate\Support\Carbon is mutable, so setting the zone on
+            // the instance a cast handed out is a write, not a read.
+            $submission->submitted_at?->copy()->setTimezone($timezone)->format('Y-m-d H:i') ?? '',
+            $submission->last_edited_at?->copy()->setTimezone($timezone)->format('Y-m-d H:i') ?? '',
         ]);
     }
 

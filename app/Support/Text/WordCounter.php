@@ -27,6 +27,19 @@ final class WordCounter
 
     public static function count(string $text): int
     {
+        // Both patterns below carry /u, and PCRE refuses a subject that is not
+        // valid UTF-8 by answering false rather than by throwing. Passed
+        // straight through, one stray byte from a bad copy-paste would make
+        // this answer 0 - a word limit that accepts anything, and a
+        // `word_count` column of 0 next to a 5000-word abstract. The invalid
+        // bytes are substituted and what the author actually wrote is counted.
+        // mb_convert_encoding from UTF-8 to UTF-8 is the documented way to do
+        // that; the browser half has no equivalent because a JavaScript string
+        // cannot hold an invalid sequence in the first place.
+        if (! mb_check_encoding($text, 'UTF-8')) {
+            $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+        }
+
         $tokens = preg_split(self::SEPARATORS, trim($text), -1, PREG_SPLIT_NO_EMPTY);
 
         if ($tokens === false || $tokens === []) {

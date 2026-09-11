@@ -79,9 +79,13 @@ class Submission extends Model
      * whose `organization_id` points at the organization.
      *
      * It exists because the house rule is that every tenant-owned model can
-     * name its organization, and because the infolist and the CSV export read
-     * it. **Filament is deliberately not told to use it for tenancy** - see the
-     * comment on SubmissionResource::$isScopedToTenant.
+     * name its organization. Nothing in Plan 3 reads it - the infolist and
+     * ExportSubmissionsCsv both go through `conference` - so
+     * tests/Unit/SubmissionTest.php pins it lazily and eagerly instead: an
+     * inverted key pair in a six-argument hasOneThrough does not fail, it
+     * quietly answers with the wrong tenant. **Filament is deliberately not
+     * told to use it for tenancy** - see the comment on
+     * SubmissionResource::$isScopedToTenant.
      *
      * @return HasOneThrough<Organization, Conference, $this>
      */

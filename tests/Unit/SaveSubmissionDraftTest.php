@@ -19,6 +19,14 @@ use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
+// Three tests below freeze the clock. Resetting it only on the last line of
+// each body means one failing assertion leaves every later test in this file
+// running past the conference deadline, turning one red into a cascade that
+// hides which assertion actually broke.
+afterEach(function () {
+    Carbon::setTestNow();
+});
+
 beforeEach(function () {
     $this->conference = Conference::factory()->published()->create(['word_limit' => 300]);
 });
@@ -154,6 +162,21 @@ it('drops a custom field value the conference does not define', function () {
     ]));
 
     expect($link->submission->refresh()->custom_field_values)->toBe(['funding_source' => 'None']);
+});
+
+it('refuses to re-parent an existing abstract into another conference', function () {
+    $link = app(SaveSubmissionDraft::class)->handle($this->conference, draftData());
+    $elsewhere = Conference::factory()->published()->create();
+
+    // conference_id is force-filled on every save, so a mismatched pair would
+    // move the abstract into another organization's conference and - because
+    // the track and the custom-field filters are applied against the conference
+    // that was passed in - silently wipe both. Only caller discipline stood
+    // between a mixed-up argument and a cross-tenant write.
+    expect(fn () => app(SaveSubmissionDraft::class)->handle($elsewhere, draftData(), $link->submission))
+        ->toThrow(InvalidArgumentException::class);
+
+    expect($link->submission->refresh()->conference_id)->toBe($this->conference->id);
 });
 
 it('refuses a track that belongs to another conference', function () {

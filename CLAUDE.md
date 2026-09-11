@@ -13,6 +13,7 @@ Conference Abstract Submission System. Multi-tenant Laravel 13 + Filament 5. Spe
 - Never commit `Legacy/`, `legacy-review.md`, `assets/envato/`.
 - Migrations are never run at container boot. The owner runs them in production.
 - Composer on this machine: run `php /c/Users/ahmed/AppData/Local/composer-bin/composer.phar <args>` from Git Bash. The `composer.bat` wrapper passes through cmd.exe and silently strips `^` from version constraints.
+- `ext-sockets` must be on, or `composer install` fails the platform check: `pestphp/pest-plugin-browser` requires it. Windows PHP ships `php_sockets.dll` but leaves it commented out — uncomment `extension=sockets` in `php.ini` (`php --ini` finds the file). CI turns it on through `extensions:` in `.github/workflows/ci.yml`; the production image never installs dev dependencies and does not need it.
 
 ## Commands
 

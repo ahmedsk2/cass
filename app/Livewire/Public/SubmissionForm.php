@@ -340,7 +340,16 @@ class SubmissionForm extends Component
 
             session()->flash('status', __('submission.flash.draft_updated'));
 
-            return $this->redirect(route('submission.status', ['token' => $this->token]), navigate: false);
+            // The same guard submit() applies at the end of this class, for the
+            // same reason: `token` is nullable, and route() with a null
+            // parameter is a UrlGenerationException - a 500 thrown over an edit
+            // that has already been written.
+            return $this->redirect(
+                $this->token === null
+                    ? route('conference.show', [$this->organization, $this->conference])
+                    : route('submission.status', ['token' => $this->token]),
+                navigate: false,
+            );
         }
 
         $link = $save->handle($this->conference, $this->payload());
@@ -602,7 +611,16 @@ class SubmissionForm extends Component
      */
     private function windowIsOpen(): bool
     {
-        if ($this->conference->acceptsSubmissions()) {
+        // The organization as well as the window. mount() checks approval once,
+        // and every later Livewire request re-checks only the conference - so a
+        // page opened before a suspension could still create abstracts, burn
+        // reference numbers and queue branded email for an organization the
+        // platform has taken offline, while /s/{token} 404s so the author never
+        // sees any of it. An archived conference is caught by the window; a
+        // suspended organization was not. Both #[Locked] properties are
+        // re-resolved from the database on every request, so this reads the
+        // current row and not the one mount() saw.
+        if ($this->organization->isApproved() && $this->conference->acceptsSubmissions()) {
             return true;
         }
 
@@ -717,7 +735,7 @@ class SubmissionForm extends Component
                 'file',
                 // Kilobytes, which is what the `max` rule speaks.
                 'max:'.(int) floor((int) config('cass.max_file_bytes') / 1024),
-                'extensions:'.implode(',', array_map('strtolower', (array) ($this->conference->allowed_file_types ?? ['pdf']))),
+                'extensions:'.implode(',', $this->conference->allowedFileTypes()),
             ],
         ];
     }

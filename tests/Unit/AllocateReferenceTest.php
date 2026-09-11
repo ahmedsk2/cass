@@ -59,6 +59,31 @@ it('derives a prefix for a conference that has none', function () {
     expect(app(AllocateReference::class)->handle($conference->refresh()))->toBe('WSCC27-001');
 });
 
+it('freezes a derived prefix on the first allocation so a rename cannot move it', function () {
+    // Conference::booted() derives the prefix once, on create, precisely so an
+    // organizer renaming the conference does not change the letters printed on
+    // references already issued. A conference whose prefix column is empty -
+    // the organizer cleared the field - defeated that: referencePrefix()
+    // derived a fresh prefix on every call while the counter kept running, so
+    // GPCC26-001 and WSCC27-002 would belong to the same sequence.
+    $conference = Conference::factory()->create([
+        'name' => 'Winter School of Critical Care',
+        'starts_at' => '2027-01-10',
+    ]);
+    $conference->forceFill(['reference_prefix' => null])->save();
+
+    $first = app(AllocateReference::class)->handle($conference->refresh());
+
+    expect($conference->refresh()->reference_prefix)->toBe('WSCC27');
+
+    $conference->forceFill(['name' => 'Gulf Pediatric Critical Care'])->save();
+
+    $second = app(AllocateReference::class)->handle($conference->refresh());
+
+    expect($first)->toBe('WSCC27-001')
+        ->and($second)->toBe('WSCC27-002');
+});
+
 it('leaves the caller copy clean so a later save cannot roll the counter back', function () {
     // The bug this prevents: handle() copies the new counter onto the instance
     // the caller passed in. If that copy is left *dirty*, any later save() of

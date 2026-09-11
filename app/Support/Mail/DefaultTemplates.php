@@ -21,7 +21,14 @@ final class DefaultTemplates
         $subject = __('mail.templates.'.$key->value.'.subject');
         $body = __('mail.templates.'.$key->value.'.body');
 
-        if (! is_string($subject) || ! is_string($body) || str_starts_with($subject, 'mail.templates.')) {
+        // Both halves, not just the subject: Laravel answers a miss with the
+        // key itself, so a renamed or deleted `body` entry would otherwise ship
+        // an email whose entire content is the string
+        // "mail.templates.<key>.body" - which is the failure this class exists
+        // to make loud, and the body is the whole message.
+        if (! is_string($subject) || ! is_string($body)
+            || str_starts_with($subject, 'mail.templates.')
+            || str_starts_with($body, 'mail.templates.')) {
             throw new \RuntimeException("No platform default email template for [{$key->value}]. Add it to lang/en/mail.php.");
         }
 
