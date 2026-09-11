@@ -28,8 +28,23 @@ final class Turnstile
         return filled(config('cass.turnstile.site_key')) && filled(config('cass.turnstile.secret_key'));
     }
 
+    /**
+     * The key the form renders the widget with, and null whenever the widget
+     * must not be rendered at all.
+     *
+     * It answers for *both* keys, not just its own. A deploy that sets only
+     * TURNSTILE_SITE_KEY - the easy half, because the public key is the one that
+     * gets pasted around - would otherwise render the challenge while verify()
+     * returns true on its first line, because isConfigured() is false. The
+     * author solves a puzzle nobody checks and the operator reads the widget on
+     * the page as proof that bot protection is on. Half-configured is off.
+     */
     public static function siteKey(): ?string
     {
+        if (! self::isConfigured()) {
+            return null;
+        }
+
         $key = config('cass.turnstile.site_key');
 
         return is_string($key) && $key !== '' ? $key : null;

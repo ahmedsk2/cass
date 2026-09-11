@@ -25,6 +25,25 @@ it('is off until both keys are configured', function (?string $site, ?string $se
     ['site-key', 'secret-key', true],
 ]);
 
+it('offers a site key only when the secret is configured too', function (?string $site, ?string $secret, ?string $expected) {
+    config()->set('cass.turnstile.site_key', $site);
+    config()->set('cass.turnstile.secret_key', $secret);
+
+    // A site key on its own is the dangerous half-configuration: the widget
+    // would render while verify() waves every submission through, so the author
+    // solves a puzzle nobody checks and the operator believes Turnstile is on.
+    // siteKey() is what the form asks before rendering the widget, so it is the
+    // one place that has to answer for both keys.
+    expect(Turnstile::siteKey())->toBe($expected);
+})->with([
+    [null, null, null],
+    ['site-key', null, null],
+    ['site-key', '', null],
+    [null, 'secret-key', null],
+    ['', 'secret-key', null],
+    ['site-key', 'secret-key', 'site-key'],
+]);
+
 it('waves everything through when it is not configured', function () {
     Http::fake();
     config()->set('cass.turnstile.site_key', null);

@@ -132,7 +132,14 @@ class SubmissionForm extends Component
      * directory until a submission row exists to attach them to - which for a
      * brand new abstract is only after SaveSubmissionDraft has run.
      *
-     * @var list<TemporaryUploadedFile>
+     * `mixed` and not `list<TemporaryUploadedFile>`, deliberately: the property
+     * is public and unlocked, so Livewire fills it wholesale from the request
+     * and a crafted payload can put a string - or anything else - in it. The
+     * docblock says what a client may send, not what the component wishes it
+     * sent; pendingUploads() is what turns it back into a list of files, and
+     * every reader goes through that.
+     *
+     * @var array<array-key, mixed>
      */
     public array $uploads = [];
 
@@ -226,6 +233,16 @@ class SubmissionForm extends Component
      */
     public function updatedUploads(): void
     {
+        // First, before anything else can look at the array, and before the
+        // rules below can throw. A ValidationException out of this hook does
+        // *not* stop the response: Wrapped::__call triggers the `exception`
+        // hook, SupportValidation stops propagation, and Livewire renders the
+        // component anyway - at which point the files partial calls
+        // getClientOriginalName() on whatever the client sent. Without this
+        // line, `uploads=["x"]` is a fatal Error on a public, unauthenticated
+        // page.
+        $this->uploads = $this->pendingUploads();
+
         $this->validate($this->uploadRules(), [], ['uploads' => __('submission.files.label')]);
     }
 
@@ -695,19 +712,53 @@ class SubmissionForm extends Component
      */
     private function storeUploads(Submission $submission, StoreSubmissionFile $store): bool
     {
-        foreach ($this->uploads as $upload) {
+        // The same normalisation updatedUploads() applies, repeated because
+        // this method hands each entry straight to an action and is reached
+        // from two public, unauthenticated buttons.
+        $pending = $this->pendingUploads();
+        $this->uploads = $pending;
+
+        foreach ($pending as $index => $upload) {
             try {
                 $store->handle($submission, $upload);
             } catch (SubmissionFileRejected $exception) {
+                // Only what has *not* been stored is still pending. Clearing the
+                // list wholesale at the end would leave an already-stored file
+                // in it on the way out of this branch, and the next Submit would
+                // hand the same bytes to StoreSubmissionFile again - which
+                // answers duplicate(). The author would be stuck on an error
+                // about a file they never attached twice, unable to clear it
+                // without also dropping the one that worked.
+                $this->uploads = array_values($this->uploads);
                 $this->addError('uploads', $exception->getMessage());
 
                 return false;
             }
+
+            unset($this->uploads[$index]);
         }
 
-        $this->uploads = [];
+        $this->uploads = array_values($this->uploads);
 
         return true;
+    }
+
+    /**
+     * `uploads` as the list of real temporary uploads it is supposed to be.
+     *
+     * Everything that reads the array comes through here, because the property
+     * is public, unlocked and filled wholesale from the request: the view would
+     * otherwise call getClientOriginalName() on a crafted string, and
+     * StoreSubmissionFile would be handed something that is not a file at all.
+     *
+     * @return list<TemporaryUploadedFile>
+     */
+    private function pendingUploads(): array
+    {
+        return array_values(array_filter(
+            $this->uploads,
+            static fn (mixed $upload): bool => $upload instanceof TemporaryUploadedFile,
+        ));
     }
 
     /** @return Collection<string, string> */

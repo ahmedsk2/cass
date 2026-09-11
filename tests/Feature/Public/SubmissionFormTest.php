@@ -619,6 +619,52 @@ it('drops a pending upload the author changed their mind about', function () {
         ->assertCount('uploads', 1);
 });
 
+it('keeps a file it already stored out of the pending list when a later one is refused', function () {
+    Storage::fake('local');
+
+    $component = fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]));
+
+    // The good one is stored before the renamed image is sniffed and refused.
+    $component
+        ->set('uploads', [uploadedFixturePdf(), uploadedRenamedImage()])
+        ->call('submit')
+        ->assertHasErrors(['uploads']);
+
+    expect(Submission::query()->firstOrFail()->files()->count())->toBe(1);
+
+    // Only the refused file is still pending. Leaving the stored one in the
+    // list means the next Submit re-stores it and StoreSubmissionFile answers
+    // `duplicate` - an error the author cannot clear without also dropping the
+    // file that worked.
+    $component->assertCount('uploads', 1);
+
+    // So the obvious next move - drop the file that was refused, press Submit -
+    // has to work.
+    $component->call('removeUpload', 0)
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    expect(Submission::query()->count())->toBe(1)
+        ->and(Submission::query()->firstOrFail()->files)->toHaveCount(1);
+});
+
+it('ignores an uploads payload that is not an uploaded file', function () {
+    // `uploads` is public and unlocked, so a crafted Livewire request can put a
+    // string in it. updatedUploads() answers that with a ValidationException,
+    // which Livewire swallows (SupportValidation::exception stops propagation)
+    // and then renders anyway - and the files partial calls
+    // getClientOriginalName() on every entry. Anything that is not a temporary
+    // upload has to be gone before the view sees it, or this is an
+    // unauthenticated 500 on the public submit page.
+    livewire(SubmissionForm::class, ['organization' => $this->organization, 'conference' => $this->conference])
+        ->set('uploads', ['not-a-file'])
+        ->assertCount('uploads', 0)
+        ->assertSee('Attach files');
+});
+
 // --- Bot protection ------------------------------------------------------
 
 it('silently swallows a filled honeypot', function () {
@@ -691,7 +737,16 @@ it('blocks the sixth save or submit from one address in a minute', function () {
 it('renders the turnstile widget only when both keys are configured', function () {
     get(submitUrl($this->conference))->assertOk()->assertDontSee('challenges.cloudflare.com', escape: false);
 
+    // The half-configuration a deploy actually produces: the public site key is
+    // easy to paste in and the secret is the one that gets forgotten. Rendering
+    // the widget here would ask the author to solve a challenge that
+    // Turnstile::verify() never checks - isConfigured() is false, so it returns
+    // true immediately - while the operator reads the widget as proof that bot
+    // protection is on.
     config()->set('cass.turnstile.site_key', 'site-key');
+
+    get(submitUrl($this->conference))->assertOk()->assertDontSee('challenges.cloudflare.com', escape: false);
+
     config()->set('cass.turnstile.secret_key', 'secret-key');
 
     get(submitUrl($this->conference))
