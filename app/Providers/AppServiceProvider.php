@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Listeners\RecordOutgoingEmail;
 use App\Support\ClientIp;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Mail\Markdown;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -44,5 +48,12 @@ class AppServiceProvider extends ServiceProvider
         // the result. Cap how often one account can ask for a download.
         RateLimiter::for('conference-assets', fn (Request $request): Limit => Limit::perMinute(10)
             ->by('user:'.($request->user()?->getAuthIdentifier() ?? ClientIp::from($request))));
+
+        // Registered by hand rather than by Laravel 13's listener discovery:
+        // discovery matches one class to one event by the type hint of a
+        // `handle()` method, and this listener deliberately has two entry
+        // points for two events so the pair cannot drift apart in two files.
+        Event::listen(MessageSending::class, [RecordOutgoingEmail::class, 'sending']);
+        Event::listen(MessageSent::class, [RecordOutgoingEmail::class, 'sent']);
     }
 }

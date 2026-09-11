@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Enums\EmailLogStatus;
+use App\Mail\TemplatedMail;
 use App\Models\EmailLog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -21,11 +22,7 @@ class EmailLogFactory extends Factory
             'conference_id' => null,
             'submission_id' => null,
             'template_key' => null,
-            // The literal name rather than App\Mail\TemplatedMail::class: that
-            // class arrives in Task 3, and Larastan level 6 rejects a `::class`
-            // on a class that does not exist yet. Same stored value either way;
-            // Task 3 swaps this for the constant once the mailable is real.
-            'mailable' => 'App\Mail\TemplatedMail',
+            'mailable' => TemplatedMail::class,
             'to_email' => fake()->unique()->safeEmail(),
             'subject' => 'A message from CASS',
             'status' => EmailLogStatus::Queued,
