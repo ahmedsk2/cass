@@ -36,7 +36,7 @@ class AdminPanelProvider extends PanelProvider
                 AppAuthentication::make()->recoverable(),
             ])
             ->brandName('CASS Admin')
-            ->brandLogo(asset('brand/cass-bird.png'))
+            ->brandLogo(fn () => view('brand.logo'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('favicon.ico'))
             ->colors([
