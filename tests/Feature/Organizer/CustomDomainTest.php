@@ -12,7 +12,6 @@ use App\Support\Domains\FakeDnsResolver;
 use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Facades\RateLimiter;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Livewire\livewire;
@@ -160,6 +159,21 @@ it('keeps the organizer on the page and says what is wrong when the record is mi
 
 it('tells a throttled organizer they clicked too fast, not that DNS is down', function () {
     config()->set('cass.domains.verify_rate_limit', 1);
+
+    // The throttle notification embeds a countdown, and RateLimiter::availableIn()
+    // recomputes it from the wall clock every time it is asked
+    // (`timer - currentTime()`). The verify action baked the number into the
+    // sentence when it ran; an expectation that called availableIn() again at
+    // assertion time asked a clock that had moved on. One tick over a second
+    // boundary between the two - ~1 run in 60, and reliably under a loaded CI
+    // runner - and the page said "60 seconds" while the test demanded "59".
+    // That is what reddened the Dependabot bump and went green on re-run.
+    //
+    // Stopping the clock removes the race at its source. No unwind needed:
+    // Laravel clears the test-now in tearDownTheTestEnvironment(), which runs
+    // even when the test fails.
+    $this->freezeTime();
+
     livewire(EditOrganizationProfile::class)->callAction(domainAction('claimCustomDomain'), ['domain' => 'abstracts.example.org']);
 
     $page = livewire(EditOrganizationProfile::class);
@@ -171,7 +185,13 @@ it('tells a throttled organizer they clicked too fast, not that DNS is down', fu
     $page->callAction(domainAction('verifyCustomDomain'))
         ->assertNotified(FilamentNotification::make()->warning()
             ->title(__('domain.errors.throttled_title'))
-            ->body(__('domain.errors.throttled', ['seconds' => RateLimiter::availableIn('domain-verify:'.$this->owner->getAuthIdentifier())])));
+            // The literal 60 - the decay verifyAction() hands RateLimiter::hit()
+            // - and deliberately not availableIn() again. An expectation built
+            // from the same call the component made agrees with whatever the
+            // component says, including a wrong number; it could only ever
+            // check that the sentence template was used. Naming the number
+            // pins the sentence an organizer actually reads.
+            ->body(__('domain.errors.throttled', ['seconds' => 60])));
 });
 
 it('stops an organizer who clicks verify in a loop', function () {
