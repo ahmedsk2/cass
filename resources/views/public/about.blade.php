@@ -1,12 +1,18 @@
-<x-layouts.public title="About">
+<x-layouts.public :title="__('public.about.title')">
     <section class="mx-auto grid max-w-5xl items-start gap-10 px-4 py-12 md:grid-cols-[1fr_320px]">
         <div class="prose prose-slate">
-            <h1>About CASS</h1>
-            <p>CASS began in 2023 as the abstract system for the Common Pediatric Diseases Symposium in Saudi Arabia. After two editions and several hundred peer reviews it was rebuilt as a platform any conference organizer can use.</p>
-            <p>It is built and operated by a team of clinicians and engineers who run scientific meetings themselves. The aim is simple: fewer spreadsheets and email threads for committees, and a clear, fast submission experience for authors.</p>
-            <h2>Contact</h2>
-            <p>Email <a href="mailto:{{ config('cass.platform_contact_email') }}">{{ config('cass.platform_contact_email') }}</a> or use the <a href="{{ route('contact') }}">contact form</a>.</p>
+            <h1>{{ __('public.about.heading') }}</h1>
+            <p>{{ __('public.about.history') }}</p>
+            <p>{{ __('public.about.team') }}</p>
+            <h2>{{ __('public.nav.contact') }}</h2>
+            {{-- One sentence split across two links. It is one key with two
+                 placeholders, and both links are built and escaped here, so a
+                 translation can put them in the order its language reads. --}}
+            <p>{!! __('public.about.contact', [
+                'email' => '<a href="mailto:'.e(config('cass.platform_contact_email')).'">'.e(config('cass.platform_contact_email')).'</a>',
+                'form' => '<a href="'.e(route('contact')).'">'.e(__('public.about.contact_form')).'</a>',
+            ]) !!}</p>
         </div>
-        <img src="{{ asset('images/illustrations/about-lab.png') }}" alt="" class="w-full" loading="lazy">
+        <img src="{{ asset('images/illustrations/about-lab.png') }}" alt="" class="w-full" width="1600" height="929" loading="lazy">
     </section>
 </x-layouts.public>

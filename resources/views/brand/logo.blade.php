@@ -16,7 +16,10 @@
     blue wordmark on a dark panel.
 --}}
 <span class="cass-lockup" style="display:inline-flex;align-items:center;gap:0.5rem;line-height:1">
-    <img src="{{ asset('brand/cass-mark.svg') }}" alt="" style="height:2.25rem;width:auto;display:block">
+    {{-- width/height are the mark's own viewBox, so the browser reserves the
+         right box before the SVG arrives. The inline height:2.25rem/width:auto
+         still decides the rendered size; these only carry the ratio. --}}
+    <img src="{{ asset('brand/cass-mark.svg') }}" alt="" width="434" height="725" style="height:2.25rem;width:auto;display:block">
     <span class="cass-wordmark" style="font-weight:600;letter-spacing:-0.01em;font-size:1.375rem;color:#0F4C8A">CASS</span>
 </span>
 <style nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}">.dark .cass-wordmark{color:#ffffff}</style>

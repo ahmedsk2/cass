@@ -841,6 +841,16 @@ It prints the format and dimensions of every file it wrote. The script is copied
 
 sharp rasterises through librsvg, which renders the mark's `objectBoundingBox` gradients correctly. Some other rasterisers (cairosvg among them) drop the gradient and fill the four silhouette paths black — if a render comes out black, that is the renderer, not the SVG.
 
+### Re-rendering the landing-page hero WebP
+
+`public/images/illustrations/hero-researcher.webp` (1200x788, ~48 KB) is the WebP the landing page's `<picture>` serves ahead of the 158 KB PNG. It is committed for the same reason the brand rasters are — there is no `resources/images/`, these files are served straight from `public/` by `asset()`, so nothing in the Vite build can produce it. The PNG stays: the poster template and any mail client that cannot take WebP still resolve it. Same scratch directory, same authoring-only `sharp`:
+
+```bash
+mkdir /tmp/cass-webp && cd /tmp/cass-webp
+npm init -y && npm i sharp
+node -e "const s=require('sharp');const r=process.argv[1];s(r+'/public/images/illustrations/hero-researcher.png').resize({width:1200}).webp({quality:82}).toFile(r+'/public/images/illustrations/hero-researcher.webp').then(i=>console.log(i.width+'x'+i.height+' '+i.size+' bytes'))" /path/to/cass
+```
+
 ### The lock-up
 
 `resources/views/brand/logo.blade.php` is the single definition of the mark-plus-wordmark lock-up: mark at 2.25rem beside "CASS" in IBM Plex Sans semibold, `-0.01em` tracking, `#0F4C8A` on light and white under Filament's `.dark`. It is inline-styled because Filament compiles its CSS from its own sources and never sees a Tailwind class written in an app view. Both panel providers pass it via `->brandLogo(fn () => view('brand.logo'))`, and the public layout `@include`s it. `->brandLogoHeight('2.25rem')` stays on both panels: Filament wraps an `Htmlable` logo in a div with that height and falls back to `1.5rem`, which would clip the lock-up.

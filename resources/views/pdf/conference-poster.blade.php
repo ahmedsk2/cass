@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <style>
@@ -56,17 +56,19 @@
             <p class="lead">{{ $conference->short_description }}</p>
         @endif
 
-        <p><span class="cta">Submit your abstract</span></p>
+        <p><span class="cta">{{ __('poster.submit') }}</span></p>
 
         <img class="qr" src="{{ $qrDataUri }}" alt="">
         <div class="short-url">{{ $shortUrl }}</div>
 
         @if ($conference->submission_deadline)
-            <p class="deadline">
-                Deadline
-                <strong>{{ $conference->deadlineInConferenceTimezone()?->format('j F Y, H:i') }}</strong>
-                ({{ $conference->timezone }})
-            </p>
+            {{-- One sentence, one key. The accent <strong> around the date is
+                 built and escaped here rather than living inside the string, so
+                 a translation can put the date where its language reads it. --}}
+            <p class="deadline">{!! __('poster.deadline', [
+                'date' => '<strong>'.e($conference->deadlineInConferenceTimezone()?->format('j F Y, H:i')).'</strong>',
+                'timezone' => e($conference->timezone),
+            ]) !!}</p>
         @endif
 
         @if ($conference->starts_at || $conference->venue || $conference->city)
@@ -79,7 +81,7 @@
             </p>
         @endif
 
-        <p class="footer">Scan the code or type the address above.</p>
+        <p class="footer">{{ __('poster.scan') }}</p>
     </div>
 </body>
 </html>

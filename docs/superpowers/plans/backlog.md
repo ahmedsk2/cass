@@ -34,6 +34,7 @@ Items raised in code reviews during Plan 1 that were deliberately deferred. Each
 - Replace hardcoded `/org/login` URLs with `route('filament.organizer.auth.login')`.
 - Add the pagination views to the Tailwind `@source` list when the first paginated public page appears.
 - Contact mailable: render the message as plain escaped text with line breaks instead of markdown so senders cannot inject headings or quotes into the internal mail.
+- `public/images/icons/badge.svg` (4,098 bytes) is referenced by nothing. It is the fourth of a set of three the landing page uses, so it is probably a section that was cut rather than a mistake. Either give it a home or `git rm` it — deliberately, in a commit that is about assets, not buried in one about translations.
 - Conference `og:image` (the QR poster or the organization logo) for link previews when a conference is shared on social media.
 
 ## Documentation

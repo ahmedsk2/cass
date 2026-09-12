@@ -1,6 +1,9 @@
 @props(['organization', 'conference', 'theme', 'noindex' => false])
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+{{-- `dir` beside the `lang` that was already here, from a language key rather
+     than a locale check, so lang/ar/public.php is a copy with one word changed
+     (spec section 10). --}}
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ __('public.dir') }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -46,7 +49,7 @@
                  them through the CASS contact form in the footer. --}}
             @if ($organization->publishesContactEmail())
                 <a href="mailto:{{ $organization->contact_email }}"
-                   class="text-sm font-medium text-[var(--org-primary)] hover:underline">Contact the organizers</a>
+                   class="text-sm font-medium text-[var(--org-primary)] hover:underline">{{ __('conference.contact_organizers') }}</a>
             @endif
         </div>
     </header>
@@ -57,11 +60,17 @@
 
     <footer class="border-t border-slate-200 bg-white">
         <div class="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-6 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <p>{{ $organization->name }} · powered by <a href="{{ route('landing') }}" class="hover:underline">CASS</a></p>
+            {{-- One sentence with a link in the middle, so it is one key with
+                 two placeholders rather than three fragments a translation
+                 cannot reorder. Both values are escaped here. --}}
+            <p>{!! __('public.footer.powered_by', [
+                'organization' => e($organization->name),
+                'platform' => '<a href="'.e(route('landing')).'" class="hover:underline">'.e(config('cass.platform_name')).'</a>',
+            ]) !!}</p>
             <p class="flex gap-4">
-                <a href="{{ route('contact') }}" class="hover:underline">Contact</a>
-                <a href="{{ route('privacy') }}" class="hover:underline">Privacy</a>
-                <a href="{{ route('terms') }}" class="hover:underline">Terms</a>
+                <a href="{{ route('contact') }}" class="hover:underline">{{ __('public.nav.contact') }}</a>
+                <a href="{{ route('privacy') }}" class="hover:underline">{{ __('public.footer.privacy') }}</a>
+                <a href="{{ route('terms') }}" class="hover:underline">{{ __('public.footer.terms') }}</a>
             </p>
         </div>
     </footer>

@@ -37,3 +37,31 @@ it('sends security headers on a 404 for an unrouted static-looking path', functi
     get('/nonexistent-probe.css')->assertNotFound()
         ->assertHeader('X-Frame-Options', 'DENY');
 });
+
+it('gives every illustration an intrinsic size and serves the hero as webp', function () {
+    $response = get('/')->assertOk();
+    $html = (string) $response->getContent();
+
+    // Five of the six site images had no width/height (Plan 6 fact 41), which
+    // is five separate layout shifts on the slowest connection the site has.
+    preg_match_all('/<img\b[^>]*>/i', $html, $images);
+
+    foreach ($images[0] as $tag) {
+        expect($tag)->toMatch('/\bwidth="\d+"/', $tag)
+            ->and($tag)->toMatch('/\bheight="\d+"/', $tag);
+    }
+
+    // The hero is 158 KB of PNG at 1600x1051. WebP at the size it is displayed
+    // is the single biggest byte on this page.
+    expect($html)->toContain('hero-researcher.webp');
+});
+
+it('points the organizer login at the panel route rather than a hardcoded path', function () {
+    $response = get('/')->assertOk();
+
+    // Three views hardcoded url('/org/login'). The panel owns that path, and
+    // a panel whose ->path() changes would leave three dead links nothing
+    // tests.
+    expect((string) $response->getContent())->toContain(route('filament.organizer.auth.login'))
+        ->and((string) $response->getContent())->not->toContain('"/org/login"');
+});
