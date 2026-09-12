@@ -17,6 +17,7 @@ class ViewOrganization extends ViewRecord
         return [
             OrganizationsTable::approveAction(),
             OrganizationsTable::rejectAction(),
+            OrganizationsTable::purgeAction(),
         ];
     }
 }

@@ -14,9 +14,14 @@ class ConferencePolicy
     /**
      * Spec section 4 gives the platform admin every conference capability, and
      * conferences otherwise live only inside the tenant-scoped organizer
-     * panel. Note this also makes `forceDelete` true for a platform admin: no
-     * ForceDeleteAction may be added to either panel until the
-     * application-code purge exists (backlog, Plan 6).
+     * panel.
+     *
+     * Note this also makes `forceDelete` true for a platform admin. The
+     * application-code purge now exists (App\Actions\Conferences\PurgeConference),
+     * and the admin panel authorizes against the `purge` ability rather than
+     * `forceDelete` - so Filament's own ForceDeleteAction still must not be added
+     * to either panel: it calls $record->forceDelete() and hits the RESTRICT keys
+     * on submissions, review_forms, tracks and custom_fields.
      */
     public function before(User $user): ?bool
     {
@@ -61,6 +66,20 @@ class ConferencePolicy
     public function archive(User $user, Conference $conference): bool
     {
         return $this->canManage($user, $conference);
+    }
+
+    /**
+     * Spec section 3's hard purge. Platform admin only.
+     *
+     * before() already answers true for a platform admin, so this method is
+     * only ever reached for somebody else - which is the point: it is the
+     * ability the admin panel's purge action authorizes against, and naming it
+     * is what keeps that action from being authorized by `forceDelete`, which
+     * Filament's own ForceDeleteAction would also match.
+     */
+    public function purge(User $user, Conference $conference): bool
+    {
+        return (bool) $user->is_platform_admin;
     }
 
     /**
