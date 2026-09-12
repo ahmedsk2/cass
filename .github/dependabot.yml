@@ -39,6 +39,34 @@ updates:
     groups:
       compose:
         patterns: ["*"]
+    ignore:
+      # Dependabot read 8.4 -> 26.7 as an ordinary version bump and opened #8.
+      # It is not one. MySQL 26.7 is the first GA Innovation release under the
+      # new calendar-versioning scheme, where the number is the release date:
+      # 26.7 is "July 2026", 26.10 is October 2026. It is not a descendant of
+      # 8.4, and the tag it carries on Docker Hub is `innovation`/`latest`.
+      #
+      # 8.4 is an LTS line and is still getting quarterly maintenance (8.4.11
+      # at the time of writing), so staying here is not staying unpatched -
+      # which is the only argument for taking a database major automatically.
+      #
+      # There is also no such upgrade: MySQL forbids skipping an LTS series, so
+      # 8.4 -> 26.x has to go through 9.7 LTS first. Doing it in place means
+      # pointing a 26.7 server at the 8.4 datadir on the cass-mysql volume, and
+      # MySQL has no downgrade - the volume is a one-way door with the only way
+      # back being a restore from a dump.
+      #
+      # None of that shows up in CI, which is the trap: the compose files are
+      # never used by .github/workflows/ci.yml (the `test` and `smoke` jobs
+      # declare their own `image: mysql:8.4` service), so a compose-only bump
+      # goes green having never started the image it changed. #8 was green.
+      #
+      # Major moves off 8.4 are therefore a planned migration - backup, dump,
+      # restore, verify - and not a Monday morning merge. Digest updates and
+      # patch/minor releases within 8.4 are deliberately still allowed through,
+      # because those are the security updates this ecosystem block exists for.
+      - dependency-name: mysql
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(compose)"
 
