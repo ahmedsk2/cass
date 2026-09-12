@@ -6,6 +6,8 @@ namespace App\Filament\Admin\Resources\Organizations;
 
 use App\Filament\Admin\Resources\Organizations\Pages\ListOrganizations;
 use App\Filament\Admin\Resources\Organizations\Pages\ViewOrganization;
+use App\Filament\Admin\Resources\Organizations\RelationManagers\InvitationsRelationManager;
+use App\Filament\Admin\Resources\Organizations\RelationManagers\MembersRelationManager;
 use App\Filament\Admin\Resources\Organizations\Schemas\OrganizationInfolist;
 use App\Filament\Admin\Resources\Organizations\Tables\OrganizationsTable;
 use App\Models\Organization;
@@ -57,6 +59,22 @@ class OrganizationResource extends Resource
     public static function table(Table $table): Table
     {
         return OrganizationsTable::configure($table);
+    }
+
+    /**
+     * Spec section 4's platform-admin cell for "Manage organization members",
+     * which had no screen: the organizer panel is membership-gated, so an admin
+     * who is not a member of an organization could not see who is in it. Both
+     * managers are read-only by class.
+     *
+     * @return array<int, class-string>
+     */
+    public static function getRelations(): array
+    {
+        return [
+            MembersRelationManager::class,
+            InvitationsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\Decision;
 use App\Enums\PresentationPreference;
+use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
 use App\Support\Tokens\SubmissionToken;
 use Database\Factories\SubmissionFactory;
@@ -136,6 +137,19 @@ class Submission extends Model
     public function reviews(): HasMany
     {
         return $this->hasMany(Review::class);
+    }
+
+    /**
+     * The reviews an organizer is allowed to read: submitted ones, newest
+     * first. The filter is in the RELATION rather than in the screen that
+     * renders it, which is what keeps a draft - a reviewer mid-sentence - out
+     * of the query and not merely out of the render.
+     *
+     * @return HasMany<Review, $this>
+     */
+    public function submittedReviews(): HasMany
+    {
+        return $this->reviews()->where('status', ReviewStatus::Submitted)->latest('submitted_at');
     }
 
     /** @return HasMany<ReviewAssignment, $this> */

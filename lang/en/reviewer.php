@@ -163,6 +163,12 @@ return [
         'deadline_passed' => 'The review deadline has passed, so a submitted review can no longer be changed.',
         'review_closed_notice' => 'This conference is no longer open for reviewing, so this review can no longer be changed.',
         'decided_notice' => 'The committee has decided this abstract, so this review can no longer be changed.',
+        // The organizer's read-only copy of the same content, on the submission
+        // view. Hidden while the call is still open, and only ever listing
+        // reviews a reviewer has actually submitted.
+        'organizer_heading' => 'What the reviewers wrote',
+        'organizer_description' => 'Submitted reviews only. A reviewer can reopen and change a review until the review deadline.',
+        'by' => 'Reviewer',
     ],
 
     'switch' => [

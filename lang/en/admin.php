@@ -59,6 +59,80 @@ return [
         'former_member' => 'A former member',
     ],
 
+    // The only screen in the application that prints a review's content, and
+    // the read-only manager of the same rows on an abstract.
+    'reviews' => [
+        'title' => 'Reviews',
+        'open' => 'Open the review',
+        'yes' => 'Yes',
+        'no' => 'No',
+        'no_answer' => 'Not answered',
+        'columns' => [
+            'reference' => 'Reference',
+            'abstract' => 'Abstract',
+            'conference' => 'Conference',
+            'reviewer' => 'Reviewer',
+            'email' => 'Email address',
+            'status' => 'Status',
+            'score' => 'Score',
+            'submitted' => 'Submitted',
+        ],
+        'filters' => [
+            'status' => 'Status',
+            'conference' => 'Conference',
+            'organization' => 'Organization',
+        ],
+        'sections' => [
+            'review' => 'Review',
+            'abstract' => 'The abstract',
+            'answers' => 'What the reviewer wrote',
+        ],
+    ],
+
+    'assignments' => [
+        'title' => 'Assigned reviewers',
+        'columns' => [
+            'reviewer' => 'Reviewer',
+            'assigned_by' => 'Assigned by',
+            'assigned' => 'Assigned',
+        ],
+    ],
+
+    'reviewers' => [
+        'title' => 'Reviewers',
+        'columns' => [
+            'name' => 'Reviewer',
+            'email' => 'Email address',
+            'affiliation' => 'Affiliation',
+            'status' => 'Status',
+            'accepted' => 'Accepted',
+            'removed' => 'Removed',
+        ],
+    ],
+
+    'members' => [
+        'title' => 'Members',
+        'columns' => [
+            'name' => 'Name',
+            'email' => 'Email address',
+            'role' => 'Role',
+            'notified' => 'Emailed on submission',
+            'since' => 'Member since',
+        ],
+    ],
+
+    'invitations' => [
+        'title' => 'Invitations',
+        'columns' => [
+            'email' => 'Email address',
+            'role' => 'Role',
+            'invited_by' => 'Invited by',
+            'expires' => 'Expires',
+            'accepted' => 'Accepted',
+            'revoked' => 'Withdrawn',
+        ],
+    ],
+
     'search' => [
         'status' => 'Status',
         'conferences' => 'Conferences',
