@@ -9,6 +9,7 @@ use App\Models\EmailLog;
 use App\Models\Organization;
 use App\Support\Branding\OrganizationTheme;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -26,8 +27,24 @@ use Throwable;
  *
  * The property is `$subjectLine`, not `$subject`: Mailable already owns
  * `$subject`, and shadowing it makes envelope() fight the parent.
+ *
+ * ShouldBeEncrypted, and the reason is one promoted property. $body carries the
+ * rendered email, and a rendered email carries {{status_link}} - a 64-character
+ * bearer token that opens /s/{token} with no account at all. SerializesModels
+ * swaps Eloquent models for identifiers and leaves plain strings alone, so
+ * without this interface that token is written verbatim into jobs.payload and,
+ * on a final failure, into failed_jobs.payload, which routes/console.php keeps
+ * for 720 hours.
+ *
+ * SendQueuedMailable::__construct() copies this interface onto the job
+ * (vendor/.../Illuminate/Mail/SendQueuedMailable.php:76) and
+ * Queue::jobShouldBeEncrypted() reads it (:293-300), so declaring it here is
+ * what encrypts the payload with APP_KEY.
+ *
+ * Rotating APP_KEY therefore makes any job still in the queue undecryptable.
+ * The runbook's "Secret rotation" section says so: drain the queue first.
  */
-class TemplatedMail extends Mailable implements ShouldQueue
+class TemplatedMail extends Mailable implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
     use SerializesModels;

@@ -33,10 +33,13 @@ function templatesPage(Conference $conference): Testable
     return livewire(ConferenceEmailTemplates::class, ['record' => $conference->getRouteKey()]);
 }
 
-it('lists all eleven template keys of spec 5.9', function () {
+it('lists all twelve template keys of spec 5.9', function () {
     $page = templatesPage($this->conference)->assertOk();
 
-    expect(EmailTemplateKey::cases())->toHaveCount(11);
+    // Twelve, not the spec's eleven: Plan 6 split the rejection letter in two,
+    // because "we could not approve you" is the wrong sentence to send an
+    // organization that WAS approved and is now suspended.
+    expect(EmailTemplateKey::cases())->toHaveCount(12);
 
     foreach (EmailTemplateKey::cases() as $key) {
         $page->assertSee($key->getLabel());
@@ -122,8 +125,14 @@ it('resets a template back to the platform default by deleting the override', fu
     templatesPage($this->conference)->assertDontSee('Our own subject');
 });
 
-it('offers neither edit nor reset for the two platform-wide keys', function () {
-    foreach ([EmailTemplateKey::OrganizationApproved, EmailTemplateKey::OrganizationRejected] as $key) {
+it('offers neither edit nor reset for the three platform-wide keys', function () {
+    $platformWide = [
+        EmailTemplateKey::OrganizationApproved,
+        EmailTemplateKey::OrganizationRejected,
+        EmailTemplateKey::OrganizationSuspended,
+    ];
+
+    foreach ($platformWide as $key) {
         templatesPage($this->conference)
             ->assertTableActionHidden('edit', $key->value)
             ->assertTableActionHidden('reset', $key->value);

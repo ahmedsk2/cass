@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Auth\Login;
 use App\Filament\Organizer\Pages\Dashboard;
 use App\Filament\Organizer\Pages\Tenancy\EditOrganizationProfile;
 use App\Models\Organization;
@@ -31,7 +32,7 @@ class OrganizerPanelProvider extends PanelProvider
         return $panel
             ->id('organizer')
             ->path('org')
-            ->login()
+            ->login(Login::class)
             ->passwordReset()
             ->emailVerification()
             ->profile()

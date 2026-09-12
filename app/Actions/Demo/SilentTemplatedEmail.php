@@ -8,6 +8,7 @@ use App\Actions\Mail\SendTemplatedEmail;
 use App\Enums\EmailTemplateKey;
 use App\Models\Conference;
 use App\Models\EmailLog;
+use App\Models\Organization;
 use App\Models\Submission;
 
 /**
@@ -31,11 +32,19 @@ use App\Models\Submission;
 final class SilentTemplatedEmail extends SendTemplatedEmail
 {
     /**
+     * The context union is copied from the parent, not narrowed to the
+     * Conference this class actually sees. PHP lets a child widen a parameter
+     * type and never narrow one, so a `Conference` here would be a fatal
+     * "Declaration must be compatible" at autoload time the moment
+     * SendTemplatedEmail widened - and SeedDemo binds this class over the real
+     * one for the length of every demo run, including the approval email
+     * ApproveOrganization now sends with an Organization.
+     *
      * @param  array<string, string|null>  $values
      */
     public function handle(
         EmailTemplateKey $key,
-        Conference $conference,
+        Conference|Organization $context,
         string $toEmail,
         array $values,
         ?Submission $submission = null,

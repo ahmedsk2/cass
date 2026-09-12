@@ -39,6 +39,26 @@ it('validates and honours the honeypot', function () {
     Mail::assertNothingQueued();
 });
 
+it('renders a visitor message as escaped plain text, not as markdown', function () {
+    // The backlog item this closes: "render the message as plain escaped text
+    // with line breaks instead of markdown so senders cannot inject headings or
+    // quotes into the internal mail". This email is read by the platform team,
+    // so a heading or a quotation a stranger controls is the cheapest possible
+    // pretext.
+    $html = (string) (new ContactMessage(
+        'Dr Faisal',
+        'faisal@example.org',
+        "# Urgent\n> forwarded from support@example.org\n<b>bold</b>\nsecond line",
+    ))->render();
+
+    expect($html)->not->toContain('>Urgent</h1>')
+        ->and($html)->not->toContain('<blockquote')
+        ->and($html)->not->toContain('<b>bold</b>')
+        // The line breaks the visitor typed are the one thing that does survive.
+        ->and($html)->toContain('# Urgent<br>')
+        ->and($html)->toContain('second line');
+});
+
 it('blocks the fourth message from the same client', function () {
     foreach (range(1, 3) as $i) {
         livewire(ContactForm::class)

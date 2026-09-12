@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\EmailLogStatus;
+use Carbon\CarbonImmutable;
 use Database\Factories\EmailLogFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
@@ -16,6 +19,8 @@ class EmailLog extends Model
 {
     /** @use HasFactory<EmailLogFactory> */
     use HasFactory;
+
+    use MassPrunable;
 
     /** The width of the `subject` column in 2026_09_11_001500_create_email_logs_table. */
     public const SUBJECT_MAX_LENGTH = 255;
@@ -42,6 +47,27 @@ class EmailLog extends Model
     public function getRouteKeyName(): string
     {
         return 'ulid';
+    }
+
+    /**
+     * Spec section 8 has no retention rule for this table and three plans have
+     * recorded that it grows by one row per email for ever. A year, rather
+     * than short_link_visits' ninety days: an email log answers "did this
+     * author ever receive their decision letter", and that question arrives
+     * months after a conference, while a scan count is a number nobody asks
+     * about twice.
+     *
+     * MassPrunable rather than Prunable: this fires no model events, and
+     * EmailLog has a `creating` hook and no deleting hook, so there is nothing
+     * to fire. routes/console.php already runs model:prune daily.
+     *
+     * @return Builder<static>
+     */
+    public function prunable(): Builder
+    {
+        $days = max(1, (int) config('cass.email_log_retention_days'));
+
+        return static::query()->where('created_at', '<', CarbonImmutable::now()->subDays($days));
     }
 
     /**
