@@ -9,6 +9,7 @@ use App\Models\ConferenceReviewer;
 use App\Models\CustomField;
 use App\Models\EmailLog;
 use App\Models\EmailTemplate;
+use App\Models\LegacyImport;
 use App\Models\Organization;
 use App\Models\Review;
 use App\Models\ReviewAnswer;
@@ -174,7 +175,7 @@ final class PurgeConference
      * Every id the purge needs, read once and up front: after the first delete
      * the rows that would answer these questions are gone.
      *
-     * @return array{submissions: list<int>, reviews: list<int>, forms: list<int>, shortLinks: list<int>, paths: list<string>}
+     * @return array{submissions: list<int>, reviews: list<int>, forms: list<int>, questions: list<int>, conferenceReviewers: list<int>, reviewerInvitations: list<int>, shortLinks: list<int>, paths: list<string>}
      */
     private function collect(Conference $conference): array
     {
@@ -194,10 +195,21 @@ final class PurgeConference
             ->map(static fn (mixed $path): string => (string) $path)
             ->all();
 
+        // Read up front like everything else here, and needed by exactly one
+        // line of queries(): the legacy_imports sweep, whose targets are
+        // polymorphic and therefore unfindable once the rows they point at are
+        // gone.
+        $questions = $this->ids(ReviewQuestion::query()->whereIn('review_form_id', $forms));
+        $conferenceReviewers = $this->ids(ConferenceReviewer::query()->where('conference_id', $conferenceId));
+        $reviewerInvitations = $this->ids(ReviewerInvitation::query()->where('conference_id', $conferenceId));
+
         return [
             'submissions' => $submissions,
             'reviews' => $reviews,
             'forms' => $forms,
+            'questions' => $questions,
+            'conferenceReviewers' => $conferenceReviewers,
+            'reviewerInvitations' => $reviewerInvitations,
             'shortLinks' => $shortLinks,
             'paths' => $paths,
         ];
@@ -209,7 +221,7 @@ final class PurgeConference
      * adding a line here; Plan 6 Task 14 Step 8 greps the migrations against
      * this method.
      *
-     * @param  array{submissions: list<int>, reviews: list<int>, forms: list<int>, shortLinks: list<int>, paths: list<string>}  $ids
+     * @param  array{submissions: list<int>, reviews: list<int>, forms: list<int>, questions: list<int>, conferenceReviewers: list<int>, reviewerInvitations: list<int>, shortLinks: list<int>, paths: list<string>}  $ids
      * @return array<string, Builder<covariant \Illuminate\Database\Eloquent\Model>>
      */
     private function queries(Conference $conference, array $ids): array
@@ -256,6 +268,27 @@ final class PurgeConference
             // submissions line above is free.
             'custom_fields' => CustomField::query()->where('conference_id', $conferenceId),
             'tracks' => Track::query()->where('conference_id', $conferenceId),
+            // No foreign key, like short_links and activity_log: the mapping
+            // rows would otherwise outlive their targets, and a re-import would
+            // find a mapping to a row that no longer exists and skip a
+            // conference it should have created. Everything is inside ONE
+            // where() closure - a bare orWhere() here escapes the surrounding
+            // scope and matches every mapping in the database, which is what
+            // the parity test catches.
+            //
+            // `users` is deliberately NOT swept: no purge in this application
+            // deletes a User row (PurgeOrganization ends at
+            // organization_members), so the mapping is still true after the
+            // purge and deleting it would only make a re-import re-adopt the
+            // same account by address for no reason.
+            'legacy_imports' => LegacyImport::query()->where(function (Builder $query) use ($conferenceId, $ids): void {
+                $query->where(fn (Builder $q) => $q->where('imported_type', (new Conference)->getMorphClass())->where('imported_id', $conferenceId))
+                    ->orWhere(fn (Builder $q) => $q->where('imported_type', (new Submission)->getMorphClass())->whereIn('imported_id', $ids['submissions']))
+                    ->orWhere(fn (Builder $q) => $q->where('imported_type', (new ReviewForm)->getMorphClass())->whereIn('imported_id', $ids['forms']))
+                    ->orWhere(fn (Builder $q) => $q->where('imported_type', (new ReviewQuestion)->getMorphClass())->whereIn('imported_id', $ids['questions']))
+                    ->orWhere(fn (Builder $q) => $q->where('imported_type', (new ConferenceReviewer)->getMorphClass())->whereIn('imported_id', $ids['conferenceReviewers']))
+                    ->orWhere(fn (Builder $q) => $q->where('imported_type', (new ReviewerInvitation)->getMorphClass())->whereIn('imported_id', $ids['reviewerInvitations']));
+            }),
             // NO foreign key reaches either: nothing would remove them, and
             // unique(target_type, target_id) would then refuse a conference
             // re-created at the same id.
