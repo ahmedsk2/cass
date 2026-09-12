@@ -313,7 +313,7 @@ class ConferenceRanking extends Page implements HasTable
                         ->handle($query, $conference, RankingRows::fileName($conference, 'xlsx')),
                 ),
             ])
-            ->recordActions(DecisionActions::rowActions($this->mayDecide(), $this->maySend()))
+            ->recordActions(DecisionActions::rowActions($conference, $this->mayDecide(), $this->maySend()))
             ->toolbarActions([
                 DecisionActions::decideSelected(),
             ])

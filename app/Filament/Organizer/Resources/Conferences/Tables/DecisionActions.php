@@ -245,9 +245,23 @@ class DecisionActions
      * `$maySend` is passed in for the reason decide() explains: a Gate call
      * inside a row action's visible() is one query per rendered row, and the
      * 500-row query-count ceiling bounds exactly that.
+     *
+     * `$conference` is passed in for the same reason, and it is not a nicety
+     * either. Every row of this table belongs to the one conference the page
+     * already holds, but the ranking query selects `submissions` alone, so
+     * `$record->conference` inside `visible()` is a lazy load per RENDERED row:
+     * measured at 578 queries for 500 notified rows against the page's ceiling
+     * of 30 (tests/Feature/Organizer/ConferenceRankingPerformanceTest.php).
+     * Eager-loading the relation would fix the count and still hand every row a
+     * copy of the object the caller is already standing on.
      */
-    public static function resendDecision(bool $maySend): Action
+    public static function resendDecision(Conference $conference, bool $maySend): Action
     {
+        // Read once, out here, rather than per row: the answer is the same for
+        // every row of this table and the only thing it depends on is the
+        // conference the page was opened on.
+        $conferenceMaySend = $conference->isPubliclyVisible() && $maySend;
+
         return Action::make('resendDecision')
             ->label(__('decisions.send.resend'))
             ->icon(Heroicon::OutlinedEnvelope)
@@ -259,11 +273,8 @@ class DecisionActions
             // for the same reason: a fresh link into a conference whose status
             // page 404s is worse than no letter.
             ->visible(fn (Submission $record): bool => $record->decision_notified_at !== null
-                && $record->conference?->isPubliclyVisible() === true
-                && $maySend)
-            ->action(function (Submission $record, SendOneDecisionEmail $send): void {
-                /** @var Conference $conference */
-                $conference = $record->conference;
+                && $conferenceMaySend)
+            ->action(function (Submission $record, SendOneDecisionEmail $send) use ($conference): void {
                 Gate::authorize('sendDecisions', $conference);
 
                 // The actor, resolved here and passed IN, which is how every
@@ -400,14 +411,19 @@ class DecisionActions
      * them. The first two are mutually exclusive by `visible()`, so only one
      * decision control is ever on a row.
      *
-     * Both authorization answers are arguments, computed once per page render
-     * rather than once per rendered row: see decide()'s docblock and the
-     * query-count ceiling in ConferenceRankingPerformanceTest.
+     * Both authorization answers - and the conference itself - are arguments,
+     * computed once per page render rather than once per rendered row: see
+     * decide()'s and resendDecision()'s docblocks and the query-count ceiling
+     * in ConferenceRankingPerformanceTest.
      *
      * @return list<Action>
      */
-    public static function rowActions(bool $mayDecide, bool $maySend): array
+    public static function rowActions(Conference $conference, bool $mayDecide, bool $maySend): array
     {
-        return [static::decide($mayDecide), static::changeDecision($mayDecide), static::resendDecision($maySend)];
+        return [
+            static::decide($mayDecide),
+            static::changeDecision($mayDecide),
+            static::resendDecision($conference, $maySend),
+        ];
     }
 }
