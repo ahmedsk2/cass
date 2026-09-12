@@ -694,6 +694,113 @@ Re-seeding is safe: `cass:demo-seed` refuses to run while `demo-society` exists
 and tells you to reset first, exiting **0** so a deploy script that calls it
 twice does not fail.
 
+## Importing the legacy conferences
+
+Run **once**, by the owner, after the release that adds the command. It is
+idempotent — a second run creates nothing — so a run that fails halfway is
+resumed by running it again.
+
+### Before
+
+1. Decide the organization. **There is no create form in the admin panel** —
+   `OrganizationResource` is index-plus-view and organizations are created by the
+   public `/register` flow. Two ways to get one:
+   - register it at `/register` (this creates a **new** owner account, so use an
+     address that has no user row yet — `users.email` is unique and the legacy
+     owner's address may already be the platform admin's) and approve it in the
+     admin panel; or
+   - create it on the host in one shot:
+
+     ```bash
+     sudo docker exec -it "$C" php artisan tinker --execute="\
+     \$o = App\Models\Organization::query()->create(['name' => '<Name>', 'type' => App\Enums\OrganizationType::Society, 'country' => 'SA', 'purpose' => 'Imported from the legacy platform']);\
+     \$o->forceFill(['slug' => '<slug>', 'status' => App\Enums\OrganizationStatus::Approved, 'approved_at' => now()])->save();\
+     echo \$o->slug;"
+     ```
+
+   Either way the command **adopts** it by `--organization-slug=` and refuses if
+   there is none: it does not invent a name, a type or a country. Set the logo,
+   colours, type and country in the organizer panel before the import runs —
+   that is also the moment somebody looks at the branding.
+2. Copy the two inputs into the container. They are not in the image —
+   `.dockerignore` excludes `Legacy` and `legacy-review.md` — and they must not
+   be left on the host afterwards.
+
+   ```bash
+   C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+   sudo docker cp ./dbg1vzqja6lgef.sql "$C":/tmp/legacy.sql
+   sudo docker cp ./uploads "$C":/tmp/legacy-uploads
+   sudo docker exec "$C" chown -R app:app /tmp/legacy.sql /tmp/legacy-uploads
+   ```
+
+   `/tmp` deliberately, not the `cass-storage` volume: the dump carries ten
+   bcrypt hashes and three live invitation tokens, and `/tmp` does not survive
+   the next deploy.
+
+### The dry run
+
+```bash
+sudo docker exec -it "$C" su-exec app php artisan cass:import-legacy \
+  /tmp/legacy.sql /tmp/legacy-uploads --organization-slug=<slug> --dry-run
+```
+
+Everything runs — every insert, every constraint, every cast — inside a
+transaction that is rolled back, so the counts are real and nothing is written.
+The one thing a dry run does not do is copy a PDF onto the private disk: no
+rollback could take an object back off it. Read the manual-review list it
+prints; **the dry run writes no report file**, deliberately, so there is never a
+rehearsal's report on the volume to confuse with the real one.
+
+### The real run
+
+```bash
+sudo docker exec -it "$C" su-exec app php artisan cass:import-legacy \
+  /tmp/legacy.sql /tmp/legacy-uploads --organization-slug=<slug>
+```
+
+**It exits 1 when the manual-review list is not empty**, which it always will
+be: every line in it is a place the legacy data did not answer a question v2
+asks. That is the command working, not failing.
+
+Then read the report it names, which is on the `cass-storage` volume under
+`storage/app/private/legacy/`:
+
+```bash
+sudo docker exec "$C" su-exec app cat storage/app/private/legacy/manual-review-<timestamp>.md
+```
+
+### What the report will tell you, and what to do about each
+
+| Line | What it means | What to do |
+|---|---|---|
+| `The author … has the non-routable address … @import.invalid` | An author with no address. Legacy stored one contact address per abstract and no author addresses at all. | Nothing, unless somebody asks. The conferences are archived and nothing is ever sent to these. |
+| `The legacy affiliation reads …` | The 2023 form labelled that field differently, so the column sometimes holds a person's name — or, in one row, a research question. A kept value is reported as well as a dropped one, because the parser cannot tell a research question from an institution. | Open the abstract in the admin panel and correct it if it matters. |
+| `The contact address … matched no author name` | The corresponding author is a guess (the first one). | Check the abstract; a shared research-office mailbox is the usual cause. |
+| `An incomplete review: n of m questions were answered` | A reviewer answered some questions and not others. Imported as submitted, because the committee did receive it. | Nothing. The score is the weighted mean of the answers that exist. |
+| `Review timestamps are synthetic` | Legacy stored no review header row and no review date at all. Each one is the abstract's own date plus a day. | Nothing. |
+| `The attachment … is not in the uploads directory` | A row points at a PDF that is not in the uploads directory. | Look for it. If it is gone, the abstract is imported without a file. |
+| `The orphan file … is on disk and no row references it` | A PDF on disk that no row references — the residue of abstracts deleted directly in the legacy database. | Nothing. They are not imported; `submission_files.submission_id` is NOT NULL. |
+| `… managed legacy edition(s) …` | Legacy scoped a manager to one edition; v2 scopes an organizer to the whole organization. | Check the Members page and remove anybody who should not have both. |
+| `A plaintext token was present and was not carried` | A legacy invitation still had a live plaintext token. It is imported expired and revoked, never usable. | Nothing. Invite the person again if they are still reviewing. |
+
+### After
+
+1. The scores are computed by the import itself. If you correct anything by
+   hand afterwards, re-run `cass:rescore <CONFERENCE-ULID>` — which is use case
+   2 in that command's own list.
+2. Send each imported user a password reset. They were imported without a
+   usable password on purpose (spec 5.10), and there is no welcome email.
+3. Remove the inputs:
+
+   ```bash
+   sudo docker exec "$C" rm -rf /tmp/legacy.sql /tmp/legacy-uploads
+   ```
+
+4. The two conferences land **archived**, which takes their public pages, their
+   short links and every `/s/{token}` offline. That is deliberate: there is no
+   decision data in the legacy database to publish, and an archived conference
+   is the honest status for a meeting that happened in 2023.
+
 ## Brand assets
 
 Every brand file is committed and served straight from `public/`. Nothing is generated at deploy time, and no build step touches them — a release that forgets this section still ships the right logo.

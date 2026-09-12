@@ -12,6 +12,7 @@ use App\Models\ConferenceReviewer;
 use App\Models\CustomField;
 use App\Models\EmailLog;
 use App\Models\EmailTemplate;
+use App\Models\LegacyImport;
 use App\Models\Organization;
 use App\Models\Review;
 use App\Models\ReviewAnswer;
@@ -257,4 +258,25 @@ it('leaves the tenant purge answering the same numbers as before', function () {
         ->and($counts['reviews'])->toBe(2)
         ->and($counts['private files'])->toBe(2)
         ->and($counts['organizations'])->toBe(1);
+});
+
+it('sweeps the legacy mapping rows with the conference, and keeps the user mappings', function () {
+    $conference = conferenceWithEverything();
+    LegacyImport::record('conferences', 5, $conference);
+    LegacyImport::record('submissions', 5, $conference->submissions()->firstOrFail());
+    LegacyImport::record('review_forms', 5, $conference->reviewForms()->firstOrFail());
+    $userMapping = LegacyImport::record('users', 5, $this->admin);
+
+    app(PurgeConference::class)->handle($conference, $this->admin);
+
+    // legacy_imports carries no foreign key - polymorphic, like short_links -
+    // so nothing removes these for you, and a re-import would then find a
+    // mapping to a row that no longer exists and skip a conference it should
+    // have created.
+    //
+    // `users` is the exception: no purge in this application deletes a User
+    // row, so that mapping is still TRUE after the purge and sweeping it would
+    // only make a re-import re-adopt the same account by address.
+    expect(LegacyImport::query()->where('legacy_table', '!=', 'users')->count())->toBe(0)
+        ->and(LegacyImport::query()->whereKey($userMapping->getKey())->exists())->toBeTrue();
 });

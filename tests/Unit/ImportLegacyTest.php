@@ -7,14 +7,20 @@ use App\Enums\ConferenceStatus;
 use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
 use App\Enums\ReviewQuestionType;
+use App\Enums\ReviewStatus;
+use App\Enums\SubmissionStatus;
 use App\Exceptions\LegacyImportRefused;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
 use App\Models\LegacyImport;
 use App\Models\Organization;
+use App\Models\ReviewAnswer;
 use App\Models\ReviewerInvitation;
 use App\Models\ReviewForm;
 use App\Models\ReviewQuestion;
+use App\Models\Submission;
+use App\Models\SubmissionAuthor;
+use App\Models\SubmissionFile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -258,4 +264,168 @@ it('writes nothing at all in dry-run mode, and still reports what it would have 
         ->and(LegacyImport::query()->count())->toBe(0)
         ->and($report->created['conferences'] ?? 0)->toBe(2)
         ->and($report->manualReview())->not->toBeEmpty();
+});
+
+it('imports every abstract with a reference, a token and its conference counter raised', function () {
+    app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $conference = Conference::query()->where('slug', 'example-pediatric-symposium-2023')->firstOrFail();
+
+    expect($conference->submissions()->count())->toBe(2)
+        // Minted in submission_date order by Plan 3's AllocateReference, and
+        // the counter left where the last one ended - or a future submission
+        // to this conference collides.
+        ->and($conference->submissions()->orderBy('id')->pluck('reference')->all())
+        ->toBe([$conference->reference_prefix.'-001', $conference->reference_prefix.'-002'])
+        ->and($conference->fresh()?->submission_counter)->toBe(2);
+
+    $submission = $conference->submissions()->orderBy('id')->first();
+
+    expect($submission?->access_token_hash)->toHaveLength(64)
+        ->and($submission?->status)->toBe(SubmissionStatus::UnderReview)
+        ->and($submission?->word_count)->toBeGreaterThan(0)
+        // The browser's clock, which is all legacy has (legacy-review.md:280).
+        ->and($submission?->submitted_at?->toDateString())->toBe('2023-11-11');
+});
+
+it('parses the authors out of the text columns', function () {
+    app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $bulleted = Submission::query()->where('title', 'like', 'A child%')->firstOrFail();
+
+    expect($bulleted->authors()->count())->toBe(3)
+        ->and($bulleted->authors()->orderBy('sort')->pluck('name')->all())
+        ->toBe(['Dr Alia Example', 'Dr Badr Example', 'Dr Carim Example'])
+        ->and($bulleted->authors()->where('is_corresponding', true)->count())->toBe(1);
+});
+
+it('gives every author without an address a non-routable one, and reports each', function () {
+    $report = app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $invented = SubmissionAuthor::query()->where('email', 'like', '%@import.invalid')->get();
+
+    // submission_authors.email is NOT NULL and legacy stores no author email
+    // at all. .invalid is RFC 2606's reserved TLD: it cannot resolve, so
+    // nothing can ever be delivered to one of these by accident.
+    expect($invented)->not->toBeEmpty()
+        ->and($invented->first()?->email)->toMatch('/^legacy-\d+-\d+@import\.invalid$/')
+        ->and($invented->first()?->is_corresponding)->toBeFalse()
+        ->and(implode("\n", $report->manualReview()))->toContain('import.invalid');
+});
+
+it('leaves the 2023 affiliation column out when it holds a person, and reports it', function () {
+    $report = app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $swapped = Submission::query()->where('title', 'like', 'Bedside ultrasound%')->firstOrFail();
+    $clean = Submission::query()->where('title', 'like', 'Sepsis recognition%')->firstOrFail();
+
+    // Conference 5's affiliation column holds a name that is also in the
+    // byline, so it is not an affiliation and is not written as one.
+    expect($swapped->authors()->pluck('affiliation')->filter()->all())->toBe([])
+        // Conference 6 is clean and the value is used.
+        ->and($clean->authors()->first()?->affiliation)->toBe('Example Central Hospital');
+
+    expect(implode("\n", $report->manualReview()))->toContain('affiliation');
+});
+
+it('copies each file with its digest and reports the ones that are missing and the ones that are orphans', function () {
+    $report = app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $files = SubmissionFile::query()->get();
+
+    // Two of the three referenced files exist on disk in the fixture.
+    expect($files)->toHaveCount(2)
+        ->and($files->first()?->sha256)->toHaveLength(64)
+        ->and($files->first()?->mime)->toBe('application/pdf')
+        ->and($files->first()?->size)->toBeGreaterThan(0)
+        // The path is the same content-addressed shape StoreSubmissionFile
+        // writes, so the download route and the purge both work unchanged.
+        ->and($files->first()?->path)->toMatch('#^[0-9a-f]{2}/[0-9A-Za-z]{26}\.pdf$#');
+
+    Storage::disk('local')->assertExists((string) $files->first()?->path);
+
+    $lines = implode("\n", $report->manualReview());
+
+    expect($lines)->toContain('1729330644_2837.pdf')   // referenced, not on disk
+        ->and($lines)->toContain('1727756783_9881.pdf'); // on disk, referenced by nothing
+});
+
+it('builds one review per reviewer per abstract, with the answers typed', function () {
+    app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $submission = Submission::query()->where('title', 'like', 'Bedside ultrasound%')->firstOrFail();
+
+    // Legacy has no review header row at all: a "review" is the set of answer
+    // rows sharing (submission_id, reviewer_id).
+    expect($submission->reviews()->count())->toBe(2)
+        ->and($submission->reviews()->first()?->status)->toBe(ReviewStatus::Submitted)
+        ->and(ReviewAnswer::query()->count())->toBe(5)
+        // Every legacy answer is a digit 1-5 in a text column.
+        ->and(ReviewAnswer::query()->whereNotNull('value_int')->count())->toBe(5)
+        ->and(ReviewAnswer::query()->whereNotNull('value_text')->count())->toBe(0);
+
+    // Synthetic and reported: there is no legacy timestamp, and a review must
+    // not be dated before the abstract it reviews.
+    expect($submission->reviews()->first()?->submitted_at?->greaterThan($submission->submitted_at))->toBeTrue();
+});
+
+it('imports an incomplete review as submitted, and reports it', function () {
+    $report = app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $submission = Submission::query()->where('title', 'like', 'Sepsis recognition%')->firstOrFail();
+    $review = $submission->reviews()->first();
+
+    // One answer of the two questions on form 7 - the shape of the two real
+    // incomplete 2024 reviews. Marking it draft would drop it out of
+    // review_count, out of the mean, and out of the record of what the
+    // committee was actually given.
+    expect($review?->status)->toBe(ReviewStatus::Submitted)
+        ->and($review?->answers()->count())->toBe(1)
+        ->and(implode("\n", $report->manualReview()))->toContain('incomplete');
+});
+
+it('scores every imported abstract and locks the forms afterwards', function () {
+    app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    $submission = Submission::query()->where('title', 'like', 'Bedside ultrasound%')->firstOrFail();
+
+    // Recomputed by ComputeSubmissionScore rather than carried: legacy's
+    // "Total Score" was an un-normalised SUM across reviewers and questions
+    // (legacy-review.md:267) and is not comparable to anything v2 computes.
+    // Reviewer 16 gave 4 and 5 -> 87.50; reviewer 17 gave 3 and 2 -> 37.50.
+    expect($submission->score)->toBe('62.50')
+        ->and($submission->review_count)->toBe(2)
+        ->and($submission->score_spread)->not->toBeNull();
+
+    // Locked LAST: ReviewQuestion::booted()'s updating hook throws
+    // ReviewFormLocked on a locked form, so a form locked before its questions
+    // are final cannot be corrected.
+    expect(ReviewForm::query()->whereNull('locked_at')->count())->toBe(0);
+});
+
+it('writes the manual-review report to the private disk and names it in the result', function () {
+    $report = app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society');
+
+    expect($report->reportPath)->toStartWith('legacy/')
+        ->and($report->reportPath)->toEndWith('.md');
+
+    Storage::disk('local')->assertExists($report->reportPath);
+
+    $markdown = (string) Storage::disk('local')->get($report->reportPath);
+
+    // Grouped and counted, because a flat list of ninety lines is a file
+    // nobody finishes reading.
+    expect($markdown)->toContain('# Legacy import')
+        ->and($markdown)->toContain('## submissions')
+        ->and($markdown)->toContain('import.invalid');
+});
+
+it('writes no report file and no rows in dry-run mode', function () {
+    $report = app(ImportLegacy::class)->handle($this->dump, $this->uploads, 'example-society', dryRun: true);
+
+    expect(Submission::query()->count())->toBe(0)
+        ->and($report->manualReview())->not->toBeEmpty()
+        // The report is the POINT of a dry run, so it is returned - it is just
+        // not written to a disk the operator would then have to clean up.
+        ->and($report->reportPath)->toBeNull();
 });

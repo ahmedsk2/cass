@@ -69,19 +69,33 @@ class ImportLegacyCommand extends Command
             return self::SUCCESS;
         }
 
+        if ($dryRun) {
+            // A dry run writes no report file - there must never be a
+            // rehearsal's report on the cass-storage volume for somebody to
+            // tell apart from the real run's - so the list comes out here
+            // instead. "Read the report" with no report is the one instruction
+            // a rehearsal must not give.
+            $this->components->warn(__('legacy.command.manual_review_unwritten', [
+                'count' => (string) $report->manual->count(),
+            ]));
+
+            foreach ($report->manualReview() as $line) {
+                $this->line('  - '.$line);
+            }
+
+            // A rehearsal's whole purpose is to produce this list before
+            // anything is written, so a list is not a failure there.
+            return self::SUCCESS;
+        }
+
         $this->components->warn(__('legacy.command.manual_review', [
             'count' => (string) $report->manual->count(),
             'path' => (string) $report->reportPath,
         ]));
         $this->components->warn(__('legacy.command.read_the_report'));
+        $this->components->info(__('legacy.command.rescore'));
 
-        if (! $dryRun) {
-            $this->components->info(__('legacy.command.rescore'));
-        }
-
-        // A dry run is a rehearsal: its whole purpose is to produce this list
-        // before anything is written, so a list is not a failure there.
-        return $dryRun ? self::SUCCESS : self::FAILURE;
+        return self::FAILURE;
     }
 
     private function counts(ImportReport $report): void

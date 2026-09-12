@@ -60,6 +60,16 @@ use Illuminate\Support\Facades\Storage;
  * nullable morphs with no foreign key, so the rows survive harmlessly, and the
  * audit trail of who deleted what is the last thing a purge should erase.
  *
+ * `legacy_imports` needs **no line of its own here**, and that is a consequence
+ * of the delegation above rather than an omission: every mapping row the legacy
+ * import writes points at a conference or at something inside one, so
+ * PurgeConference's own sweep removes them per conference. The one kind that is
+ * not conference-scoped is the `users` mapping - and that one is deliberately
+ * kept by both classes, because no purge in this application deletes a `User`
+ * row (this one ends at `organization_members`), so the mapping is still true
+ * afterwards and dropping it would only make a re-import re-adopt the same
+ * account by address for no reason.
+ *
  * Written for `cass:demo-reset`, deliberately general: Plan 6 puts the same
  * action behind a platform-admin screen, which is where the optional $actor
  * comes from.
