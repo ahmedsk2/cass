@@ -71,6 +71,16 @@ class SendReviewerReminders
             }
 
             return ReviewerScope::submissions($user, $conference)
+                // Plan 5's decided arm keeps an accepted/rejected/waitlisted
+                // abstract in this reviewer's scope whenever they hold ANY
+                // review row - a draft counts - so that they can read back what
+                // they wrote. It is not outstanding WORK: the committee has
+                // answered, the author may already have been told, and a
+                // reminder about it is an invitation to a write every review
+                // action now refuses (Submission::isDecided()). Excluded here
+                // rather than in ReviewerScope, because narrowing the arm to
+                // submitted reviews would hide a reviewer's own draft from them.
+                ->whereNull('decision')
                 ->whereDoesntHave('reviews', fn (Builder $reviews): Builder => $reviews
                     ->where('reviewer_user_id', $user->getKey())
                     ->where('status', ReviewStatus::Submitted->value))

@@ -58,8 +58,17 @@ final class ReviewerScope
                     // queue is empty and every review page a 404 on the very
                     // screen that says otherwise. Scoped to the reviewer's OWN
                     // reviews, so a decided abstract nobody reviewed stays out
-                    // of the pool. Writes are still refused by
-                    // Conference::acceptsReviewWrites().
+                    // of the pool.
+                    //
+                    // This arm admits a READ and nothing more, and the thing
+                    // that keeps it to a read is NOT
+                    // Conference::acceptsReviewWrites(): a decision is applied
+                    // while the conference is still `reviewing`, where that
+                    // method answers true. Every write path asks
+                    // Submission::isDecided() as well - SaveReviewDraft,
+                    // SubmitReview, ReopenReview and ReviewSubmission's
+                    // read-only rule - and SendReviewerReminders excludes a
+                    // decided row from "outstanding work" for the same reason.
                     ->orWhere(fn (Builder $decided): Builder => $decided
                         ->whereIn('status', [
                             SubmissionStatus::Accepted->value,

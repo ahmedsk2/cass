@@ -94,17 +94,24 @@ class ReviewSubmission extends Page
     }
 
     /**
-     * Submitted, or the conference has moved on: the form renders disabled.
+     * Submitted, or the conference has moved on, or this abstract has been
+     * decided: the form renders disabled.
      *
      * acceptsReviewWrites(), not isOpenToReviewers(): a Decided conference is
      * still readable (the reviewer can open the page and see what they wrote)
      * but is no longer writable, and the three actions behind this all refuse
      * there too.
+     *
+     * The third condition is not covered by the second: a decision is applied
+     * while the conference is still `reviewing`, so without it this page would
+     * render an editable form over an abstract whose author already holds a
+     * letter, and the three actions would then refuse what the form invited.
      */
     public function isReadOnly(): bool
     {
         return $this->review()?->isSubmitted() === true
-            || ! $this->getConference()->acceptsReviewWrites();
+            || ! $this->getConference()->acceptsReviewWrites()
+            || $this->getSubmission()->isDecided();
     }
 
     public function deadlineHasPassed(): bool

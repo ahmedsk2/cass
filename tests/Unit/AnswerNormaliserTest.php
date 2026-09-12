@@ -108,12 +108,24 @@ it('scores a select answer from the chosen option, and only when it carries one'
         'options' => [
             ['label' => 'Strong accept', 'score' => 100],
             ['label' => 'Weak accept', 'score' => 60],
+            // A choice the organizer deliberately scored ZERO, which is a score
+            // and not an absence - the rule boolean() and SubmissionScorer each
+            // have a dedicated case for, and select() had none. Rewriting the
+            // body as `$score ? clamp(...) : null` drops this answer out of the
+            // review's mean, shrinking the denominator and lifting the score.
+            ['label' => 'No', 'score' => 0],
+            // Out of the 0-100 range the panel's own editor enforces: a row
+            // written before that rule, or by the Plan 6 import. Nothing but
+            // the clamp stops it dragging a review's mean above 100.
+            ['label' => 'Legacy', 'score' => 150],
             ['label' => 'No opinion', 'score' => null],
         ],
     ]);
 
     expect(AnswerNormaliser::normalise($question, answerFor($question, ['choice_key' => 'Strong accept'])))->toBe(100.0)
         ->and(AnswerNormaliser::normalise($question, answerFor($question, ['choice_key' => 'Weak accept'])))->toBe(60.0)
+        ->and(AnswerNormaliser::normalise($question, answerFor($question, ['choice_key' => 'No'])))->toBe(0.0)
+        ->and(AnswerNormaliser::normalise($question, answerFor($question, ['choice_key' => 'Legacy'])))->toBe(100.0)
         // A choice with no score contributes nothing at all - not a zero.
         ->and(AnswerNormaliser::normalise($question, answerFor($question, ['choice_key' => 'No opinion'])))->toBeNull()
         // A key that is not on the question any more: the label was edited

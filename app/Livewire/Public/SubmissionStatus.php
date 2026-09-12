@@ -137,6 +137,13 @@ class SubmissionStatus extends Component
             'authors' => $this->submission->authors()->get(),
             'files' => $this->submission->files()->get(),
             'canChange' => $this->submission->isOpenToAuthor(),
+            // The State chip, gated the way the letter is: a decision that has
+            // not been emailed is not visible to the person it is about. Next
+            // to $letter, and from the same model, so the two answers cannot
+            // disagree - the page used to print "Not accepted" in the chip
+            // while the block underneath said the organizers were still
+            // handling it.
+            'publicStatus' => $this->submission->publicStatus(),
             'letter' => $letter,
             // The stored letter deliberately withholds the token:
             // SendOneDecisionEmail renders it with `status_link => null`, so

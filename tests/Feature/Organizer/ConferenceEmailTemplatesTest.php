@@ -41,6 +41,13 @@ it('lists all eleven template keys of spec 5.9', function () {
     foreach (EmailTemplateKey::cases() as $key) {
         $page->assertSee($key->getLabel());
     }
+
+    // "Sent when" has to stay true of the branch it ships on. The three
+    // reviewer keys carried "Not sent yet" from Plan 3, when they were not -
+    // but InviteReviewer and SendReviewerReminders mail all three now, and an
+    // organizer who believes the panel leaves that text uncustomised and lets
+    // it go to real reviewers.
+    $page->assertDontSee('Not sent yet');
 });
 
 it('marks each key as a platform default until it is overridden', function () {

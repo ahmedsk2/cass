@@ -326,9 +326,9 @@ class ConferenceEmailTemplates extends Page implements HasTable
         return match ($key) {
             EmailTemplateKey::SubmissionReceived => 'To the corresponding author when an abstract is submitted.',
             EmailTemplateKey::SubmissionDraftSaved => 'To the corresponding author when a draft is saved, and when you resend a status link.',
-            EmailTemplateKey::ReviewerInvitation => 'To a reviewer you invite. Not sent yet — reviewing arrives in a later release.',
-            EmailTemplateKey::ReviewerReminder => 'To reviewers with outstanding work, 7, 3 and 1 days before the review deadline. Not sent yet.',
-            EmailTemplateKey::ReviewerOverdue => 'To reviewers once the review deadline has passed. Not sent yet.',
+            EmailTemplateKey::ReviewerInvitation => 'To a reviewer you invite, when you send the invitation.',
+            EmailTemplateKey::ReviewerReminder => 'To reviewers with outstanding work, 7, 3 and 1 days before the review deadline.',
+            EmailTemplateKey::ReviewerOverdue => 'To reviewers once the review deadline has passed.',
             EmailTemplateKey::DecisionAcceptedOral => 'To the corresponding author of an abstract accepted for oral presentation, when you send decision emails.',
             EmailTemplateKey::DecisionAcceptedPoster => 'To the corresponding author of an abstract accepted as a poster, when you send decision emails.',
             EmailTemplateKey::DecisionWaitlisted => 'To the corresponding author of a waitlisted abstract, when you send decision emails.',

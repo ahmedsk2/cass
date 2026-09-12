@@ -90,6 +90,10 @@ return [
         'already_submitted' => 'You have already submitted this review. Reopen it if you want to change it.',
         'not_submitted' => 'This review has not been submitted, so there is nothing to reopen.',
         'review_closed' => 'This conference is no longer open for reviewing.',
+        // Narrower than review_closed, and it has to be: a decision is applied
+        // while the conference is still `reviewing`, so "this conference is no
+        // longer open for reviewing" would be false at the moment it is shown.
+        'decided' => 'The committee has decided this abstract, so its reviews can no longer be changed.',
         'deadline_passed' => 'The review deadline has passed.',
         'answer' => 'Please answer ":prompt". :detail',
         'detail_scale' => 'Choose a number between :min and :max.',
@@ -158,6 +162,7 @@ return [
         'submitted_notice' => 'You have submitted this review. Reopen it if you want to change anything.',
         'deadline_passed' => 'The review deadline has passed, so a submitted review can no longer be changed.',
         'review_closed_notice' => 'This conference is no longer open for reviewing, so this review can no longer be changed.',
+        'decided_notice' => 'The committee has decided this abstract, so this review can no longer be changed.',
     ],
 
     'switch' => [

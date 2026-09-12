@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Decisions\ApplyDecision;
 use App\Actions\Decisions\SendDecisionEmails;
+use App\Actions\Decisions\SendOneDecisionEmail;
+use App\Actions\Mail\RenderEmailTemplate;
 use App\Actions\Mail\SaveEmailTemplate;
 use App\Enums\ConferenceStatus;
 use App\Enums\Decision;
 use App\Enums\EmailTemplateKey;
 use App\Enums\OrganizationRole;
+use App\Exceptions\DecisionNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceRanking;
 use App\Mail\TemplatedMail;
 use App\Models\Conference;
@@ -17,7 +20,9 @@ use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\SubmissionAuthor;
 use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
+use Mockery\MockInterface;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Livewire\livewire;
@@ -146,20 +151,78 @@ it('stamps the submission and the decision row, and is safe to run again', funct
 });
 
 it('sends each letter once even when two runs overlap on the same rows', function () {
-    // The double-click / two-organizers case. The models are NOT refreshed
-    // between the runs, so the second run sees exactly the state the first one
-    // started from - which is what a second overlapping request sees too. The
-    // conditional-UPDATE claim in SendOneDecisionEmail is the only thing that
-    // makes this two letters and not four; without it both runs would mint a
-    // token (IssueSubmissionToken REPLACES the hash) and the link in the first
-    // pair of letters would already be dead.
-    app(SendDecisionEmails::class)->handle($this->conference, $this->user);
+    // The double-click / two-organizers case, driven where the claim actually
+    // lives. Calling SendDecisionEmails twice proves nothing about it: pending()
+    // builds a FRESH query, so the second run reads the stamp the first one
+    // already committed and finds no rows whatever the conditional UPDATE does -
+    // a plain forceFill()->save() would keep that version green. Two separately
+    // hydrated copies of ONE row are what two overlapping requests really hold,
+    // and the conditional UPDATE is the only thing that makes the second one
+    // skip: without it both would mint a token (IssueSubmissionToken REPLACES
+    // the hash) and the link in the first letter would already be dead.
+    $first = $this->accepted->fresh() ?? $this->accepted;
+    $second = $this->accepted->fresh() ?? $this->accepted;
+
+    app(SendOneDecisionEmail::class)->handle($first, $this->user);
+
+    expect(fn () => app(SendOneDecisionEmail::class)->handle($second, $this->user))
+        ->toThrow(DecisionNotAcceptable::class, __('decisions.errors.already_sending'));
+
+    Mail::assertQueued(TemplatedMail::class, 1);
+
+    expect(EmailLog::query()->count())->toBe(1)
+        ->and($this->accepted->fresh()?->decisions()->count())->toBe(1);
+});
+
+it('keeps the claim when the letter cannot be stored, instead of mailing a second one', function () {
+    // The window between "the mail is on the queue" and "the letter is on the
+    // row". The queue push is irreversible and it has already rotated the
+    // author's status token, so a throw after it must NOT release the claim:
+    // releasing it puts the row back in pending(), and the next "Send decision
+    // emails" mails a SECOND letter whose own token rotation kills the link in
+    // the one the author is already holding.
+    //
+    // Call 1 of RenderEmailTemplate::handle() is the delivered body, inside
+    // SendTemplatedEmail; call 2 is the stored copy, after Mail::queue().
+    $real = app(RenderEmailTemplate::class);
+    $calls = 0;
+
+    $this->mock(RenderEmailTemplate::class, function (MockInterface $mock) use ($real, &$calls): void {
+        $mock->shouldReceive('handle')->andReturnUsing(function (...$arguments) use ($real, &$calls): mixed {
+            $calls++;
+
+            if ($calls === 2) {
+                throw new RuntimeException('the stored render failed');
+            }
+
+            return $real->handle(...$arguments);
+        });
+    });
+
+    app(SendOneDecisionEmail::class)->handle($this->accepted->fresh(), $this->user);
+
+    $row = $this->accepted->fresh();
+
+    // The claim SURVIVES the failure, so the row does not re-enter the queue...
+    expect($row?->decision_notified_at)->not->toBeNull()
+        ->and(app(SendDecisionEmails::class)->pending($this->conference)->pluck('id')->all())
+        ->not->toContain($row?->id)
+        // ...the stored copy is honestly missing rather than half-written...
+        ->and($row?->currentDecision()?->letter_markdown)->toBeNull()
+        // ...and the audit says which of the two things happened.
+        ->and(Activity::query()->where('description', 'submission.decision_letter_sent')
+            ->latest('id')->first()?->getProperty('letter_stored'))->toBeFalse();
+
+    // A whole bulk run afterwards reaches the OTHER decided abstract and leaves
+    // this author alone: one letter to sara, ever.
     app(SendDecisionEmails::class)->handle($this->conference, $this->user);
 
     Mail::assertQueued(TemplatedMail::class, 2);
-
-    expect(EmailLog::query()->count())->toBe(2)
-        ->and($this->accepted->fresh()?->decisions()->count())->toBe(1);
+    Mail::assertQueued(
+        TemplatedMail::class,
+        fn (TemplatedMail $mail): bool => $mail->hasTo('omar@example.org'),
+    );
+    expect(EmailLog::query()->where('to_email', 'sara@example.org')->count())->toBe(1);
 });
 
 it('writes one audit entry per letter, naming who sent it', function () {
@@ -330,7 +393,19 @@ it('resends one letter from its own row', function () {
         ->and($this->accepted->fresh()?->currentDecision()?->notified_at?->greaterThan($firstLetter))->toBeTrue();
 });
 
-it('offers the send only to an owner or an admin', function () {
+it('offers the send and the per-row resend only to an owner or an admin', function () {
+    // The letters go out FIRST, as the owner. Without a notified row,
+    // resendDecision()'s own `decision_notified_at !== null` condition hides it
+    // for a reason that has nothing to do with roles, and an assertion that it
+    // is hidden would say nothing about the gate this case is named for -
+    // passing mayDecide() where maySend() belongs in the positional
+    // rowActions() call would keep it green.
+    app(SendDecisionEmails::class)->handle($this->conference, $this->user);
+
+    livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
+        ->assertTableActionVisible('sendDecisionEmails')
+        ->assertTableActionVisible('resendDecision', $this->accepted->fresh());
+
     $member = User::factory()->create();
     $this->organization->addMember($member, OrganizationRole::Member);
     actingAs($member);
@@ -338,10 +413,17 @@ it('offers the send only to an owner or an admin', function () {
 
     // Spec section 4 lets a plain member decide; sending a letter to every
     // author in the conference is narrowed to owner/admin and recorded as an
-    // owner question.
+    // owner question. The per-row resend does the same thing to one author -
+    // including rotating their status link - so it is gated the same way.
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
         ->assertTableActionHidden('sendDecisionEmails')
+        ->assertTableActionHidden('resendDecision', $this->accepted->fresh())
         ->assertTableActionVisible('decide', $this->undecided);
+
+    // And the gate the action BODY re-asks, pinned on its own: visible() is the
+    // nicety, Gate::authorize('sendDecisions') inside resendDecision() is the
+    // rule, and only this assertion survives a miswired visible().
+    expect(Gate::forUser($member)->allows('sendDecisions', $this->conference))->toBeFalse();
 });
 
 it('sends nothing for another organization conference', function () {

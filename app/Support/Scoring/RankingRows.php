@@ -72,10 +72,17 @@ final class RankingRows
 
     /**
      * The file name both exports use, so the two differ only in extension:
-     * `ranking-alpha-annual-meeting-2026-09-13-083000.xlsx`.
+     * `ranking-alpha-annual-meeting-2026-09-13-113000.xlsx`.
+     *
+     * Stamped in the CONFERENCE's zone, the same one row() renders `Submitted
+     * at` and `Decision letter sent` in. `now()` alone is config('app.timezone')
+     * - UTC in production - so a file taken from an Asia/Riyadh conference was
+     * named three hours before the times printed inside it.
      */
     public static function fileName(Conference $conference, string $extension): string
     {
-        return 'ranking-'.$conference->slug.'-'.now()->format('Y-m-d-His').'.'.$extension;
+        $timezone = (string) ($conference->timezone ?: config('app.timezone'));
+
+        return 'ranking-'.$conference->slug.'-'.now()->setTimezone($timezone)->format('Y-m-d-His').'.'.$extension;
     }
 }

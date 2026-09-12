@@ -12,6 +12,7 @@ use App\Models\Conference;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
@@ -216,6 +217,35 @@ it('reports every row of a bulk run, one line each', function () {
         ->and($report['unchanged'])->toBe(1)
         ->and(array_keys($report['refused']))->toBe(['AAM26-004', 'AAM26-005'])
         ->and($report['refused']['AAM26-004'])->toBeArray()->not->toBeEmpty();
+});
+
+it('never reports a row it actually wrote as unchanged', function () {
+    // The bulk report decides "unchanged" from the decision and the note alone,
+    // while ApplyDecision::isUnchanged() additionally requires a current HISTORY
+    // row - so a submission whose `decision` column is set with no
+    // submission_decisions row behind it (a hand-written UPDATE, or the Plan 6
+    // import) really is written: a history row is appended, an activity entry
+    // logged and decision_notified_at nulled. Telling the organizer nothing
+    // changed is the report disagreeing with what the action did.
+    $bare = Submission::factory()->for($this->conference)->submitted()->create();
+    $bare->forceFill(['reference' => 'AAM26-009'])->save();
+
+    DB::table('submissions')->where('id', $bare->id)->update([
+        'decision' => Decision::AcceptedOral->value,
+        'status' => SubmissionStatus::Accepted->value,
+    ]);
+
+    expect($bare->fresh()?->decisions()->count())->toBe(0);
+
+    $report = app(ApplyDecisions::class)->handle(
+        [$bare->fresh()],
+        Decision::AcceptedOral,
+        $this->actor,
+    );
+
+    expect($report['applied'])->toBe(1)
+        ->and($report['unchanged'])->toBe(0)
+        ->and($bare->fresh()?->decisions()->count())->toBe(1);
 });
 
 it('summarises a bulk run in one sentence', function () {

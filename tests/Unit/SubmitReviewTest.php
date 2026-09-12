@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Conferences\CreateDefaultReviewForm;
+use App\Actions\Decisions\ApplyDecision;
 use App\Actions\Reviews\ReopenReview;
 use App\Actions\Reviews\SaveReviewDraft;
 use App\Actions\Reviews\SubmitReview;
 use App\Enums\ConferenceStatus;
+use App\Enums\Decision;
 use App\Enums\ReviewQuestionType;
 use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
@@ -147,6 +149,65 @@ it('does not drag a withdrawn or decided abstract back to under review', functio
     }
 
     expect(Review::query()->count())->toBe(0);
+});
+
+it('refuses every review write on an abstract the committee has already decided', function () {
+    // The window ReviewerScope's decided arm opens, and the one its own comment
+    // got wrong. The arm re-admits an accepted/rejected/waitlisted row for the
+    // reviewer who reviewed it - a DRAFT counts - so they can read back what
+    // they wrote; and ApplyDecision writes that status while the conference is
+    // still `reviewing`, where acceptsReviewWrites() is true. So nothing but
+    // this guard stops a stale draft being submitted onto a row whose author is
+    // already holding a letter, with SubmitReview's ComputeSubmissionScore hook
+    // rewriting the score, the spread and the count the committee decided on.
+    app(SaveReviewDraft::class)->handle($this->submission, $this->reviewer, [$this->first->ulid => 2]);
+
+    app(ApplyDecision::class)->handle($this->submission, Decision::Rejected, User::factory()->create());
+    $this->submission->forceFill(['decision_notified_at' => now()])->save();
+
+    $decided = $this->submission->fresh() ?? $this->submission;
+
+    expect(ReviewerScope::allows($this->reviewer, $decided))->toBeTrue()
+        ->and($decided->conference->acceptsReviewWrites())->toBeTrue()
+        ->and(app(SubmitReview::class)->blockers($decided, $this->reviewer, fullAnswers($this)))
+        ->toBe([__('reviewer.errors.decided')])
+        ->and(fn () => app(SubmitReview::class)->handle($decided, $this->reviewer, fullAnswers($this)))
+        ->toThrow(ReviewNotAcceptable::class, __('reviewer.errors.decided'))
+        ->and(fn () => app(SaveReviewDraft::class)->handle($decided, $this->reviewer, [$this->first->ulid => 1]))
+        ->toThrow(ReviewNotAcceptable::class, __('reviewer.errors.decided'));
+
+    $after = $this->submission->fresh();
+
+    // The three denormalised columns the ranking sorts on are exactly where
+    // ApplyDecision left them, and the draft answer is untouched.
+    expect($after?->score)->toBeNull()
+        ->and($after?->score_spread)->toBeNull()
+        ->and($after?->review_count)->toBe(0)
+        ->and($after?->status)->toBe(SubmissionStatus::Rejected)
+        ->and($after?->decision_notified_at)->not->toBeNull()
+        ->and(Review::query()->firstOrFail()->answers()->first()?->value_int)->toBe(2);
+});
+
+it('refuses a reopen on an abstract the committee has already decided', function () {
+    // The same window from the other side: this reviewer's review is SUBMITTED,
+    // so ReviewerScope admits it whatever the arm's status filter says, and
+    // ReopenReview recomputes the score of a decided abstract on its way out.
+    $review = app(SubmitReview::class)->handle($this->submission, $this->reviewer, fullAnswers($this));
+
+    app(ApplyDecision::class)->handle(
+        $this->submission->fresh() ?? $this->submission,
+        Decision::AcceptedOral,
+        User::factory()->create(),
+    );
+
+    $scored = $this->submission->fresh()?->score;
+
+    expect(app(ReopenReview::class)->blockers($review->fresh() ?? $review))
+        ->toContain(__('reviewer.errors.decided'))
+        ->and(fn () => app(ReopenReview::class)->handle($review->fresh() ?? $review, $this->reviewer))
+        ->toThrow(ReviewNotAcceptable::class)
+        ->and($review->fresh()?->status)->toBe(ReviewStatus::Submitted)
+        ->and($this->submission->fresh()?->score)->toBe($scored);
 });
 
 it('refuses a draft save over a review that has already been submitted', function () {

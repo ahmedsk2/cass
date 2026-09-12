@@ -268,6 +268,27 @@ it('never offers a bulk delete of the decision history', function () {
     expect(panelAllows('viewAny', SubmissionDecision::class))->toBeFalse();
 });
 
+it('answers view() on a decision row for a member, an outsider and a deleted tenant', function () {
+    // view() is the ONLY non-false row ability on this policy and the only one
+    // that walks two nullable hops - $decision->submission?->conference?->
+    // organization - which is exactly the shape the sibling cases in this file
+    // exist to pin. The case above asserts the six false ones and never touches
+    // it, so neither its positive path nor either guard was covered.
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    SubmissionDecision::factory()->for($submission)->create();
+    $row = $submission->decisions()->firstOrFail();
+    $policy = app(SubmissionDecisionPolicy::class);
+
+    expect($policy->view($this->member, $row))->toBeTrue()
+        ->and($policy->view($this->outsider, $row))->toBeFalse();
+
+    // Organization soft deletes, and the belongsTo then resolves to null while
+    // this row survives - the gate answers no, it does not 500.
+    $this->organization->delete();
+
+    expect($policy->view($this->member, $row->fresh() ?? $row))->toBeFalse();
+});
+
 it('lets a member decide but only an owner or admin send the letters', function () {
     $submission = Submission::factory()->for($this->conference)->submitted()->create();
     $submissionPolicy = app(SubmissionPolicy::class);

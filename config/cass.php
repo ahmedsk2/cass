@@ -110,6 +110,17 @@ return [
         // and a queue push. 200 is comfortably inside it for the conference
         // sizes this platform is for; raise it only after measuring.
         'send_chunk' => (int) env('CASS_DECISION_SEND_CHUNK', 200),
+        // How many rows one "Decide selected" click may carry. The bulk loop
+        // asks the Gate once per row and then runs ApplyDecision's own
+        // currentDecision() read and transaction - measured at eleven queries
+        // per row - so an unbounded select-all over the 500 abstracts spec
+        // section 10 budgets for is roughly 5,500 queries inside php-fpm's
+        // 60-second window (docker/php.ini). Filament applies this as a LIMIT
+        // on the selection (Tables\Concerns\HasBulkActions), so the run is
+        // bounded rather than refused, and the organizer clicks again -
+        // the same shape as send_chunk. ApplyDecision commits per row, so a
+        // run that did time out would lose only the report, never the writes.
+        'decide_chunk' => (int) env('CASS_DECISION_DECIDE_CHUNK', 250),
     ],
 
     'countries' => [

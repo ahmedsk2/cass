@@ -54,11 +54,20 @@ class SubmitReview
             return [__('reviewer.errors.not_yours')];
         }
 
-        // ...except the one it deliberately does not cover: ReviewerScope admits
+        // ...except the two it deliberately does not cover: ReviewerScope admits
         // Decided, because a reviewer may still READ what they said after the
         // committee decides. Writing stops at Reviewing.
         if (! $submission->conference->acceptsReviewWrites()) {
             $reasons[] = __('reviewer.errors.review_closed');
+        }
+
+        // And the narrower one the conference status cannot express: a decision
+        // is applied while the conference is STILL `reviewing`, and
+        // ReviewerScope re-admits the decided row for the reviewer who reviewed
+        // it - on any review row, a draft included. Submitting here would rerun
+        // ComputeSubmissionScore over a row whose author already holds a letter.
+        if ($submission->isDecided()) {
+            $reasons[] = __('reviewer.errors.decided');
         }
 
         $existing = Review::query()

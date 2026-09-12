@@ -50,11 +50,19 @@ class ApplyDecisions
             $key = (string) ($submission->reference ?? $submission->ulid);
 
             $before = $submission->decision;
+            // Read ONCE, and both halves of ApplyDecision::isUnchanged() taken
+            // from it. Comparing only the decision and the note re-implemented
+            // half of that predicate: a row whose `decision` column is set with
+            // no history row behind it - a hand-written UPDATE, or the Plan 6
+            // import - really is written (a history row is appended, an activity
+            // entry logged, decision_notified_at nulled) and was still counted
+            // as unchanged, so the report disagreed with what the action did.
+            $beforeRow = $submission->currentDecision();
             // `?->note` and no `?? ''`: (string) null is already the empty
             // string, and Larastan rejects a nullsafe read on the left of `??`
             // outright (nullsafe.neverNull) because `??` suppresses the null
             // read by itself.
-            $beforeNote = (string) $submission->currentDecision()?->note;
+            $beforeNote = (string) $beforeRow?->note;
 
             try {
                 $this->applyDecision->handle($submission, $decision, $actor, $note, $changeAfterSend);
@@ -67,7 +75,7 @@ class ApplyDecisions
             // ApplyDecision returns the row untouched when nothing changed, so
             // the difference is read from what was there before rather than
             // from a second return value nobody else needs.
-            if ($before === $decision && $beforeNote === (string) $note) {
+            if ($before === $decision && $beforeNote === (string) $note && $beforeRow !== null) {
                 $unchanged++;
 
                 continue;

@@ -49,12 +49,24 @@ beforeEach(function () {
     $rows = [];
 
     for ($i = 1; $i <= 500; $i++) {
+        // HALF the rows are decided and notified, half are neither. All three
+        // row actions' visible() closures start with a `decision_notified_at`
+        // test - `=== null` on decide(), `!== null` on changeDecision() and
+        // resendDecision() - so a fixture where every row is undecided
+        // short-circuits two of the three on their first operand and the
+        // query-count ceiling below cannot see anything those two do. That is
+        // exactly the 578-query regression this gate was written for: a Gate
+        // call, a `$record->conference` lazy load or a currentDecision() read
+        // placed after that operand would be 250 extra queries here and the
+        // gate would have stayed green.
+        $decided = $i % 2 === 0;
+
         $rows[] = [
             'ulid' => (string) Str::ulid(),
             'conference_id' => $this->conference->id,
             'track_id' => null,
             'reference' => sprintf('PERF26-%03d', $i),
-            'status' => SubmissionStatus::UnderReview->value,
+            'status' => $decided ? SubmissionStatus::Accepted->value : SubmissionStatus::UnderReview->value,
             'title' => "Abstract number {$i}",
             'abstract' => 'A body of text that the ranking never reads.',
             'word_count' => 9,
@@ -66,8 +78,8 @@ beforeEach(function () {
             'score_spread' => $i % 17,
             'review_count' => 2,
             'scored_at' => $now,
-            'decision' => null,
-            'decision_notified_at' => null,
+            'decision' => $decided ? Decision::AcceptedOral->value : null,
+            'decision_notified_at' => $decided ? $now : null,
             'submitted_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
@@ -77,9 +89,45 @@ beforeEach(function () {
     foreach (array_chunk($rows, 100) as $chunk) {
         DB::table('submissions')->insert($chunk);
     }
+
+    // The history row behind every decided column, raw-inserted for the same
+    // reason the submissions are: a coherent fixture, not 250 factory calls.
+    // Without it the rows look like hand-written UPDATEs, which is a state the
+    // application refuses elsewhere (SendOneDecisionEmail's `no_history`).
+    $decisions = [];
+
+    foreach (DB::table('submissions')->where('conference_id', $this->conference->id)
+        ->whereNotNull('decision')->pluck('id') as $submissionId) {
+        $decisions[] = [
+            'ulid' => (string) Str::ulid(),
+            'submission_id' => $submissionId,
+            'decision' => Decision::AcceptedOral->value,
+            'decided_by' => $this->user->id,
+            'decided_at' => $now,
+            'note' => null,
+            'letter_subject' => 'A decision on your abstract',
+            'letter_markdown' => 'Dear author, a decision has been made.',
+            'notified_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+    }
+
+    foreach (array_chunk($decisions, 100) as $chunk) {
+        DB::table('submission_decisions')->insert($chunk);
+    }
 });
 
 it('renders five hundred abstracts without touching the reviews table', function () {
+    // The fixture is deliberately MIXED, and this is the guard on that: revert
+    // it to all-undecided and decide()'s visible() is the only one of the three
+    // whose body runs, so the ceiling below stops bounding two thirds of the
+    // per-row work it exists to bound.
+    $scope = DB::table('submissions')->where('conference_id', $this->conference->id);
+
+    expect((clone $scope)->whereNull('decision_notified_at')->count())->toBe(250)
+        ->and((clone $scope)->whereNotNull('decision_notified_at')->count())->toBe(250);
+
     /** @var list<string> $queries */
     $queries = [];
 

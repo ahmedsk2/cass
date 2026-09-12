@@ -14,8 +14,16 @@
         <div>
             <dt class="text-sm font-medium text-slate-500">{{ __('submission.status.state') }}</dt>
             <dd class="mt-1">
+                {{-- NOT `$submission->status`. ApplyDecision writes `status`
+                     and `decision` in one transaction, days before anybody
+                     clicks "Send decision emails", so printing the column here
+                     would tell the author the answer before the letter - the
+                     very thing the letter gate in Submission::decisionLetter()
+                     exists to prevent, and spec 5.6's "so decisions can be
+                     prepared quietly first". One method owns the rule
+                     (Submission::publicStatus()); this echoes what it says. --}}
                 <span class="inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-800">
-                    {{ $submission->status->getLabel() }}
+                    {{ $publicStatus->getLabel() }}
                 </span>
             </dd>
         </div>

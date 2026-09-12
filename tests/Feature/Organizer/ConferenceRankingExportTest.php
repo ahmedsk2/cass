@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Submissions\ExportRankingCsv;
 use App\Actions\Submissions\ExportRankingXlsx;
 use App\Enums\ConferenceStatus;
 use App\Enums\Decision;
@@ -83,6 +84,74 @@ it('exports only the rows the filters left on screen', function () {
     expect($csv)->toContain('AAM26-001')->not->toContain('AAM26-002');
 });
 
+it('writes both files in the ranking order on screen, not in submission-id order', function () {
+    // The higher-scoring abstract is created LAST, so its id is the larger one:
+    // a file in `submissions.id` order puts it second and a ranked file puts it
+    // first. Nothing else in this file asserts an order, and the writers'
+    // ->reorder()->chunkById() silently dropped the table's ORDER BY score DESC
+    // and replaced it with ORDER BY submissions.id ASC - so the file an
+    // organizer downloaded from a ranking screen was not ranked.
+    $top = Submission::factory()->for($this->conference)->scored(99.0)
+        ->create(['title' => 'The best abstract', 'track_id' => $this->track->id]);
+    $top->forceFill(['reference' => 'AAM26-002'])->save();
+
+    $component = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
+        ->callTableAction('exportCsv')
+        ->assertFileDownloaded();
+
+    $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
+
+    expect(strpos($csv, 'AAM26-002'))->toBeInt()
+        ->and(strpos($csv, 'AAM26-002'))->toBeLessThan((int) strpos($csv, 'AAM26-001'));
+
+    // The XLSX writer is a second copy of the same loop, so it needs the same
+    // assertion or only half the bug is pinned.
+    $workbook = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
+        ->callTableAction('exportXlsx')
+        ->assertFileDownloaded();
+
+    $path = sys_get_temp_dir().'/cass-ranking-order-'.bin2hex(random_bytes(6)).'.xlsx';
+    file_put_contents($path, (string) base64_decode((string) data_get($workbook->effects, 'download.content'), true));
+
+    try {
+        $zip = new ZipArchive;
+        expect($zip->open($path))->toBeTrue();
+        $sheet = (string) $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+
+        expect(strpos($sheet, 'AAM26-002'))->toBeInt()
+            ->and(strpos($sheet, 'AAM26-002'))->toBeLessThan((int) strpos($sheet, 'AAM26-001'));
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('scopes the file itself, whatever query it is handed', function () {
+    // Every other case in this file feeds the action the page's own already
+    // scoped query or RankedSubmissions::query($conference), so
+    // RankedSubmissions::constrain() inside the writer - the line the docblock
+    // calls the RULE rather than the convenience - could be deleted with the
+    // whole suite still green, and the draft/withdrawn exclusion is proved
+    // only for the table. This hands it a deliberately unscoped builder.
+    $stranger = withoutTenant(fn (): Submission => Submission::factory()->scored(99.0)
+        ->create(['title' => 'Another conference abstract']));
+
+    Submission::factory()->for($this->conference)->create(['title' => 'An unfinished draft']);
+    Submission::factory()->for($this->conference)->withdrawn()->create(['title' => 'A withdrawn abstract']);
+
+    $response = app(ExportRankingCsv::class)->handle(Submission::query(), $this->conference, 'ranking.csv');
+
+    ob_start();
+    $response->sendContent();
+    $csv = (string) ob_get_clean();
+
+    expect($stranger->conference_id)->not->toBe($this->conference->id)
+        ->and($csv)->toContain('AAM26-001')
+        ->not->toContain('Another conference abstract')
+        ->not->toContain('An unfinished draft')
+        ->not->toContain('A withdrawn abstract');
+});
+
 it('never exports another conference, whatever the filters say', function () {
     $other = Conference::factory()->for($this->organization)->closed()->create();
     $theirs = Submission::factory()->for($other)->scored(99.0)->create(['title' => 'Winter abstract']);
@@ -99,13 +168,18 @@ it('never exports another conference, whatever the filters say', function () {
 it('names both files after the conference and the moment they were taken', function () {
     Carbon::setTestNow('2026-09-13 08:30:00');
 
+    // In the CONFERENCE's zone, which is Asia/Riyadh here: 08:30 UTC is 11:30
+    // there. The `Submitted at` and `Decision letter sent` columns inside the
+    // file are rendered in that same zone (RankingRows::row), so stamping the
+    // name in config('app.timezone') produced a file whose name disagreed with
+    // its own contents by the offset.
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
         ->callTableAction('exportCsv')
-        ->assertFileDownloaded('ranking-alpha-annual-meeting-2026-09-13-083000.csv');
+        ->assertFileDownloaded('ranking-alpha-annual-meeting-2026-09-13-113000.csv');
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
         ->callTableAction('exportXlsx')
-        ->assertFileDownloaded('ranking-alpha-annual-meeting-2026-09-13-083000.xlsx');
+        ->assertFileDownloaded('ranking-alpha-annual-meeting-2026-09-13-113000.xlsx');
 
     Carbon::setTestNow();
 });

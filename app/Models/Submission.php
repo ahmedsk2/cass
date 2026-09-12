@@ -176,6 +176,54 @@ class Submission extends Model
     }
 
     /**
+     * The committee has answered, so the evidence behind that answer is closed.
+     *
+     * **The one rule every review WRITE path asks**, and it is not the same
+     * question as `Conference::acceptsReviewWrites()`. ApplyDecision writes
+     * accepted/rejected/waitlisted while the conference is still `reviewing`,
+     * where that method is true; and ReviewerScope deliberately keeps a decided
+     * abstract readable for the reviewer who reviewed it, on ANY review row -
+     * a draft counts. Without this, a stale draft could be submitted onto a row
+     * whose author is holding a letter, and SubmitReview's
+     * ComputeSubmissionScore hook would rewrite the score, the spread and the
+     * count the ranking was sorted by when the committee decided.
+     *
+     * The denormalised column, not the history: it is the one ApplyDecision
+     * writes inside its transaction together with `status`.
+     */
+    public function isDecided(): bool
+    {
+        return $this->decision !== null;
+    }
+
+    /**
+     * The status an author may be shown on /s/{token}.
+     *
+     * Spec 5.6: "so decisions can be prepared quietly first". `decision` and
+     * `status` are written together by ApplyDecision, days before anybody
+     * clicks "Send decision emails" - so printing `status` unconditionally
+     * hands every author holding their link the answer before the letter, which
+     * is exactly what decisionLetter()'s gate exists to prevent. Until the
+     * letter goes out the author sees where they were: under review.
+     *
+     * Only the three decided statuses are masked. A withdrawn abstract that was
+     * decided earlier still reads "Withdrawn", because that is the author's own
+     * act and not the committee's news.
+     */
+    public function publicStatus(): SubmissionStatus
+    {
+        $decided = [SubmissionStatus::Accepted, SubmissionStatus::Rejected, SubmissionStatus::Waitlisted];
+
+        if ($this->isDecided()
+            && $this->decision_notified_at === null
+            && in_array($this->status, $decided, true)) {
+            return SubmissionStatus::UnderReview;
+        }
+
+        return $this->status;
+    }
+
+    /**
      * The letter the author may read on /s/{token}, or null.
      *
      * Three conditions, all required. `decision_notified_at` on this row is the

@@ -72,6 +72,36 @@ it('decides a whole selection at once, skips what it may not touch, and says so'
         ->and($notified->fresh()?->decision_notified_at)->not->toBeNull();
 });
 
+it('bounds one bulk decide to the configured chunk', function () {
+    // decideSelected() walks the WHOLE selection asking the Gate per row and
+    // then running ApplyDecision's own read and transaction - about eleven
+    // queries a row - and "select all" on the 500-abstract conference spec
+    // section 10 budgets for is several thousand of them inside one php-fpm
+    // request. Bounded rather than refused: Filament applies this as a LIMIT on
+    // the selection query, so the organizer clicks again, exactly as
+    // SendDecisionEmails' send_chunk makes them.
+    config()->set('cass.decisions.decide_chunk', 2);
+
+    $third = Submission::factory()->for($this->conference)->submitted()->create();
+    $third->forceFill(['reference' => 'AAM26-004'])->save();
+
+    $component = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()]);
+
+    expect($component->instance()->getTable()->getMaxSelectableRecords())->toBe(2);
+
+    $component
+        ->callTableBulkAction('decideSelected', [$this->first, $this->second, $third], [
+            'decision' => Decision::Rejected->value,
+        ])
+        ->assertNotified();
+
+    $decided = collect([$this->first, $this->second, $third])
+        ->filter(fn (Submission $row): bool => $row->fresh()?->decision !== null)
+        ->count();
+
+    expect($decided)->toBe(2);
+});
+
 it('ignores a foreign record id handed to the bulk decision', function () {
     // Filament resolves a selection with $table->getQuery()->whereKey($ids)
     // (vendor/filament/tables/src/Concerns/HasBulkActions.php:305), so the

@@ -37,10 +37,24 @@ beforeEach(function () {
 // runs or --filters the other file on its own.
 
 it('writes the review score and the four submission columns', function () {
-    scoredReview($this->submission, $this->form, $this->question, 5);
+    $first = scoredReview($this->submission, $this->form, $this->question, 5);
     scoredReview($this->submission, $this->form, $this->question, 3);
 
+    // `reviews.updated_at` means "the reviewer touched it", which is why
+    // reviews.score is written through ->toBase() and not forceFill()->save()
+    // or an Eloquent Builder::update() (both of which call
+    // addUpdatedAtColumn()). Nothing pinned that reason, and a whole-conference
+    // cass:rescore under either of them would reset the timestamp on every
+    // review in the conference - invisibly, with the whole suite green.
+    $touched = $first->fresh()?->updated_at;
+
+    expect($touched)->not->toBeNull();
+
+    $this->travel(1)->minutes();
+
     app(ComputeSubmissionScore::class)->handle($this->submission);
+
+    expect($first->fresh()?->updated_at?->equalTo($touched))->toBeTrue();
 
     $fresh = $this->submission->fresh();
 

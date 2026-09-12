@@ -47,6 +47,14 @@ class SaveReviewDraft
             throw ReviewNotAcceptable::because(__('reviewer.errors.review_closed'));
         }
 
+        // Narrower than the conference status, and the case that one misses:
+        // ApplyDecision writes the decision while the conference is still
+        // `reviewing`, and ReviewerScope keeps the decided row readable for the
+        // reviewer who reviewed it. See Submission::isDecided().
+        if ($submission->isDecided()) {
+            throw ReviewNotAcceptable::because(__('reviewer.errors.decided'));
+        }
+
         // A submitted review is not a scratchpad any more. SubmitReview refuses
         // `already_submitted` and ReopenReview refuses once the deadline has
         // passed, so without this the ONLY thing stopping a reviewer rewriting

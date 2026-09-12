@@ -43,6 +43,21 @@ it('maps every decision to a status and to a template key', function () {
         ->and(Decision::Rejected->isAccepted())->toBeFalse();
 });
 
+it('reports the four decisions in one fixed order, wherever they are printed', function () {
+    // inReportOrder() exists for exactly one reason: reordering the enum's own
+    // cases must not silently reorder the ranking summary strip, the
+    // send-emails modal, the decide radio group, the conference infolist and
+    // the admin list - eight call sites, all of which foreach it. No assertion
+    // named the sequence, so replacing the body with cases(), or any
+    // permutation of it, kept the suite green and the guard it documents did
+    // not exist.
+    expect(array_map(static fn (Decision $decision): string => $decision->value, Decision::inReportOrder()))
+        ->toBe(['accepted_oral', 'accepted_poster', 'waitlisted', 'rejected'])
+        // Best news first, worst last - and every case in it exactly once, so a
+        // fifth decision added later cannot be quietly left off the screens.
+        ->and(Decision::inReportOrder())->toHaveCount(count(Decision::cases()));
+});
+
 it('keeps the whole decision history and names the current one', function () {
     $submission = Submission::factory()->submitted()->create();
     $actor = User::factory()->create();

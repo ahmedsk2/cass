@@ -66,12 +66,20 @@ enum SubmissionStatus: string implements HasColor, HasLabel
      * an abstract off the programme is exactly what an organizer has to be able
      * to do when the author emails instead of clicking - and the first submitted
      * review writes `under_review`, so without this a single reviewer's Submit
-     * would end every route to withdrawal for good. A decided abstract is Plan
-     * 5's business and stays out.
+     * would end every route to withdrawal for good.
+     *
+     * The three decided statuses are in for the same reason one status further
+     * on, and it is the case Plan 5's own "a decision can still be changed once
+     * the conference is `decided`" argument is built on: an accepted presenter
+     * pulls out and the waiting list moves up. Without them the row stays on
+     * the ranking, in `decisionCounts()` and in both exports with no route out
+     * but a hand-written UPDATE. The history is append-only and survives;
+     * `decisionLetter()`'s own Withdrawn guard stops the old letter being shown.
      */
     public function isOrganizerWithdrawable(): bool
     {
-        return $this->isOpenToAuthor() || $this === self::UnderReview;
+        return $this->isOpenToAuthor()
+            || in_array($this, [self::UnderReview, self::Accepted, self::Rejected, self::Waitlisted], true);
     }
 
     /**

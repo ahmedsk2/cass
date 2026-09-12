@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Decisions\ApplyDecision;
 use App\Actions\Submissions\IssueSubmissionToken;
+use App\Enums\ConferenceStatus;
 use App\Enums\Decision;
 use App\Enums\OrganizationStatus;
 use App\Enums\SubmissionStatus;
@@ -14,6 +16,7 @@ use App\Models\Submission;
 use App\Models\SubmissionDecision;
 use App\Models\SubmissionFile;
 use App\Models\Track;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
@@ -477,7 +480,47 @@ it('shows nothing about a decision until the letter has been sent', function () 
     get('/s/'.$this->token)
         ->assertOk()
         ->assertDontSee('This letter has not been sent yet.')
+        ->assertSee(__('submission.status.decision_pending'))
+        // ...and that includes the State chip. ApplyDecision writes `status`
+        // and `decision` in the same transaction, so a page that prints
+        // `status` ungated hands the author the answer days before the letter
+        // and contradicts the "we are handling it" block right under it.
+        ->assertDontSee(SubmissionStatus::Accepted->getLabel())
+        ->assertSee(SubmissionStatus::UnderReview->getLabel());
+});
+
+it('does not leak a decision through the state chip before the letter goes out', function () {
+    // The real path, not a hand-written UPDATE: ApplyDecision is what an
+    // organizer's "Decide" button calls, and it writes `accepted`/`rejected`/
+    // `waitlisted` days before anybody clicks "Send decision emails".
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+    $this->submission->forceFill(['status' => SubmissionStatus::UnderReview])->save();
+
+    app(ApplyDecision::class)->handle(
+        $this->submission->fresh() ?? $this->submission,
+        Decision::Rejected,
+        User::factory()->create(),
+    );
+
+    $decided = $this->submission->fresh();
+
+    expect($decided?->status)->toBe(SubmissionStatus::Rejected)
+        ->and($decided?->decision_notified_at)->toBeNull();
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        // "Not accepted" is the label of SubmissionStatus::Rejected, and it is
+        // the one word this page must not print until the letter has been sent.
+        ->assertDontSee(SubmissionStatus::Rejected->getLabel())
+        ->assertSee(SubmissionStatus::UnderReview->getLabel())
         ->assertSee(__('submission.status.decision_pending'));
+
+    // Once the letter is out, the chip tells the truth again.
+    $decided?->forceFill(['decision_notified_at' => now()])->save();
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertSee(SubmissionStatus::Rejected->getLabel());
 });
 
 it('shows the letter that was sent, rendered', function () {
@@ -537,6 +580,13 @@ it('never shows a letter on a withdrawn abstract', function () {
         'status' => SubmissionStatus::Withdrawn,
         'withdrawn_at' => now(),
     ])->save();
+
+    // The MODEL's own guard, asserted directly. The view tests its Withdrawn
+    // arm before the letter arm, so every assertion below passes whatever
+    // Submission::decisionLetter() answers - and every other reader of that
+    // method, SubmissionStatus::render()'s $letterBody included, is computed
+    // before the view runs.
+    expect($this->submission->fresh()?->decisionLetter())->toBeNull();
 
     // An author who withdrew is not waiting for an answer, and a letter under a
     // "Withdrawn" banner reads as a reversal of their own choice.

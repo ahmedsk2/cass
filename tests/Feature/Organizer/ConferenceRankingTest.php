@@ -184,6 +184,30 @@ it('prints a summary strip of what the committee is looking at', function () {
         ->assertSee('73.25');
 });
 
+it('prints an em dash, not a zero, for a conference nobody has reviewed', function () {
+    // Every other ranking fixture has at least one scored row, so mean_score is
+    // never null and the summary strip's fallback never renders. A change that
+    // returned 0.0 - or a cast that turned a null avg() into 0 - would print
+    // "0.00" as the mean score of a conference nobody has read, right beside
+    // "Reviewed 0", and nothing would go red.
+    $quiet = Conference::factory()->for($this->organization)->closed()->create([
+        'name' => 'Quiet Meeting',
+        'status' => ConferenceStatus::Reviewing,
+        'reviewers_per_submission' => 2,
+    ]);
+    Submission::factory()->for($quiet)->submitted()->create(['title' => 'Nobody has read this either']);
+
+    $summary = $quiet->fresh()?->rankingSummary();
+
+    expect($summary['total'])->toBe(1)
+        ->and($summary['reviewed'])->toBe(0)
+        ->and($summary['mean_score'])->toBeNull();
+
+    livewire(ConferenceRanking::class, ['record' => $quiet->getRouteKey()])
+        ->assertSee(__('decisions.summary.mean'))
+        ->assertSee('—');
+});
+
 it('links each row to the submission view and back to the conference', function () {
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
         ->assertSee(SubmissionResource::getUrl('view', ['record' => $this->best]))

@@ -37,15 +37,26 @@ class ComputeSubmissionScore
 
     public function handle(Submission $submission): Submission
     {
-        // One query for the reviews, one for their answers, one for the
-        // questions those answers point at. Everything below is in memory.
-        $reviews = $submission->reviews()->with('answers.question')->get();
-
         /** @var list<float> $submittedScores */
         $submittedScores = [];
         $submitted = 0;
 
-        DB::transaction(function () use ($reviews, &$submittedScores, &$submitted, $submission): void {
+        DB::transaction(function () use (&$submittedScores, &$submitted, $submission): void {
+            // The parent row FIRST, and inside the transaction. Two reviewers
+            // submitting on the same abstract at the same second is not exotic
+            // - SubmitReview calls this from outside its own transaction, right
+            // after committing the review - and reading the reviews before the
+            // transaction opened let the two interleave: read-A, commit-B,
+            // read-B, write-B, write-A, leaving review_count and score
+            // permanently one review behind until somebody ran cass:rescore.
+            // This lock serialises the pair on MySQL; SQLite ignores it and
+            // serialises the whole write anyway, so the tests are unchanged.
+            Submission::query()->whereKey($submission->getKey())->lockForUpdate()->first();
+
+            // One query for the reviews, one for their answers, one for the
+            // questions those answers point at. Everything below is in memory.
+            $reviews = $submission->reviews()->with('answers.question')->get();
+
             /** @var Review $review */
             foreach ($reviews as $review) {
                 $score = $this->reviewScorer->forReview($review);

@@ -9,7 +9,6 @@ use App\Models\Submission;
 use App\Support\Scoring\RankedSubmissions;
 use App\Support\Scoring\RankingRows;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Common\Entity\Style\Style;
 use OpenSpout\Writer\XLSX\Options;
@@ -52,18 +51,18 @@ class ExportRankingXlsx
             $header = (new Style)->setFontBold();
             $writer->addRow(Row::fromValues(RankingRows::headers(), $header));
 
+            // `lazy()` rather than `reorder()->chunkById()`, for the reason
+            // ExportRankingCsv spells out: chunkById() strips the caller's
+            // ORDER BY and pages by the primary key, so the workbook came out
+            // in insertion order instead of the ranking order on screen.
             $scoped
                 ->with(['track', 'authors'])
-                ->reorder()
-                ->chunkById(200, function (Collection $submissions) use ($writer, $conference): void {
-                    /** @var Submission $submission */
-                    foreach ($submissions as $submission) {
-                        // RankingRows::row() has already run every string
-                        // through SpreadsheetCell::text(), which is what stops
-                        // Cell::fromValue() turning a title into a FormulaCell
-                        // below.
-                        $writer->addRow(Row::fromValues(RankingRows::row($submission, $conference)));
-                    }
+                ->lazy(200)
+                ->each(function (Submission $submission) use ($writer, $conference): void {
+                    // RankingRows::row() has already run every string through
+                    // SpreadsheetCell::text(), which is what stops
+                    // Cell::fromValue() turning a title into a FormulaCell.
+                    $writer->addRow(Row::fromValues(RankingRows::row($submission, $conference)));
                 });
 
             $writer->close();

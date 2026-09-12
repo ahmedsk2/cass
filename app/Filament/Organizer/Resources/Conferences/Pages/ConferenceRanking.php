@@ -314,6 +314,16 @@ class ConferenceRanking extends Page implements HasTable
                 ),
             ])
             ->recordActions(DecisionActions::rowActions($conference, $this->mayDecide(), $this->maySend()))
+            // The bulk decide's own bound, the same idea as SendDecisionEmails'
+            // send_chunk and for the same reason: decideSelected() walks the
+            // whole selection asking the Gate per row and then running
+            // ApplyDecision's read and transaction - about eleven queries a row
+            // - and "select all" on a 500-row conference is several thousand of
+            // them inside one php-fpm request (docker/php.ini's 60 seconds).
+            // Filament turns this into a LIMIT on the selection query
+            // (Tables\Concerns\HasBulkActions::getSelectedTableRecordsQuery),
+            // so a larger selection is decided in batches rather than refused.
+            ->maxSelectableRecords(max(1, (int) config('cass.decisions.decide_chunk')))
             ->toolbarActions([
                 DecisionActions::decideSelected(),
             ])
@@ -402,8 +412,16 @@ class ConferenceRanking extends Page implements HasTable
                 // `?Builder` with no generic (Tables\Contracts\HasTable), which
                 // Larastan level 6 will not hand to a `Builder<Submission>`
                 // parameter - hence the annotation and the null guard.
+                //
+                // getFilteredSortedTableQuery(), NOT getFilteredTableQuery():
+                // the latter applies filters, search and eager loads and stops
+                // there (Tables\Concerns\HasRecords::getFilteredTableQuery),
+                // sorting being added by this one - so the export used to come
+                // out in insertion order while the page was sorted best-first,
+                // and "exactly the rows on screen" was true of the rows and
+                // false of their order.
                 /** @var Builder<Submission>|null $query */
-                $query = $this->getFilteredTableQuery();
+                $query = $this->getFilteredSortedTableQuery();
 
                 if ($query === null) {
                     Notification::make()->danger()->title(__('decisions.ranking.nothing_to_export'))->send();

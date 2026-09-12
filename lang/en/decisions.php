@@ -79,7 +79,12 @@ return [
         'decide_description' => 'Nothing is emailed now. Decisions go out when you click "Send decision emails".',
         'change' => 'Change decision and resend',
         'change_heading' => 'Change a decision the author has already been told?',
-        'change_description' => 'This author has already received a decision letter. Changing the decision queues a second letter with the new answer, and both are kept in the history.',
+        // What actually happens, and no more: ApplyDecision nulls
+        // decision_notified_at so the row re-enters SendDecisionEmails::pending()
+        // and dispatches nothing. Until somebody with the owner or admin role
+        // clicks "Send decision emails" - which the plain member who may change
+        // a decision cannot do - the author has not been told the new answer.
+        'change_description' => 'This author has already received a decision letter. Changing the decision puts this abstract back in the send queue: the new letter goes out the next time somebody clicks "Send decision emails". Both decisions are kept in the history.',
         'change_submit' => 'Change and queue a new letter',
         'bulk_heading' => 'Decide the selected abstracts',
         'bulk_description' => 'The same decision is applied to every selected abstract that can take it. Nothing is emailed now.',

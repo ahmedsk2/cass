@@ -66,6 +66,13 @@ class ReopenReview
             $reasons[] = __('reviewer.errors.review_closed');
         }
 
+        // The same rule from the other side. A reopen recomputes the abstract's
+        // score on its way out (handle() below), so a reopen after the decision
+        // moves a decided row in the ranking. See Submission::isDecided().
+        if ($submission->isDecided()) {
+            $reasons[] = __('reviewer.errors.decided');
+        }
+
         if (! $conference->reviewWindowIsOpen()) {
             $reasons[] = __('reviewer.errors.deadline_passed');
         }

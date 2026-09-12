@@ -16,6 +16,7 @@ use App\Models\SubmissionDecision;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -169,13 +170,30 @@ class SendOneDecisionEmail
             throw new DecisionNotAcceptable([__('decisions.errors.already_sending')]);
         }
 
+        // TWO blocks, and the line between them is the queue push.
+        //
+        // Everything up to and including $this->send->handle() is still
+        // reversible from this application's point of view: nothing has left
+        // the building, so a failure there releases the claim and pending()
+        // finds the row again on the next click.
         try {
             $token = $this->issueToken->handle($submission);
             $values = self::placeholderValues($submission, (string) $author?->name, $decision, $token);
 
             // The DELIVERED body carries the real link - that is the email.
             $log = $this->send->handle($key, $conference, (string) $author?->email, $values, $submission);
+        } catch (Throwable $exception) {
+            // Put the row back the way pending() found it. A claim that
+            // outlives a failed send is a row nobody will ever be told about
+            // again - worse than the duplicate it was guarding against.
+            $this->releaseClaim($submission, $claimedAt, $previousNotifiedAt);
 
+            throw $exception;
+        }
+
+        $letterStored = true;
+
+        try {
             // The STORED body must not. `status_link => null` makes
             // RenderEmailTemplate::fill() skip the placeholder with isset()
             // (app/Actions/Mail/RenderEmailTemplate.php:118-120), so
@@ -205,15 +223,31 @@ class SendOneDecisionEmail
                 $submission->forceFill(['decision_notified_at' => $claimedAt])->syncOriginal();
             });
         } catch (Throwable $exception) {
-            // Put the row back the way pending() found it. A claim that
-            // outlives a failed send is a row nobody will ever be told about
-            // again - worse than the duplicate it was guarding against.
-            Submission::query()
-                ->whereKey($submission->getKey())
-                ->where('decision_notified_at', $claimedAt)
-                ->update(['decision_notified_at' => $previousNotifiedAt]);
+            // PAST the queue push, so the claim is KEPT. The author's token has
+            // already been rotated and the message is already on the queue:
+            // releasing the claim here would put the row back in pending(), and
+            // the next "Send decision emails" would mint a THIRD token and queue
+            // a second letter whose link kills the one in the first. The letter
+            // columns on the history row stay null, which /s/{token} reads as
+            // "decision pending" - a page that is behind, rather than a second
+            // email that is wrong - and the organizer's route back is the
+            // per-row Resend, which is visible for a notified row precisely
+            // here. Logged rather than swallowed silently, with the two ids an
+            // operator needs to find the row.
+            //
+            // Swallowed rather than rethrown, and for the same reason a row
+            // with no usable address is skipped rather than fatal: this is one
+            // row's problem, and a bulk run of two hundred letters must not
+            // abandon the other hundred and ninety-nine over it. The audit
+            // entry below records that the letter went out WITHOUT its stored
+            // copy, so the trail does not claim more than happened.
+            $letterStored = false;
 
-            throw $exception;
+            Log::error('The decision letter was queued but could not be stored.', [
+                'submission_id' => $submission->getKey(),
+                'email_log_ulid' => (string) $log->ulid,
+                'exception' => $exception,
+            ]);
         }
 
         // One activity entry per letter, in the action that sends it, so the
@@ -234,10 +268,29 @@ class SendOneDecisionEmail
                 // readable by the platform admin. email_logs already holds the
                 // recipient, behind EmailLogPolicy.
                 'token_rotated' => true,
+                // False when the mail was queued but the stored copy could not
+                // be written: /s/{token} then shows "decision pending" to an
+                // author who is holding the letter, and a per-row Resend is the
+                // fix. Recorded so the trail says which of the two happened.
+                'letter_stored' => $letterStored,
             ])
             ->log('submission.decision_letter_sent');
 
         return $log;
+    }
+
+    /**
+     * Put `decision_notified_at` back where pending() found it, and only if
+     * this call is still the one holding the claim - `where decision_notified_at
+     * = $claimedAt` - so a release cannot clobber a claim somebody else has
+     * taken in the meantime.
+     */
+    private function releaseClaim(Submission $submission, mixed $claimedAt, mixed $previousNotifiedAt): void
+    {
+        Submission::query()
+            ->whereKey($submission->getKey())
+            ->where('decision_notified_at', $claimedAt)
+            ->update(['decision_notified_at' => $previousNotifiedAt]);
     }
 
     /**

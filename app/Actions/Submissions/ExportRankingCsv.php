@@ -9,7 +9,6 @@ use App\Models\Submission;
 use App\Support\Scoring\RankedSubmissions;
 use App\Support\Scoring\RankingRows;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\CSV\Options;
 use OpenSpout\Writer\CSV\Writer;
@@ -47,14 +46,20 @@ class ExportRankingCsv
             $writer->openToFile('php://output');
             $writer->addRow(Row::fromValues(RankingRows::headers()));
 
+            // `lazy()`, not `reorder()->chunkById()`. chunkById() pages by the
+            // primary key, which means it first STRIPS whatever ORDER BY the
+            // caller's query carried and then adds `order by submissions.id`
+            // (forPageAfterId, Query/Builder.php) - so the file came out in
+            // insertion order while the screen it was taken from was sorted by
+            // score. lazy() pages with limit/offset and keeps the order it was
+            // handed, which Filament makes a total one by appending the key as
+            // a tiebreaker (Tables\Concerns\CanSortRecords::applySortingToTableQuery),
+            // and it still eager-loads per chunk, which a cursor() would not.
             $scoped
                 ->with(['track', 'authors'])
-                ->reorder()
-                ->chunkById(200, function (Collection $submissions) use ($writer, $conference): void {
-                    /** @var Submission $submission */
-                    foreach ($submissions as $submission) {
-                        $writer->addRow(Row::fromValues(RankingRows::row($submission, $conference)));
-                    }
+                ->lazy(200)
+                ->each(function (Submission $submission) use ($writer, $conference): void {
+                    $writer->addRow(Row::fromValues(RankingRows::row($submission, $conference)));
                 });
 
             $writer->close();

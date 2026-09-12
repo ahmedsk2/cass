@@ -49,6 +49,19 @@ class SendDecisionEmails
     public function pending(Conference $conference): Builder
     {
         return RankedSubmissions::query($conference)
+            // SendOneDecisionEmail reads all three of these TWICE per row -
+            // once in blockers() and once in handle() - and the ranking query
+            // selects `submissions` alone, so every one of them was a lazy load
+            // per letter: a send_chunk of 200 paid for it four hundred times.
+            // `decisions` is what makes currentDecision()'s relationLoaded()
+            // branch fire (Submission::currentDecision()), and the relation
+            // carries its own newest-first order, so eager-loading it cannot
+            // change which row that method picks.
+            //
+            // counts() and the `remaining` count both reorder or aggregate this
+            // builder without hydrating models, where an eager load costs
+            // nothing.
+            ->with(['conference.organization', 'authors', 'decisions'])
             ->whereNotNull('decision')
             ->whereNull('decision_notified_at')
             ->orderBy('id');
