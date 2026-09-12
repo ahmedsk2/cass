@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Organizer\Resources\Submissions\Schemas;
 
+use App\Enums\ConferenceStatus;
+use App\Filament\Admin\Resources\Reviews\Schemas\ReviewInfolist;
+use App\Models\ReviewAnswer;
 use App\Models\Submission;
 use App\Models\SubmissionDecision;
 use App\Models\SubmissionFile;
@@ -12,6 +15,8 @@ use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\FontWeight;
+use Filament\Support\Enums\TextSize;
 use Illuminate\Support\Facades\Gate;
 
 class SubmissionInfolist
@@ -141,6 +146,41 @@ class SubmissionInfolist
                                 ->openUrlInNewTab(),
                             TextEntry::make('size')->formatStateUsing(fn (int $state): string => number_format($state / 1024).' KB'),
                             TextEntry::make('mime')->label('Type'),
+                        ]),
+                ]),
+
+            Section::make(__('reviewer.review.organizer_heading'))
+                ->description(__('reviewer.review.organizer_description'))
+                // Past the open call, and only then. A draft is a reviewer
+                // mid-sentence, and reading one over their shoulder while the
+                // call is still open is not what spec section 4's "View
+                // submissions" means. ReviewStatus::Submitted is the only
+                // status listed - submittedReviews() filters in the query, not
+                // in the render - and the section itself is hidden until the
+                // conference is closed or later. ConferenceStatus has no
+                // isBefore(), so the statuses at or past Closed are written out.
+                ->visible(fn (Submission $record): bool => in_array(
+                    $record->conference->status,
+                    [ConferenceStatus::Closed, ConferenceStatus::Reviewing, ConferenceStatus::Decided, ConferenceStatus::Archived],
+                    true,
+                ) && $record->submittedReviews()->exists())
+                ->components([
+                    RepeatableEntry::make('submittedReviews')
+                        ->hiddenLabel()
+                        ->columnSpanFull()
+                        ->schema([
+                            TextEntry::make('reviewer.name')->label(__('reviewer.review.by'))->weight(FontWeight::SemiBold),
+                            TextEntry::make('score')->numeric(2)->placeholder('-'),
+                            RepeatableEntry::make('answers')->hiddenLabel()->columnSpanFull()->schema([
+                                TextEntry::make('question.prompt')->hiddenLabel()->size(TextSize::Small)->color('gray'),
+                                // One formatter for the four typed answer
+                                // columns, public on the admin infolist that
+                                // owns it. Two copies of it is exactly the
+                                // duplication that drifts.
+                                TextEntry::make('id')->hiddenLabel()
+                                    ->formatStateUsing(fn (ReviewAnswer $record): string => ReviewInfolist::answerText($record))
+                                    ->prose(),
+                            ]),
                         ]),
                 ]),
 

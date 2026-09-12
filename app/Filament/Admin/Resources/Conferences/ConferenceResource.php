@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Resources\Conferences;
 
 use App\Filament\Admin\Resources\Conferences\Pages\ListConferences;
 use App\Filament\Admin\Resources\Conferences\Pages\ViewConference;
+use App\Filament\Admin\Resources\Conferences\RelationManagers\ReviewersRelationManager;
 use App\Filament\Admin\Resources\Conferences\Tables\ConferencesTable;
 use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Models\Conference;
@@ -99,6 +100,20 @@ class ConferenceResource extends Resource
         return parent::getEloquentQuery()
             ->withoutGlobalScopes([SoftDeletingScope::class])
             ->with('organization');
+    }
+
+    /**
+     * The reviewer pool, read-only by class. Spec section 4's admin row is
+     * "See all", and until now nothing outside the organizer panel - which is
+     * membership-gated - could show who reviews an edition.
+     *
+     * @return array<int, class-string>
+     */
+    public static function getRelations(): array
+    {
+        return [
+            ReviewersRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

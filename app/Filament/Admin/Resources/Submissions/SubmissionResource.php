@@ -6,6 +6,8 @@ namespace App\Filament\Admin\Resources\Submissions;
 
 use App\Filament\Admin\Resources\Submissions\Pages\ListSubmissions;
 use App\Filament\Admin\Resources\Submissions\Pages\ViewSubmission;
+use App\Filament\Admin\Resources\Submissions\RelationManagers\AssignmentsRelationManager;
+use App\Filament\Admin\Resources\Submissions\RelationManagers\ReviewsRelationManager;
 use App\Filament\Admin\Resources\Submissions\Schemas\SubmissionInfolist;
 use App\Filament\Admin\Resources\Submissions\Tables\SubmissionsTable;
 use App\Models\Conference;
@@ -127,6 +129,23 @@ class SubmissionResource extends Resource
     public static function table(Table $table): Table
     {
         return SubmissionsTable::configure($table);
+    }
+
+    /**
+     * The two questions an admin arrives at an abstract with: what did the
+     * reviewers say, and who was asked. Both managers are read-only by class -
+     * a relation manager's default Create/Edit/Delete actions are all allowed
+     * by the related policies' before(), so the empty arrays inside them are
+     * the refusal.
+     *
+     * @return array<int, class-string>
+     */
+    public static function getRelations(): array
+    {
+        return [
+            ReviewsRelationManager::class,
+            AssignmentsRelationManager::class,
+        ];
     }
 
     /**

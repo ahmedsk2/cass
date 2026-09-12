@@ -5,9 +5,11 @@ declare(strict_types=1);
 use App\Actions\Submissions\ExportSubmissionsCsv;
 use App\Actions\Submissions\IssueSubmissionToken;
 use App\Actions\Submissions\WithdrawSubmission;
+use App\Enums\ConferenceStatus;
 use App\Enums\Decision;
 use App\Enums\OrganizationRole;
 use App\Enums\PresentationPreference;
+use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
 use App\Exceptions\SubmissionNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
@@ -16,7 +18,12 @@ use App\Filament\Organizer\Resources\Submissions\Pages\ViewSubmission;
 use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
 use App\Mail\TemplatedMail;
 use App\Models\Conference;
+use App\Models\ConferenceReviewer;
 use App\Models\Organization;
+use App\Models\Review;
+use App\Models\ReviewAnswer;
+use App\Models\ReviewForm;
+use App\Models\ReviewQuestion;
 use App\Models\Submission;
 use App\Models\SubmissionFile;
 use App\Models\Track;
@@ -424,4 +431,67 @@ it('exports a row whose conference is gone instead of dying mid-stream', functio
     $csv = (string) ob_get_clean();
 
     expect($csv)->toContain('Orphaned abstract');
+});
+
+it('shows an organizer what the reviewers wrote, once reviewing has started', function () {
+    $form = ReviewForm::factory()->for($this->conference)->create(['is_active' => true]);
+    $question = ReviewQuestion::factory()->for($form)->create(['prompt' => 'Is the methodology sound?']);
+    $reviewer = User::factory()->create(['name' => 'Dr Salah Almubarak']);
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->getKey()]);
+
+    $review = Review::factory()->create([
+        'submission_id' => $this->submission->getKey(),
+        'reviewer_user_id' => $reviewer->getKey(),
+        'review_form_id' => $form->getKey(),
+        'status' => ReviewStatus::Submitted,
+        'submitted_at' => now(),
+    ]);
+    (new ReviewAnswer)->forceFill([
+        'review_id' => $review->getKey(),
+        'review_question_id' => $question->getKey(),
+        'value_int' => 4, 'value_text' => 'Small sample, sound design.', 'value_bool' => null, 'choice_key' => null,
+    ])->save();
+
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+    // The gap between spec section 4's "View submissions" and the code, closed
+    // where an organizer is already standing when the question occurs to them.
+    get(SubmissionResource::getUrl('view', ['record' => $this->submission], tenant: $this->organization))
+        ->assertOk()
+        ->assertSee('Dr Salah Almubarak')
+        ->assertSee('Is the methodology sound?')
+        ->assertSee('Small sample, sound design.');
+});
+
+it('hides a draft review and hides the whole section while the call is still open', function () {
+    $form = ReviewForm::factory()->for($this->conference)->create(['is_active' => true]);
+    $question = ReviewQuestion::factory()->for($form)->create(['prompt' => 'Is the methodology sound?']);
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->getKey()]);
+
+    $draft = Review::factory()->create([
+        'submission_id' => $this->submission->getKey(),
+        'reviewer_user_id' => $reviewer->getKey(),
+        'review_form_id' => $form->getKey(),
+        'status' => ReviewStatus::Draft,
+    ]);
+    (new ReviewAnswer)->forceFill([
+        'review_id' => $draft->getKey(),
+        'review_question_id' => $question->getKey(),
+        'value_int' => 1, 'value_text' => 'Half-written and still being edited.', 'value_bool' => null, 'choice_key' => null,
+    ])->save();
+
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+    // A draft is a reviewer mid-sentence. Reading it over their shoulder is
+    // not what "View submissions" means.
+    get(SubmissionResource::getUrl('view', ['record' => $this->submission], tenant: $this->organization))
+        ->assertOk()
+        ->assertDontSee('Half-written and still being edited.');
+
+    $this->conference->forceFill(['status' => ConferenceStatus::Open])->save();
+
+    get(SubmissionResource::getUrl('view', ['record' => $this->submission], tenant: $this->organization))
+        ->assertOk()
+        ->assertDontSee(__('reviewer.review.organizer_heading'));
 });
