@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Conferences\CreateDefaultReviewForm;
+use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
@@ -292,4 +293,28 @@ it('lets a member decide but only an owner or admin send the letters', function 
     // ConferencePolicy, find no method, and answer false for everybody.
     expect(Gate::forUser($owner)->allows('sendDecisions', $submission->conference))->toBeTrue()
         ->and(Gate::forUser($this->member)->allows('sendDecisions', $submission->conference))->toBeFalse();
+});
+
+it('refuses a reviewer the decide ability even though they may read the abstract', function () {
+    // The conference is `reviewing` and open_pool, so ReviewerScope::allows()
+    // answers true for every submitted row in it and SubmissionPolicy::view()
+    // lets this reviewer read the abstract. Deciding is not reading: spec
+    // section 4 puts "Invite reviewers, assign, decide" on organization
+    // MEMBERS, and a reviewer has no role in the organization at all - so
+    // decide() asks membership directly instead of delegating to view(), which
+    // would hand the decision to every reviewer of every conference in review.
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->id]);
+
+    $policy = app(SubmissionPolicy::class);
+
+    expect($policy->view($reviewer, $submission))->toBeTrue()
+        ->and($policy->decide($reviewer, $submission))->toBeFalse()
+        // The narrowing is of decide() only: a member with no reviewer row
+        // still decides, and a reviewer who is also a member still decides.
+        ->and($policy->decide($this->member, $submission))->toBeTrue()
+        ->and($policy->decide($this->outsider, $submission))->toBeFalse();
 });
