@@ -226,3 +226,37 @@ it('keeps the submit page\'s own links on the custom domain', function () {
         ->assertSee('https://abstracts.example.org/annual-meeting', escape: false)
         ->assertDontSee('cass.towardpcc.com/c/', escape: false);
 });
+
+it('allows the branding origin in the image policy, because the logo is not same-origin here', function () {
+    $platform = rtrim((string) config('app.url'), '/');
+
+    // config/filesystems.php:55 builds the branding disk's url from
+    // env('APP_URL') at boot, which the harness read as http://localhost long
+    // before this file's beforeEach could move config('app.url'). In production
+    // the two are one string; pin them together here so this case is about the
+    // policy rather than about the harness's boot order.
+    config()->set('filesystems.disks.branding.url', $platform.'/storage/branding');
+
+    $this->organization->forceFill(['logo_path' => 'logo.png'])->save();
+
+    $response = onDomain('/annual-meeting')->assertOk();
+
+    // config/filesystems.php:55 builds the branding disk's url from APP_URL, so
+    // on this host the logo and the og:image are cross-origin and img-src
+    // 'self' alone would blank both - the first thing an organizer would see on
+    // the domain they just verified.
+    expect((string) $response->headers->get('Content-Security-Policy'))->toContain('img-src')
+        ->and((string) $response->headers->get('Content-Security-Policy'))->toContain($platform)
+        ->and($response->getContent())->toContain($platform.'/storage/branding/logo.png');
+});
+
+it('still sends a policy on the 404 a reserved path produces', function () {
+    // ContentSecurityPolicy is appended BEFORE ResolveCustomDomain for exactly
+    // this: Illuminate\Routing\Pipeline catches the abort() at the pipe that
+    // threw and returns the rendered response upward, so anything appended
+    // after it never runs for a refused host or a reserved path - and those
+    // 404s are documents a browser renders, with @vite tags in them.
+    $response = onDomain('/register')->assertNotFound();
+
+    expect((string) $response->headers->get('Content-Security-Policy'))->toContain("default-src 'self'");
+});

@@ -142,6 +142,13 @@ return [
         'verify_rate_limit' => (int) env('CASS_DOMAIN_VERIFY_LIMIT', 10),
     ],
 
+    'security' => [
+        // True sends Content-Security-Policy-Report-Only instead, so the first
+        // production week can run with a human watching the browser console
+        // before the header becomes a gate. There is no report endpoint.
+        'csp_report_only' => filter_var(env('CASS_CSP_REPORT_ONLY', false), FILTER_VALIDATE_BOOL),
+    ],
+
     'legacy' => [
         // Where cass:import-legacy writes its manual-review report. On the
         // `local` disk, whose root is storage/app/private - and storage/app is

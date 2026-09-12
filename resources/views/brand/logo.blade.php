@@ -10,10 +10,13 @@
     The one rule that cannot be inlined is the dark-mode wordmark colour:
     Filament toggles a `dark` class on <html> (see
     vendor/filament/filament/resources/views/components/layout/base.blade.php),
-    and there is no inline equivalent of a descendant selector.
+    and there is no inline equivalent of a descendant selector. That one style
+    ELEMENT carries the CSP nonce: style-src is 'self' plus the nonce, and an
+    un-nonced copy is refused silently - the page still renders, just with a
+    blue wordmark on a dark panel.
 --}}
 <span class="cass-lockup" style="display:inline-flex;align-items:center;gap:0.5rem;line-height:1">
     <img src="{{ asset('brand/cass-mark.svg') }}" alt="" style="height:2.25rem;width:auto;display:block">
     <span class="cass-wordmark" style="font-weight:600;letter-spacing:-0.01em;font-size:1.375rem;color:#0F4C8A">CASS</span>
 </span>
-<style>.dark .cass-wordmark{color:#ffffff}</style>
+<style nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}">.dark .cass-wordmark{color:#ffffff}</style>

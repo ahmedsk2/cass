@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Console\Commands\ImportLegacyCommand;
 use App\Console\Commands\RescoreConferenceCommand;
 use App\Console\Commands\SendReviewerRemindersCommand;
+use App\Http\Middleware\ContentSecurityPolicy;
 use App\Http\Middleware\ResolveCustomDomain;
 use App\Http\Middleware\SecurityHeaders;
 use App\Support\Domains\CustomDomains;
@@ -31,16 +32,19 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);
 
+        // Before ResolveCustomDomain, not after: Illuminate\Routing\Pipeline
+        // catches an abort() at the pipe that threw and returns the rendered
+        // response UPWARD, so anything appended after that middleware never
+        // runs for a refused host or a reserved path - and those 404s are
+        // documents a browser renders, with @vite tags in them. Minting the
+        // nonce first also means it exists before any view is compiled, which
+        // is what the "still sends a policy on the 404 a reserved path
+        // produces" case in CustomDomainRoutingTest asserts.
+        $middleware->append(ContentSecurityPolicy::class);
+
         // Global, not a group: this has to run before routing, so that a
         // request for /about on a custom domain never reaches the route that
         // serves the platform's about page (fact 15).
-        //
-        // Task 7 appends ContentSecurityPolicy BEFORE this line, not after:
-        // Illuminate\Routing\Pipeline catches an abort() at the pipe that threw
-        // and returns the rendered response UPWARD, so anything appended after
-        // this middleware never runs for a refused host or a reserved path -
-        // and those 404s are documents a browser renders, with @vite tags in
-        // them.
         $middleware->append(ResolveCustomDomain::class);
 
         // env() is used here (not config()) because the application config
