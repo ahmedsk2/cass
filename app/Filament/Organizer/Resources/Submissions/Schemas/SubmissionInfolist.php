@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Organizer\Resources\Submissions\Schemas;
 
 use App\Models\Submission;
+use App\Models\SubmissionDecision;
 use App\Models\SubmissionFile;
 use Filament\Infolists\Components\IconEntry;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -69,6 +70,55 @@ class SubmissionInfolist
 
                             return $lines;
                         }),
+                ]),
+
+            Section::make(__('decisions.infolist.heading'))
+                // Only when there is one. A "Decision: none" panel on every
+                // abstract in an open conference is a row of empty furniture.
+                ->visible(fn (Submission $record): bool => $record->decision !== null)
+                ->columns(3)
+                ->components([
+                    TextEntry::make('decision')->label(__('decisions.infolist.decision'))->badge(),
+                    TextEntry::make('decision_notified_at')
+                        ->label(__('decisions.infolist.notified'))
+                        ->dateTime('j M Y, H:i')
+                        ->timezone(fn (Submission $record): string => $record->conference->timezone)
+                        // helperText(), not description(): an infolist Entry has
+                        // no description() in 5.8.1 - HasDescription is a schema
+                        // concern Entry does not use, and Entry::helperText()
+                        // (vendor/filament/infolists/src/Components/Concerns/
+                        // HasHelperText.php:12) is the same small line under the
+                        // value that a table column's description() prints.
+                        ->helperText(fn (Submission $record): string => $record->conference->timezone)
+                        ->placeholder(__('decisions.infolist.not_sent')),
+                    TextEntry::make('score')
+                        ->label(__('decisions.infolist.score'))
+                        ->numeric(2)
+                        ->placeholder('—')
+                        ->helperText(fn (Submission $record): string => __('decisions.infolist.reviews', [
+                            'count' => (int) $record->review_count,
+                        ])),
+                    TextEntry::make('decision_history')
+                        ->label(__('decisions.infolist.history'))
+                        ->listWithLineBreaks()
+                        ->columnSpanFull()
+                        ->state(fn (Submission $record): array => $record->decisions()->with('decidedBy')->get()
+                            ->map(fn (SubmissionDecision $row): string => trim(implode(' ', array_filter([
+                                // `->`, not `?->`: `decided_at` is cast to
+                                // datetime, so Larastan types it non-nullable
+                                // and rejects the nullsafe hop outright
+                                // (nullsafe.neverNull) - the trap
+                                // SubmissionDecision::actorName() already
+                                // records. Every row is written with a
+                                // timestamp, by ApplyDecision and by the
+                                // factory alike.
+                                $row->decided_at->copy()->setTimezone($record->conference->timezone)->format('j M Y, H:i'),
+                                '—',
+                                $row->decision->getLabel(),
+                                '('.$row->actorName().')',
+                                $row->note !== null && $row->note !== '' ? '· '.$row->note : null,
+                            ]))))
+                            ->all()),
                 ]),
 
             Section::make('Files')
