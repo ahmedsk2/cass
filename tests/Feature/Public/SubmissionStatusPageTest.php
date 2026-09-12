@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Decisions\ApplyDecision;
 use App\Actions\Submissions\IssueSubmissionToken;
+use App\Enums\ConferenceStatus;
+use App\Enums\Decision;
 use App\Enums\OrganizationStatus;
 use App\Enums\SubmissionStatus;
 use App\Livewire\Public\SubmissionForm;
@@ -10,8 +13,10 @@ use App\Livewire\Public\SubmissionStatus as StatusPage;
 use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\Submission;
+use App\Models\SubmissionDecision;
 use App\Models\SubmissionFile;
 use App\Models\Track;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
@@ -451,4 +456,202 @@ it('saves an edit when the status page did not hand the form a token', function 
         ->assertRedirect(route('conference.show', [$this->organization, $this->conference]));
 
     expect($this->submission->refresh()->title)->toBe('A revised title');
+});
+
+// --- The decision letter (Plan 5) ---------------------------------------
+
+it('shows nothing about a decision until the letter has been sent', function () {
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Accepted,
+        'decision' => Decision::AcceptedOral,
+        'decision_notified_at' => null,
+    ])->save();
+
+    SubmissionDecision::factory()->for($this->submission)->create([
+        'decision' => Decision::AcceptedOral,
+        'letter_subject' => 'Prepared but not sent',
+        'letter_markdown' => 'This letter has not been sent yet.',
+        'notified_at' => null,
+    ]);
+
+    // Spec 5.6's "so decisions can be prepared quietly first" reaches all the
+    // way to the author's page: a decision that has not been emailed is not
+    // visible to the person it is about.
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertDontSee('This letter has not been sent yet.')
+        ->assertSee(__('submission.status.decision_pending'))
+        // ...and that includes the State chip. ApplyDecision writes `status`
+        // and `decision` in the same transaction, so a page that prints
+        // `status` ungated hands the author the answer days before the letter
+        // and contradicts the "we are handling it" block right under it.
+        ->assertDontSee(SubmissionStatus::Accepted->getLabel())
+        ->assertSee(SubmissionStatus::UnderReview->getLabel());
+});
+
+it('does not leak a decision through the state chip before the letter goes out', function () {
+    // The real path, not a hand-written UPDATE: ApplyDecision is what an
+    // organizer's "Decide" button calls, and it writes `accepted`/`rejected`/
+    // `waitlisted` days before anybody clicks "Send decision emails".
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+    $this->submission->forceFill(['status' => SubmissionStatus::UnderReview])->save();
+
+    app(ApplyDecision::class)->handle(
+        $this->submission->fresh() ?? $this->submission,
+        Decision::Rejected,
+        User::factory()->create(),
+    );
+
+    $decided = $this->submission->fresh();
+
+    expect($decided?->status)->toBe(SubmissionStatus::Rejected)
+        ->and($decided?->decision_notified_at)->toBeNull();
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        // "Not accepted" is the label of SubmissionStatus::Rejected, and it is
+        // the one word this page must not print until the letter has been sent.
+        ->assertDontSee(SubmissionStatus::Rejected->getLabel())
+        ->assertSee(SubmissionStatus::UnderReview->getLabel())
+        ->assertSee(__('submission.status.decision_pending'));
+
+    // Once the letter is out, the chip tells the truth again.
+    $decided?->forceFill(['decision_notified_at' => now()])->save();
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertSee(SubmissionStatus::Rejected->getLabel());
+});
+
+it('shows the letter that was sent, rendered', function () {
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Accepted,
+        'decision' => Decision::AcceptedOral,
+        'decision_notified_at' => now(),
+    ])->save();
+
+    SubmissionDecision::factory()->for($this->submission)->notified(
+        "Dear Dr Sara Al-Harbi,\n\nWe are pleased to tell you that your abstract has been **accepted for oral presentation**.\n\n- **Reference:** AAM26-017",
+    )->create(['decision' => Decision::AcceptedOral]);
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertSee(__('submission.status.decision.heading'))
+        ->assertSee('We are pleased to tell you')
+        // Rendered, not printed as source: the Markdown became HTML.
+        ->assertSee('<strong>accepted for oral presentation</strong>', escape: false)
+        ->assertDontSee('**accepted for oral presentation**')
+        // ...and the neutral placeholder is gone.
+        ->assertDontSee(__('submission.status.decision_pending'));
+});
+
+it('cannot be used to inject html through a letter', function () {
+    // The letter is stored as RenderEmailTemplate produced it, which escapes
+    // every `<` in the finished body (app/Actions/Mail/RenderEmailTemplate.php:96-99)
+    // - so a tag cannot be in a real letter. This pins what happens if one ever
+    // is: it is printed, not executed.
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Rejected,
+        'decision' => Decision::Rejected,
+        'decision_notified_at' => now(),
+    ])->save();
+
+    SubmissionDecision::factory()->for($this->submission)
+        ->notified('&lt;script&gt;alert(1)&lt;/script&gt; and a real sentence.')
+        ->create(['decision' => Decision::Rejected]);
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertSee('and a real sentence.')
+        ->assertDontSee('<script>alert(1)</script>', escape: false);
+});
+
+it('never shows a letter on a withdrawn abstract', function () {
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Waitlisted,
+        'decision' => Decision::Waitlisted,
+        'decision_notified_at' => now(),
+    ])->save();
+
+    SubmissionDecision::factory()->for($this->submission)->notified('You are on the waiting list.')
+        ->create(['decision' => Decision::Waitlisted]);
+
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Withdrawn,
+        'withdrawn_at' => now(),
+    ])->save();
+
+    // The MODEL's own guard, asserted directly. The view tests its Withdrawn
+    // arm before the letter arm, so every assertion below passes whatever
+    // Submission::decisionLetter() answers - and every other reader of that
+    // method, SubmissionStatus::render()'s $letterBody included, is computed
+    // before the view runs.
+    expect($this->submission->fresh()?->decisionLetter())->toBeNull();
+
+    // An author who withdrew is not waiting for an answer, and a letter under a
+    // "Withdrawn" banner reads as a reversal of their own choice.
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertDontSee('You are on the waiting list.')
+        ->assertSee(__('submission.status.withdrawn_notice', [
+            'date' => $this->submission->fresh()?->withdrawn_at?->copy()
+                ->setTimezone($this->submission->conference->timezone)->format('j F Y, H:i'),
+        ]));
+});
+
+it('shows the newest letter after a decision was changed and resent', function () {
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Accepted,
+        'decision' => Decision::AcceptedPoster,
+        'decision_notified_at' => now(),
+    ])->save();
+
+    SubmissionDecision::factory()->for($this->submission)->notified('The first answer was oral.')
+        ->create(['decision' => Decision::AcceptedOral, 'decided_at' => now()->subDay()]);
+    SubmissionDecision::factory()->for($this->submission)->notified('The programme changed; it is a poster.')
+        ->create(['decision' => Decision::AcceptedPoster, 'decided_at' => now()]);
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertSee('The programme changed; it is a poster.')
+        ->assertDontSee('The first answer was oral.');
+});
+
+it('fills the link in the stored letter from the token in the url', function () {
+    // Task 7 stores the letter with `{{status_link}}` left literal, so no
+    // database row ever holds a live bearer credential. The page fills it in
+    // from the token this reader already has in their own URL.
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Accepted,
+        'decision' => Decision::AcceptedOral,
+        'decision_notified_at' => now(),
+    ])->save();
+
+    SubmissionDecision::factory()->for($this->submission)
+        ->notified('Your abstract: [open it]({{status_link}}).')
+        ->create(['decision' => Decision::AcceptedOral]);
+
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertSee($this->submission->statusUrl($this->token), escape: false)
+        ->assertDontSee('{{status_link}}');
+});
+
+it('still lets the author read their abstract and files under a decision', function () {
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Accepted,
+        'decision' => Decision::AcceptedOral,
+        'decision_notified_at' => now(),
+    ])->save();
+
+    SubmissionDecision::factory()->for($this->submission)->notified()->create(['decision' => Decision::AcceptedOral]);
+
+    // A decided abstract is closed to the author (SubmissionStatus::isOpenToAuthor()
+    // is Draft and Submitted only), so the edit and withdraw buttons are gone -
+    // but the page is not a dead end.
+    get('/s/'.$this->token)
+        ->assertOk()
+        ->assertSee($this->submission->title)
+        ->assertDontSee(__('submission.status.edit'))
+        ->assertDontSee(__('submission.status.withdraw'));
 });

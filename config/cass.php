@@ -96,6 +96,33 @@ return [
         'manual_throttle_hours' => (int) env('CASS_REMINDER_MANUAL_THROTTLE_HOURS', 12),
     ],
 
+    // Spec 5.6 (decisions) and spec section 10 (the 500-row ranking budget).
+    'decisions' => [
+        // Rows the ranking table shows per page before the organizer asks for
+        // more. 50 is two screens of scrolling and one query; the page also
+        // offers 100, 250 and "all", and "all" over 500 rows is what the
+        // performance test in Task 4 measures.
+        'page_size' => (int) env('CASS_RANKING_PAGE_SIZE', 50),
+        // How many decision emails one "Send decision emails" click queues
+        // before it stops and tells the organizer to click again. The whole run
+        // happens inside one php-fpm request (docker/php.ini's 60-second
+        // budget), and each row is a render, a token mint, an email_logs insert
+        // and a queue push. 200 is comfortably inside it for the conference
+        // sizes this platform is for; raise it only after measuring.
+        'send_chunk' => (int) env('CASS_DECISION_SEND_CHUNK', 200),
+        // How many rows one "Decide selected" click may carry. The bulk loop
+        // asks the Gate once per row and then runs ApplyDecision's own
+        // currentDecision() read and transaction - measured at eleven queries
+        // per row - so an unbounded select-all over the 500 abstracts spec
+        // section 10 budgets for is roughly 5,500 queries inside php-fpm's
+        // 60-second window (docker/php.ini). Filament applies this as a LIMIT
+        // on the selection (Tables\Concerns\HasBulkActions), so the run is
+        // bounded rather than refused, and the organizer clicks again -
+        // the same shape as send_chunk. ApplyDecision commits per row, so a
+        // run that did time out would lose only the report, never the writes.
+        'decide_chunk' => (int) env('CASS_DECISION_DECIDE_CHUNK', 250),
+    ],
+
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',

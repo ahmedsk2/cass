@@ -86,8 +86,14 @@
             <p style="font-size:0.875rem;margin-bottom:1rem">
                 @if ($this->review()?->isSubmitted() && $this->deadlineHasPassed())
                     {{ __('reviewer.review.deadline_passed') }}
-                @elseif ($this->review()?->isSubmitted() && $conference->acceptsReviewWrites())
+                @elseif ($this->review()?->isSubmitted() && $conference->acceptsReviewWrites() && ! $submission->isDecided())
                     {{ __('reviewer.review.submitted_notice') }}
+                @elseif ($submission->isDecided())
+                    {{-- Before the conference sentence, because a decision is
+                         applied while the conference is still `reviewing`: on a
+                         decided abstract "this conference is no longer open for
+                         reviewing" is false at the moment it is printed. --}}
+                    {{ __('reviewer.review.decided_notice') }}
                 @else
                     {{ __('reviewer.review.review_closed_notice') }}
                 @endif

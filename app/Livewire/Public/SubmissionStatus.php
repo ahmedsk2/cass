@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Public;
 
+use App\Actions\Mail\RenderEmailTemplate;
 use App\Actions\Submissions\WithdrawSubmission;
 use App\Exceptions\SubmissionNotAcceptable;
 use App\Models\Submission;
@@ -123,6 +124,12 @@ class SubmissionStatus extends Component
         $organization = $conference->organization;
         $theme = OrganizationTheme::for($organization);
 
+        // Spec 5.3 step 5. Null until the organizers have actually sent the
+        // letter, and null for ever on a withdrawn abstract - both rules live
+        // in Submission::decisionLetter() so this page and any later reader
+        // cannot answer differently.
+        $letter = $this->submission->decisionLetter();
+
         return view('livewire.public.submission-status', [
             'conference' => $conference,
             'organization' => $organization,
@@ -130,6 +137,37 @@ class SubmissionStatus extends Component
             'authors' => $this->submission->authors()->get(),
             'files' => $this->submission->files()->get(),
             'canChange' => $this->submission->isOpenToAuthor(),
+            // The State chip, gated the way the letter is: a decision that has
+            // not been emailed is not visible to the person it is about. Next
+            // to $letter, and from the same model, so the two answers cannot
+            // disagree - the page used to print "Not accepted" in the chip
+            // while the block underneath said the organizers were still
+            // handling it.
+            'publicStatus' => $this->submission->publicStatus(),
+            'letter' => $letter,
+            // The stored letter deliberately withholds the token:
+            // SendOneDecisionEmail renders it with `status_link => null`, so
+            // `{{status_link}}` is left literal and submission_decisions never
+            // holds a live bearer credential. It is filled in here from the
+            // token in THIS reader's own URL, which they already have in their
+            // address bar - nothing new is disclosed, and the link can only
+            // ever be their own.
+            //
+            // Two reasons this is here rather than in the Blade file. Blade
+            // compiles a literal `{{status_link}}` written inside a view
+            // expression into an echo of an undefined constant, so the
+            // placeholder cannot be spelled in a template at all; and
+            // RenderEmailTemplate::fill() is the one copy of the placeholder
+            // rule in this codebase and the very method that left the
+            // placeholder standing, so `{{ status_link }}` typed with spaces
+            // resolves here exactly as it would have in the email. `escape`
+            // is false because the value is a route URL this application
+            // built, not prose somebody typed.
+            'letterBody' => $letter === null ? null : app(RenderEmailTemplate::class)->fill(
+                (string) $letter->letter_markdown,
+                ['status_link' => $this->submission->statusUrl($this->token)],
+                escape: false,
+            ),
         ])->layout('components.layouts.conference', [
             'organization' => $organization,
             'conference' => $conference,

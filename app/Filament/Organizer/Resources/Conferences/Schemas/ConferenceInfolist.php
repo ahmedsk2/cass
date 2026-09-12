@@ -6,6 +6,7 @@ namespace App\Filament\Organizer\Resources\Conferences\Schemas;
 
 use App\Actions\Conferences\PublishConference;
 use App\Enums\ConferenceStatus;
+use App\Enums\Decision;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
 use App\Models\Conference;
@@ -63,6 +64,19 @@ class ConferenceInfolist
         self::$progress ??= new WeakMap;
 
         return self::$progress[$record] ??= $record->reviewProgress();
+    }
+
+    /**
+     * @var WeakMap<Conference, array{decided: int, undecided: int, notified: int, by_decision: array<string, int>}>|null
+     */
+    private static ?WeakMap $decisions = null;
+
+    /** @return array{decided: int, undecided: int, notified: int, by_decision: array<string, int>} */
+    private static function decisions(Conference $record): array
+    {
+        self::$decisions ??= new WeakMap;
+
+        return self::$decisions[$record] ??= $record->decisionCounts();
     }
 
     public static function configure(Schema $schema): Schema
@@ -153,6 +167,43 @@ class ConferenceInfolist
                         ->state(fn (Conference $record): array => array_map(
                             fn (array $row): string => $row['name'].' — '.$row['submitted'].' / '.$row['expected'],
                             self::progress($record)['reviewers'],
+                        )),
+                ]),
+
+            Section::make(__('decisions.conference.heading'))
+                ->visible(fn (Conference $record): bool => in_array(
+                    $record->status,
+                    [ConferenceStatus::Reviewing, ConferenceStatus::Decided, ConferenceStatus::Archived],
+                    true,
+                ))
+                ->headerActions([
+                    Action::make('openRanking')
+                        ->label(__('decisions.conference.open'))
+                        ->icon(Heroicon::OutlinedTrophy)
+                        ->color('gray')
+                        ->url(fn (Conference $record): string => ConferenceResource::getUrl('ranking', ['record' => $record])),
+                ])
+                ->columns(3)
+                ->components([
+                    TextEntry::make('decisions_decided')->label(__('decisions.conference.decided'))->badge()->color('success')
+                        ->state(fn (Conference $record): string => self::decisions($record)['decided']
+                            .' / '.(self::decisions($record)['decided'] + self::decisions($record)['undecided'])),
+                    TextEntry::make('decisions_notified')->label(__('decisions.conference.notified'))->badge()->color('info')
+                        ->state(fn (Conference $record): int => self::decisions($record)['notified']),
+                    TextEntry::make('decisions_undecided')->label(__('decisions.conference.undecided'))->badge()->color('warning')
+                        ->state(fn (Conference $record): int => self::decisions($record)['undecided']),
+                    TextEntry::make('decisions_breakdown')->label(__('decisions.conference.breakdown'))
+                        ->listWithLineBreaks()
+                        ->columnSpanFull()
+                        ->placeholder(__('decisions.conference.none'))
+                        // No array_values(): Decision::inReportOrder() is
+                        // declared `list<self>`, so array_map over it is
+                        // already a list and Larastan level 6 rejects the
+                        // wrapper as a call with no effect.
+                        ->state(fn (Conference $record): array => array_map(
+                            fn (Decision $decision): string => $decision->getLabel().' — '
+                                .self::decisions($record)['by_decision'][$decision->value],
+                            Decision::inReportOrder(),
                         )),
                 ]),
 

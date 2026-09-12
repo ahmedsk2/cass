@@ -134,6 +134,32 @@ class SubmissionPolicy
         return $this->view($user, $submission);
     }
 
+    /**
+     * Spec section 4 puts "Invite reviewers, assign, decide" on **every**
+     * organization member, owner down to plain member. Every application is
+     * logged with the actor and appends to the history, so a mistaken decision
+     * is visible and reversible rather than silent.
+     *
+     * This asks for membership **directly** and deliberately does not delegate
+     * to view(). view() is the *reading* rule and its last line hands a `true`
+     * to any active reviewer of a `reviewing` or `decided` conference
+     * (ReviewerScope::allows) - which, in the default open_pool mode, is every
+     * submitted row in it. Deciding is not reading: a reviewer who may read an
+     * abstract must not be able to accept it, and a delegating decide() would
+     * have given the decision to every reviewer of every conference in review.
+     *
+     * The nullable walk is view()'s, for view()'s two reasons: Filament's
+     * tenancy global scope hides another organization's conference entirely,
+     * and both the conference and the organization soft delete, so either hop
+     * can be null while this row survives. A gate answers "no"; it does not 500.
+     */
+    public function decide(User $user, Submission $submission): bool
+    {
+        $organization = $submission->conference?->organization;
+
+        return $organization !== null && $user->roleIn($organization) !== null;
+    }
+
     /** Exporting is reading every row at once, so it needs the list right. */
     public function export(User $user): bool
     {

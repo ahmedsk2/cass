@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\RescoreConferenceCommand;
 use App\Console\Commands\SendReviewerRemindersCommand;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
@@ -21,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
     // second command has to be declared on purpose.
     ->withCommands([
         SendReviewerRemindersCommand::class,
+        RescoreConferenceCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);

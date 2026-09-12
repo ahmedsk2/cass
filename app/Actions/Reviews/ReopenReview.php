@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Reviews;
 
+use App\Actions\Submissions\ComputeSubmissionScore;
 use App\Enums\ReviewStatus;
 use App\Exceptions\ReviewNotAcceptable;
 use App\Models\Review;
@@ -20,6 +21,8 @@ use App\Support\Reviews\ReviewerScope;
  */
 class ReopenReview
 {
+    public function __construct(private readonly ComputeSubmissionScore $computeScore) {}
+
     /** @return list<string> empty when the review may be reopened */
     public function blockers(Review $review): array
     {
@@ -63,6 +66,13 @@ class ReopenReview
             $reasons[] = __('reviewer.errors.review_closed');
         }
 
+        // The same rule from the other side. A reopen recomputes the abstract's
+        // score on its way out (handle() below), so a reopen after the decision
+        // moves a decided row in the ranking. See Submission::isDecided().
+        if ($submission->isDecided()) {
+            $reasons[] = __('reviewer.errors.decided');
+        }
+
         if (! $conference->reviewWindowIsOpen()) {
             $reasons[] = __('reviewer.errors.deadline_passed');
         }
@@ -87,6 +97,11 @@ class ReopenReview
             'submitted_at' => null,
             'reopened_at' => now(),
         ])->save();
+
+        // A reopened review is a review the committee no longer has, so the
+        // abstract's mean, spread and count all change. Same one-line hook as
+        // SubmitReview, and the same reason it is not inside a transaction.
+        $this->computeScore->handle($review->submission);
 
         activity()
             ->performedOn($review)

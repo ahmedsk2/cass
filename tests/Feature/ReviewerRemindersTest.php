@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Actions\Decisions\ApplyDecision;
 use App\Actions\Reviews\SendReviewerReminders;
 use App\Enums\ConferenceStatus;
+use App\Enums\Decision;
 use App\Enums\EmailTemplateKey;
 use App\Enums\OrganizationRole;
 use App\Enums\ReminderThreshold;
 use App\Enums\ReviewerStatus;
+use App\Enums\ReviewStatus;
 use App\Exceptions\ReviewNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
 use App\Mail\TemplatedMail;
@@ -61,6 +64,31 @@ afterEach(function () {
 it('names only the reviewers with outstanding work', function () {
     expect(app(SendReviewerReminders::class)->outstanding($this->conference)->pluck('user_id')->all())
         ->toBe([$this->behind->id]);
+});
+
+it('never chases a reviewer about an abstract the committee has already decided', function () {
+    // Plan 5's ReviewerScope keeps a decided abstract in the reviewer's scope so
+    // they can read back what they wrote, and it does so on ANY review row - a
+    // draft counts. behind() excludes a row only when the reviewer has a
+    // SUBMITTED review, so without a decision filter the letter tells a reviewer
+    // to finish work on an abstract whose author has already been told the
+    // answer - and that letter is an invitation to write on a decided row.
+    Review::factory()->for($this->submission)->create([
+        'reviewer_user_id' => $this->behind->id,
+        'status' => ReviewStatus::Draft,
+        'submitted_at' => null,
+    ]);
+
+    expect(app(SendReviewerReminders::class)->outstanding($this->conference)->pluck('user_id')->all())
+        ->toBe([$this->behind->id]);
+
+    app(ApplyDecision::class)->handle(
+        $this->submission->fresh() ?? $this->submission,
+        Decision::Rejected,
+        User::factory()->create(),
+    );
+
+    expect(app(SendReviewerReminders::class)->outstanding($this->conference)->pluck('user_id')->all())->toBe([]);
 });
 
 it('never reminds a removed reviewer or a reviewer of another conference', function () {

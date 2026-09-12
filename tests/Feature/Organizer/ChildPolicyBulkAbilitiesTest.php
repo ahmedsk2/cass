@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Conferences\CreateDefaultReviewForm;
+use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
@@ -15,16 +16,21 @@ use App\Models\ReviewerInvitation;
 use App\Models\ReviewForm;
 use App\Models\ReviewQuestion;
 use App\Models\Submission;
+use App\Models\SubmissionDecision;
 use App\Models\Track;
 use App\Models\User;
+use App\Policies\ConferencePolicy;
 use App\Policies\CustomFieldPolicy;
 use App\Policies\ReviewFormPolicy;
 use App\Policies\ReviewQuestionPolicy;
+use App\Policies\SubmissionDecisionPolicy;
+use App\Policies\SubmissionPolicy;
 use App\Policies\TrackPolicy;
 
 use function Filament\get_authorization_response;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Gate;
 
 use function Pest\Laravel\actingAs;
 
@@ -238,4 +244,98 @@ it('lets an owner and admin manage invitations and refuses a plain member', func
     expect(panelAllows('create', OrganizationInvitation::class))->toBeFalse()
         ->and(panelAllows('create', ReviewerInvitation::class))->toBeFalse()
         ->and(panelAllows('create', ReviewAssignment::class))->toBeFalse();
+});
+
+it('never offers a bulk delete of the decision history', function () {
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    SubmissionDecision::factory()->for($submission)->create();
+    $policy = app(SubmissionDecisionPolicy::class);
+
+    // Filament treats a policy WITHOUT the method as allowed
+    // (vendor/filament/filament/src/helpers.php), so every ability a table may
+    // ask for is spelled out. The history is append-only for everyone the
+    // panel lets in: a decision that can be deleted is a decision that can be
+    // denied.
+    expect(panelAllows('viewAny', SubmissionDecision::class))->toBeTrue()
+        ->and(panelAllows('create', SubmissionDecision::class))->toBeFalse()
+        ->and(panelAllows('deleteAny', SubmissionDecision::class))->toBeFalse()
+        ->and(panelAllows('restoreAny', SubmissionDecision::class))->toBeFalse()
+        ->and(panelAllows('forceDeleteAny', SubmissionDecision::class))->toBeFalse()
+        ->and($policy->update($this->member, $submission->decisions()->firstOrFail()))->toBeFalse()
+        ->and($policy->delete($this->member, $submission->decisions()->firstOrFail()))->toBeFalse();
+
+    actingAs($this->outsider);
+    expect(panelAllows('viewAny', SubmissionDecision::class))->toBeFalse();
+});
+
+it('answers view() on a decision row for a member, an outsider and a deleted tenant', function () {
+    // view() is the ONLY non-false row ability on this policy and the only one
+    // that walks two nullable hops - $decision->submission?->conference?->
+    // organization - which is exactly the shape the sibling cases in this file
+    // exist to pin. The case above asserts the six false ones and never touches
+    // it, so neither its positive path nor either guard was covered.
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    SubmissionDecision::factory()->for($submission)->create();
+    $row = $submission->decisions()->firstOrFail();
+    $policy = app(SubmissionDecisionPolicy::class);
+
+    expect($policy->view($this->member, $row))->toBeTrue()
+        ->and($policy->view($this->outsider, $row))->toBeFalse();
+
+    // Organization soft deletes, and the belongsTo then resolves to null while
+    // this row survives - the gate answers no, it does not 500.
+    $this->organization->delete();
+
+    expect($policy->view($this->member, $row->fresh() ?? $row))->toBeFalse();
+});
+
+it('lets a member decide but only an owner or admin send the letters', function () {
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    $submissionPolicy = app(SubmissionPolicy::class);
+    $conferencePolicy = app(ConferencePolicy::class);
+
+    $owner = User::factory()->create();
+    $this->organization->addMember($owner, OrganizationRole::Owner);
+
+    // Spec section 4 puts "Invite reviewers, assign, decide" on every
+    // organization member, so deciding is a member's job. SENDING is a
+    // bulk-mail primitive over every author in the conference, which this plan
+    // narrows to owner/admin and records as an owner question.
+    expect($submissionPolicy->decide($this->member, $submission))->toBeTrue()
+        ->and($conferencePolicy->sendDecisions($this->member, $submission->conference))->toBeFalse()
+        ->and($submissionPolicy->decide($owner, $submission))->toBeTrue()
+        ->and($conferencePolicy->sendDecisions($owner, $submission->conference))->toBeTrue()
+        ->and($submissionPolicy->decide($this->outsider, $submission))->toBeFalse()
+        ->and($conferencePolicy->sendDecisions($this->outsider, $submission->conference))->toBeFalse();
+
+    // Through the Gate, not the object: this ability is always asked with a
+    // Conference, so the policy Laravel resolves from that first argument is
+    // the thing under test. Defined on SubmissionPolicy it would resolve
+    // ConferencePolicy, find no method, and answer false for everybody.
+    expect(Gate::forUser($owner)->allows('sendDecisions', $submission->conference))->toBeTrue()
+        ->and(Gate::forUser($this->member)->allows('sendDecisions', $submission->conference))->toBeFalse();
+});
+
+it('refuses a reviewer the decide ability even though they may read the abstract', function () {
+    // The conference is `reviewing` and open_pool, so ReviewerScope::allows()
+    // answers true for every submitted row in it and SubmissionPolicy::view()
+    // lets this reviewer read the abstract. Deciding is not reading: spec
+    // section 4 puts "Invite reviewers, assign, decide" on organization
+    // MEMBERS, and a reviewer has no role in the organization at all - so
+    // decide() asks membership directly instead of delegating to view(), which
+    // would hand the decision to every reviewer of every conference in review.
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->id]);
+
+    $policy = app(SubmissionPolicy::class);
+
+    expect($policy->view($reviewer, $submission))->toBeTrue()
+        ->and($policy->decide($reviewer, $submission))->toBeFalse()
+        // The narrowing is of decide() only: a member with no reviewer row
+        // still decides, and a reviewer who is also a member still decides.
+        ->and($policy->decide($this->member, $submission))->toBeTrue()
+        ->and($policy->decide($this->outsider, $submission))->toBeFalse();
 });

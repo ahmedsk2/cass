@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Conferences\CreateDefaultReviewForm;
 use App\Enums\ConferenceStatus;
+use App\Enums\Decision;
 use App\Enums\OrganizationRole;
+use App\Enums\SubmissionStatus;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Filament\Organizer\Resources\Conferences\Pages\CreateConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
@@ -299,4 +301,43 @@ it('hides start-reviewing from a conference that is not closed', function () {
 
     livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
         ->assertActionHidden('startReviewing');
+});
+
+it('marks a conference decided from the panel and refuses when one is still open', function () {
+    $conference = Conference::factory()->for($this->organization)->closed()->create([
+        'status' => ConferenceStatus::Reviewing,
+    ]);
+    $open = Submission::factory()->for($conference)->submitted()->create();
+
+    livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
+        ->assertActionVisible('markDecided')
+        ->callAction('markDecided');
+
+    // A blocker list is reported, not thrown - the same shape publish() uses.
+    expect($conference->fresh()?->status)->toBe(ConferenceStatus::Reviewing);
+
+    $open->forceFill(['decision' => Decision::Rejected, 'status' => SubmissionStatus::Rejected])->save();
+
+    livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
+        ->callAction('markDecided');
+
+    expect($conference->fresh()?->status)->toBe(ConferenceStatus::Decided);
+});
+
+it('hides mark-decided outside reviewing', function () {
+    $closed = Conference::factory()->for($this->organization)->closed()->create();
+
+    livewire(ViewConference::class, ['record' => $closed->getRouteKey()])
+        ->assertActionHidden('markDecided');
+});
+
+it('shows the decision counts on the conference view once reviewing has started', function () {
+    $conference = Conference::factory()->for($this->organization)->closed()->create([
+        'status' => ConferenceStatus::Reviewing,
+    ]);
+    Submission::factory()->for($conference)->decided(Decision::AcceptedOral, notified: true)->create();
+
+    livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
+        ->assertSee(__('decisions.conference.heading'))
+        ->assertSee(Decision::AcceptedOral->getLabel());
 });

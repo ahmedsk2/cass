@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Reviews;
 
+use App\Actions\Submissions\ComputeSubmissionScore;
 use App\Enums\ReviewQuestionType;
 use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
@@ -34,7 +35,10 @@ use Illuminate\Support\Facades\Validator;
  */
 class SubmitReview
 {
-    public function __construct(private readonly SaveReviewDraft $saveDraft) {}
+    public function __construct(
+        private readonly SaveReviewDraft $saveDraft,
+        private readonly ComputeSubmissionScore $computeScore,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $answers
@@ -50,11 +54,20 @@ class SubmitReview
             return [__('reviewer.errors.not_yours')];
         }
 
-        // ...except the one it deliberately does not cover: ReviewerScope admits
+        // ...except the two it deliberately does not cover: ReviewerScope admits
         // Decided, because a reviewer may still READ what they said after the
         // committee decides. Writing stops at Reviewing.
         if (! $submission->conference->acceptsReviewWrites()) {
             $reasons[] = __('reviewer.errors.review_closed');
+        }
+
+        // And the narrower one the conference status cannot express: a decision
+        // is applied while the conference is STILL `reviewing`, and
+        // ReviewerScope re-admits the decided row for the reviewer who reviewed
+        // it - on any review row, a draft included. Submitting here would rerun
+        // ComputeSubmissionScore over a row whose author already holds a letter.
+        if ($submission->isDecided()) {
+            $reasons[] = __('reviewer.errors.decided');
         }
 
         $existing = Review::query()
@@ -163,6 +176,13 @@ class SubmitReview
 
             return $review;
         });
+
+        // Spec 5.6. The one place a submitted review turns into a number on the
+        // abstract. Outside the transaction on purpose: the review is committed
+        // by now, so a failure here leaves a correct review with a stale score
+        // (which `cass:rescore` repairs) rather than rolling back a reviewer's
+        // work over an arithmetic error.
+        $this->computeScore->handle($submission);
 
         activity()
             ->performedOn($review)

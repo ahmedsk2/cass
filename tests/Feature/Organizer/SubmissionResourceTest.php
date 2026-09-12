@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Submissions\ExportSubmissionsCsv;
 use App\Actions\Submissions\IssueSubmissionToken;
 use App\Actions\Submissions\WithdrawSubmission;
+use App\Enums\Decision;
 use App\Enums\OrganizationRole;
 use App\Enums\PresentationPreference;
 use App\Enums\SubmissionStatus;
@@ -184,6 +185,49 @@ it('still withdraws an abstract that is under review, but only for the organizer
         ->assertHasNoActionErrors();
 
     expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
+});
+
+it('still withdraws an accepted presenter who pulls out, but only for the organizer', function () {
+    // The case Plan 5's own "decide in Decided too" argument is built on: a
+    // presenter withdraws after the letters have gone and the waiting list
+    // moves up. Without this, an organizer's only route was a hand-written
+    // UPDATE - the row stayed on the ranking, in decisionCounts() and in both
+    // exports for ever, and the panel told them to "Contact the organizers".
+    $this->submission->forceFill([
+        'status' => SubmissionStatus::Accepted,
+        'decision' => Decision::AcceptedOral,
+        'decision_notified_at' => now(),
+    ])->save();
+
+    // The author's own exit is unchanged: the text is frozen, and an abstract
+    // the committee has answered is not theirs to take back from this page.
+    expect(fn () => app(WithdrawSubmission::class)->handle($this->submission->fresh()))
+        ->toThrow(SubmissionNotAcceptable::class);
+
+    livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
+        ->assertActionVisible('withdraw')
+        ->callAction('withdraw')
+        ->assertHasNoActionErrors();
+
+    $withdrawn = $this->submission->fresh();
+
+    expect($withdrawn?->status)->toBe(SubmissionStatus::Withdrawn)
+        // The decision history is untouched - it is append-only - but the
+        // letter stops being shown, because an author who withdrew is not
+        // waiting for an answer.
+        ->and($withdrawn?->decision)->toBe(Decision::AcceptedOral)
+        ->and($withdrawn?->decisionLetter())->toBeNull();
+});
+
+it('refuses to withdraw a decided abstract of another organization', function () {
+    $theirs = withoutTenant(fn (): Submission => Submission::factory()->submitted()->create([
+        'status' => SubmissionStatus::Accepted,
+        'decision' => Decision::AcceptedOral,
+    ]));
+
+    // Widening the organizer path to the three decided statuses widens WHICH
+    // statuses, never WHOSE rows: the policy is still the gate.
+    expect(app(SubmissionPolicy::class)->withdraw($this->user, $theirs))->toBeFalse();
 });
 
 it('refuses an author withdrawal of an abstract that is under review', function () {

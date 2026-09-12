@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\Decision;
 use App\Enums\PresentationPreference;
 use App\Enums\SubmissionStatus;
 use App\Models\Conference;
 use App\Models\Submission;
+use App\Models\SubmissionDecision;
+use App\Models\User;
 use App\Support\Text\WordCounter;
 use App\Support\Tokens\SubmissionToken;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -56,6 +59,57 @@ class SubmissionFactory extends Factory
             'status' => SubmissionStatus::Withdrawn,
             'withdrawn_at' => now(),
         ]);
+    }
+
+    /**
+     * A submission that already carries denormalised scores, for the ranking
+     * and export tests that do not care how the numbers got there. Nothing in
+     * production writes these columns except ComputeSubmissionScore; a factory
+     * runs inside Model::unguarded(), so it may.
+     */
+    public function scored(float $score = 72.5, ?float $spread = 4.0, int $reviews = 2): static
+    {
+        return $this->submitted()->state(fn (): array => [
+            'score' => $score,
+            'score_spread' => $spread,
+            'review_count' => $reviews,
+            'scored_at' => now(),
+        ]);
+    }
+
+    /**
+     * A decided submission, with the matching status AND the history row the
+     * denormalised columns are a view of. `notified` also stamps
+     * decision_notified_at, which is what SendDecisionEmails skips on and what
+     * gates the letter on /s/{token}.
+     *
+     * The afterCreating() half is not decoration. Writing only the columns
+     * produces a fixture that looks like a hand-written UPDATE, and
+     * SendOneDecisionEmail::blockers() (Task 7) refuses exactly that with
+     * `no_history` - so without the row every case in DecisionEmailsTest would
+     * skip both of its fixtures and report `sent` 0.
+     */
+    public function decided(Decision $decision = Decision::AcceptedOral, bool $notified = false): static
+    {
+        return $this->submitted()
+            ->state(fn (): array => [
+                'decision' => $decision,
+                'status' => $decision->submissionStatus(),
+                'decision_notified_at' => $notified ? now() : null,
+            ])
+            ->afterCreating(function (Submission $submission) use ($decision, $notified): void {
+                $row = new SubmissionDecision;
+                $row->forceFill([
+                    'submission_id' => $submission->getKey(),
+                    'decision' => $decision,
+                    'decided_by' => User::factory()->create()->getKey(),
+                    'decided_at' => now(),
+                    'note' => null,
+                    'letter_subject' => $notified ? 'A decision on your abstract' : null,
+                    'letter_markdown' => $notified ? 'Dear author, a decision has been made.' : null,
+                    'notified_at' => $notified ? now() : null,
+                ])->save();
+            });
     }
 
     /**
