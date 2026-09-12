@@ -37,6 +37,10 @@ class Organization extends Model
             'type' => OrganizationType::class,
             'status' => OrganizationStatus::class,
             'publish_contact_email' => 'boolean',
+            // Never fillable (see the migration): `cass:demo-seed` sets it with
+            // forceFill and `cass:demo-reset` refuses every organization that
+            // does not carry it.
+            'is_demo' => 'boolean',
             'approved_at' => 'datetime',
             'custom_domain_verified_at' => 'datetime',
         ];
