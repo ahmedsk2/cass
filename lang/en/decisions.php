@@ -21,6 +21,9 @@ return [
         'not_sent' => 'Not sent',
         'empty_heading' => 'Nothing to rank yet',
         'empty_body' => 'Abstracts appear here once they have been submitted. Scores appear as reviews come in.',
+        'export_csv' => 'Export CSV',
+        'export_xlsx' => 'Export Excel',
+        'nothing_to_export' => 'Nothing to export',
         'columns' => [
             'reference' => 'Reference',
             'title' => 'Title',
