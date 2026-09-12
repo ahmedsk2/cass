@@ -536,13 +536,26 @@ is a real thing.
 ### The 500-row budget
 
 Spec section 10 budgets the ranking table at "500 submissions in under 1 s". The
-deterministic guard is
-`tests/Feature/Organizer/ConferenceRankingPerformanceTest.php`'s query-count
-case, which runs in CI and fails if the table ever touches `reviews`.
+deterministic guards are
+`tests/Feature/Organizer/ConferenceRankingPerformanceTest.php`'s two query-count
+cases, which run on every driver and in CI and fail if the table ever touches
+`reviews` or grows a per-row lookup.
 
-The wall-clock case is skipped on CI (a shared runner's clock measures the
-runner) and the production image carries no test runner at all — `composer
-install --no-dev`, and `.dockerignore` excludes `tests/`, `phpunit.xml` and
+The wall-clock case is **measured deliberately, not on every run**: it is
+skipped unless `CASS_PERF_WALL_CLOCK=1` is set, on every driver and on CI alike.
+Its stopwatch sees two full Livewire renders of 500 rows rather than the query
+the budget is about, and that harness is what dominates — 1.1–1.4 s on the
+in-memory SQLite of `phpunit.xml`, 0.99–1.05 s against the MySQL of
+`docker-compose.dev.yml`, and 0.4 s to 2.1 s an hour apart on a shared GitHub
+runner, while `RankedSubmissions::query()` hydrates the same 500 rows in 0.02 s.
+To read the number anyway:
+
+```bash
+CASS_PERF_WALL_CLOCK=1 php artisan test tests/Feature/Organizer/ConferenceRankingPerformanceTest.php
+```
+
+The production image carries no test runner at all — `composer install
+--no-dev`, and `.dockerignore` excludes `tests/`, `phpunit.xml` and
 `phpunit.browser.xml` — so there is nothing there to run it with. Measure the
 query itself on the host instead, once before launch, against a conference that
 already has a few hundred abstracts:
@@ -561,7 +574,7 @@ for ($i = 0; $i < 5; $i++) {
 That is the same entry point the table itself uses. The first run warms OPcache
 and the buffer pool; take the median of the rest. If it is anywhere near 1 s with
 a few hundred rows, something has started reading `reviews` per row — which is
-exactly what the CI query-count case bounds.
+exactly what the two CI query-count cases bound.
 
 ### Exports
 
