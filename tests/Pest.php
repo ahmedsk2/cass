@@ -2,7 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Enums\ReviewStatus;
+use App\Models\ConferenceReviewer;
 use App\Models\Organization;
+use App\Models\Review;
+use App\Models\ReviewAnswer;
+use App\Models\ReviewForm;
+use App\Models\ReviewQuestion;
+use App\Models\Submission;
+use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -85,4 +93,39 @@ function withoutTenant(Closure $callback): mixed
     } finally {
         Filament::setTenant($tenant, isQuiet: true);
     }
+}
+
+/**
+ * One review of $submission, with one answer to $question, without going near
+ * the reviewer panel. Here rather than in a test file because
+ * tests/Unit/ComputeSubmissionScoreTest.php and
+ * tests/Unit/RescoreCommandTest.php both call it, and a helper declared in one
+ * of them makes a single-file run of the other a fatal error.
+ */
+function scoredReview(
+    Submission $submission,
+    ReviewForm $form,
+    ReviewQuestion $question,
+    int $value,
+    ReviewStatus $status = ReviewStatus::Submitted,
+): Review {
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($submission->conference)->create(['user_id' => $reviewer->id]);
+
+    $review = Review::factory()->create([
+        'submission_id' => $submission->getKey(),
+        'reviewer_user_id' => $reviewer->getKey(),
+        'review_form_id' => $form->getKey(),
+        'status' => $status,
+        'submitted_at' => $status === ReviewStatus::Submitted ? now() : null,
+    ]);
+
+    $answer = new ReviewAnswer;
+    $answer->forceFill([
+        'review_id' => $review->getKey(),
+        'review_question_id' => $question->getKey(),
+        'value_int' => $value, 'value_text' => null, 'value_bool' => null, 'choice_key' => null,
+    ])->save();
+
+    return $review;
 }

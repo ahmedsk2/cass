@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Reviews;
 
+use App\Actions\Submissions\ComputeSubmissionScore;
 use App\Enums\ReviewQuestionType;
 use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
@@ -34,7 +35,10 @@ use Illuminate\Support\Facades\Validator;
  */
 class SubmitReview
 {
-    public function __construct(private readonly SaveReviewDraft $saveDraft) {}
+    public function __construct(
+        private readonly SaveReviewDraft $saveDraft,
+        private readonly ComputeSubmissionScore $computeScore,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $answers
@@ -163,6 +167,13 @@ class SubmitReview
 
             return $review;
         });
+
+        // Spec 5.6. The one place a submitted review turns into a number on the
+        // abstract. Outside the transaction on purpose: the review is committed
+        // by now, so a failure here leaves a correct review with a stale score
+        // (which `cass:rescore` repairs) rather than rolling back a reviewer's
+        // work over an arithmetic error.
+        $this->computeScore->handle($submission);
 
         activity()
             ->performedOn($review)
