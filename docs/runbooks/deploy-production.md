@@ -21,6 +21,8 @@ App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, bra
    ```
    If `$C` is empty, use the Coolify UI terminal for the `app` service instead.
 7. Log in at https://cass.towardpcc.com/admin/login, change the admin password under Profile, enable two-factor authentication.
+8. Install the backup cron (see **Backups**) and run it once by hand.
+9. Work through `docs/launch-checklist.md` before announcing the address.
 
 ## Every release
 
@@ -857,7 +859,109 @@ node -e "const s=require('sharp');const r=process.argv[1];s(r+'/public/images/il
 
 ## Custom domain for an organization
 
-Not yet supported: trusted hosts are pinned to APP_URL until custom domains ship in Plan 6.
+An organizer claims a domain on their profile page, publishes two DNS records
+and presses **Verify**. The application checks the TXT record, marks the domain
+verified, adds it to the trusted-host list within a minute, and emails every
+platform admin. **The certificate is a manual step, and this is it.**
+
+### What the organizer does
+
+Two records in the DNS panel for their own domain:
+
+| Type | Name | Value |
+|---|---|---|
+| TXT | `_cass-verify.abstracts.example.org` | the 64-character token on their profile page |
+| CNAME | `abstracts.example.org` | `cass.towardpcc.com` |
+
+Only the **TXT** record is checked. The CNAME is what makes traffic arrive, and
+it is deliberately not verified: this platform sits behind Cloudflare with the
+record proxied, and a proxied CNAME is flattened into A records by Cloudflare's
+authoritative servers — so a public resolver asked for a CNAME gets nothing.
+Requiring it would refuse exactly the setup this runbook recommends.
+
+The CNAME target the organizer is shown comes from `CASS_DOMAIN_CNAME_TARGET`
+and falls back to `APP_URL`'s host, so a staging deployment is right without a
+second variable.
+
+The token is stored and displayed in plaintext, on purpose. It is published in
+public DNS by design, it authorises nothing, and the organizer has to be able
+to read it again tomorrow when their DNS panel has eaten the record. Do not
+"fix" it into a hash: there is no version of this feature in which the token is
+hashed and the screen works.
+
+### What you do when the email arrives
+
+Add the host to the Coolify resource so Traefik requests a certificate.
+
+**In the UI:** Coolify → the CASS resource → Domains → add
+`https://abstracts.example.org:8080` **beside** the existing
+`https://cass.towardpcc.com:8080`, comma-separated. Redeploy is not needed;
+Traefik picks up the label change.
+
+**Through the API**, if you prefer:
+
+```bash
+# The resource UUID is in the Coolify URL for the application.
+curl -X PATCH "https://<coolify-host>/api/v1/applications/<uuid>" \
+  -H "Authorization: Bearer $COOLIFY_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"domains":"https://cass.towardpcc.com:8080,https://abstracts.example.org:8080"}'
+```
+
+`domains` is the **whole** list, not an addition — a PATCH with one domain
+removes the others and takes the platform offline. Read the current value first:
+
+```bash
+curl -s "https://<coolify-host>/api/v1/applications/<uuid>" \
+  -H "Authorization: Bearer $COOLIFY_TOKEN" | jq -r '.domains'
+```
+
+The application never makes this call. It would need a Coolify token in its
+environment, and that token can rewrite the whole deployment — a far larger
+blast radius than the problem. Spec section 15 records the same reasoning and
+leaves automation to v2.
+
+### Checking it worked
+
+```bash
+# Traefik has a certificate and the host resolves to a conference page.
+curl -sI https://abstracts.example.org/ | head -3
+curl -s https://abstracts.example.org/<conference-slug> | grep -o '<title>[^<]*'
+# And the platform's own pages are NOT served there.
+curl -s -o /dev/null -w '%{http_code}\n' https://abstracts.example.org/register   # 404
+curl -s -o /dev/null -w '%{http_code}\n' https://abstracts.example.org/admin      # 404
+```
+
+A verified domain serves exactly four things: `/` (a redirect to the
+organization's single publicly visible conference, or a 404 when there is not
+exactly one), `/{conference-slug}`, `/{conference-slug}/submit`, and
+`/livewire-{hash}/*` plus `/up`. **Livewire's endpoint prefix is derived from
+`APP_KEY`** — `'/livewire-'.substr(hash('sha256', config('app.key').'livewire-endpoint'), 0, 8)`,
+`EndpointResolver::prefix()` — so it is **not** `/livewire`, and it **moves if
+`APP_KEY` is rotated**; `php artisan route:list --path=livewire` prints the
+current one. `/s/{token}`, `/files/{ulid}` and `/q/{code}` stay on
+`cass.towardpcc.com` — a status token is a bearer credential, a file URL is a
+signature bound to its host, and a short code is printed on posters that
+outlive a domain registration. **So an author who submits on a custom domain
+ends up on the platform host**, because that is where their status page lives:
+`ResolveCustomDomain` pins `URL::forceRootUrl()` to `APP_URL` for the whole
+request, so every `route()` on a custom-domain page — the footer's Privacy and
+Terms links included — is minted on the platform host rather than on the
+organizer's. The asset origin is deliberately left on the custom host
+(`URL::useAssetOrigin()`), so `@vite` and the Livewire endpoint stay
+same-origin under `script-src 'self'`.
+
+**One local consequence.** `ResolveCustomDomain` 404s any host that is neither
+`APP_URL`'s host nor a verified domain, and `php artisan serve` answers on
+`127.0.0.1:8000`. Open `http://localhost:8000` locally, not `http://127.0.0.1:8000`.
+
+### When an organizer removes a domain
+
+The application clears all three columns and the name becomes claimable again
+immediately. **Nothing tells Coolify**: remove the host from the resource when
+you next touch it. Leaving it is harmless — a host with no verified
+organization behind it gets a 404 from the application — but it leaves Traefik
+renewing a certificate for a name nobody uses.
 
 ## Rollback
 
@@ -865,18 +969,211 @@ Coolify -> Deployments -> redeploy the previous successful build. Migrations are
 
 ## Backups
 
-Nightly `mysqldump` from a host cron (owner installs):
-`sudo docker exec <mysql-container> mysqldump -ucass -p"$DB_PASSWORD" cass | gzip > /srv/backups/cass-$(date +%F).sql.gz` with 14-day rotation, then the existing off-host sync to the NAS.
+Spec section 8: nightly `mysqldump`, 14-day rotation, then the existing off-host
+sync to the NAS.
+
+The script is committed at `docker/backup.sh` and runs on the **host**, not in a
+container: it needs `docker exec` into the mysql container and a host path,
+deliberately, so a compromised app container can neither read nor delete the
+backups.
+
+### Installing it
+
+```bash
+sudo docker cp <app-container>:/usr/local/bin/cass-backup.sh /usr/local/bin/cass-backup
+sudo chmod 755 /usr/local/bin/cass-backup
+sudo mkdir -p /srv/backups/cass
+sudo /usr/local/bin/cass-backup            # once, by hand, and read the output
+```
+
+Then the cron line (`sudo crontab -e`):
+
+```cron
+# CASS database backup, nightly at 03:17 local. Not on the hour: every other
+# cron on this host is, and MySQL does not need the company.
+17 3 * * * /usr/local/bin/cass-backup >> /var/log/cass-backup.log 2>&1
+```
+
+It writes `/srv/backups/cass/cass-<date>-<time>.sql.gz`, keeps 14 days, refuses
+a dump under 4 KB rather than rotating a good backup away for a broken one, and
+writes through a `.partial` name so an interrupted run never leaves a truncated
+file that looks whole.
+
+### Verifying one — monthly, and not optional
+
+**A backup nobody has restored is not a backup.** There is no
+`cass:backup-verify` command and there cannot usefully be one: a command inside
+the app container cannot see `/srv/backups`, which is the point of putting them
+there.
+
+```bash
+NEWEST=$(ls -1t /srv/backups/cass/cass-*.sql.gz | head -1)
+C=$(sudo docker ps --filter label=com.docker.compose.service=mysql --format '{{.Names}}' | grep -i cass | head -1)
+
+sudo docker exec "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE IF EXISTS cass_restore_check; CREATE DATABASE cass_restore_check;"'
+gunzip -c "$NEWEST" | sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass_restore_check'
+
+# Row counts, live against restored. They will differ by whatever happened
+# since the dump; they must not differ by an order of magnitude or be zero.
+for T in organizations conferences submissions reviews email_logs; do
+  sudo docker exec "$C" sh -c "MYSQL_PWD=\"\$MYSQL_ROOT_PASSWORD\" mysql -uroot -N -e \
+    'SELECT \"$T\", (SELECT COUNT(*) FROM cass.$T), (SELECT COUNT(*) FROM cass_restore_check.$T);'"
+done
+
+sudo docker exec "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE cass_restore_check;"'
+```
+
+### What is NOT backed up by this
+
+`storage/app` — the `cass-storage` volume, which holds every uploaded abstract
+PDF and every organization logo. The database backup restores rows that point
+at objects that are gone. The NAS sync must include it, or restore is half a
+restore.
+
+**Resolve the volume by inspecting the running container, never by name.**
+Compose prefixes named volumes with the project name and Coolify adds its own
+identifier, so a bare `-v cass-storage:/data` silently creates a new, empty
+volume and archives nothing — producing a forty-five-byte `.tar.gz` that looks
+like a backup of every uploaded abstract:
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+VOL=$(sudo docker inspect "$C" --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/storage/app"}}{{.Name}}{{end}}{{end}}')
+test -n "$VOL" || { echo "no storage volume found on $C"; exit 1; }
+
+sudo docker run --rm -v "$VOL":/data:ro -v /srv/backups/cass:/out alpine \
+  tar czf "/out/cass-storage-$(date +%F).tar.gz" -C /data .
+
+# An archive of an empty (i.e. wrong) volume is a few dozen bytes.
+test "$(stat -c %s "/srv/backups/cass/cass-storage-$(date +%F).tar.gz")" -gt 10240
+find /srv/backups/cass -name 'cass-storage-*.tar.gz' -mtime +56 -delete
+```
+
+Weekly is enough — the objects are content-addressed and immutable, so a
+week-old archive plus the newest database dump loses only files uploaded in
+between. Put the block above in `/usr/local/bin/cass-storage-backup` and add
+the cron line beside the nightly one:
+
+```cron
+# CASS uploaded files, Sundays at 03:47 - after the nightly database dump.
+47 3 * * 0 /usr/local/bin/cass-storage-backup >> /var/log/cass-backup.log 2>&1
+```
+
+The directory is `0700` and each dump is `0600`; the script sets both every
+run. Check with `ls -ld /srv/backups/cass` and `ls -l /srv/backups/cass | head`.
 
 ## Secret rotation
 
 Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and the encrypted two-factor secrets; announce a re-login and re-enrolment.
 
-Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`ShouldBeEncrypted`), and a job written under the old key cannot be run under the new one. `php artisan queue:size` should read 0, and `queue:failed` should be empty or retried, before the redeploy.
+Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail implements ShouldBeEncrypted`), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database` should report `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
+
+Rotating it also **moves Livewire's endpoint prefix**, which is
+`substr(hash('sha256', config('app.key').'livewire-endpoint'), 0, 8)`. Any page
+a visitor already had open posts to the old path and gets a 404 until they
+reload, and `php artisan route:list --path=livewire` is how you read the new
+one.
 
 ## Trusted proxies
 
 `TRUSTED_PROXIES` is fixed in the compose file to the private Docker ranges where Traefik lives. The app takes the client IP from Cloudflare's `CF-Connecting-IP` header for rate limiting; the OCI security list only admits Cloudflare on 80/443, so that header cannot be spoofed from outside.
+
+Trusted **hosts** are no longer pinned to `APP_URL` alone. The closure in
+`bootstrap/app.php` returns the `APP_URL` host plus every verified
+`organizations.custom_domain`, cached for `CASS_DOMAIN_CACHE_SECONDS` (60).
+A database failure inside that lookup returns an empty list and reports — so
+the platform's own host keeps working and custom domains answer 400, which is
+the correct direction to fail. An unknown `Host` still gets a 400 before any
+route runs, which is why both healthchecks send an explicit one.
+
+## Content-Security-Policy
+
+Every HTML response carries one, with a per-request nonce. `CASS_CSP_REPORT_ONLY=true`
+sends `Content-Security-Policy-Report-Only` instead.
+
+**Deploy with it true.** Walk `docs/launch-checklist.md` section 4 with the
+browser console open — a violation appears there as *"Refused to …"* — then set
+it false and redeploy. There is no report endpoint on purpose: a public POST
+that any browser on the internet can fill is a spam sink for a platform with
+one operator.
+
+Two directives look loose and are argued rather than assumed:
+
+- `script-src` carries `'unsafe-eval'` because Alpine's expression evaluator is
+  `new Function()`, Livewire bundles Alpine, and Filament's views are written
+  in a dialect Livewire's CSP-safe build cannot parse. The nonce is what stops
+  an *injected* script; `'unsafe-eval'` lets already-loaded trusted code
+  compile strings the application itself wrote.
+- `style-src-attr` carries `'unsafe-inline'` because a nonce never applies to a
+  style *attribute*, and the organization's branding variables and the brand
+  lock-up on all three panels are attributes.
+
+**Three** Filament views are published verbatim into `resources/views/vendor/`
+with the nonce added — `filament::assets`, `filament-panels::components.layout.base`
+and `filament-panels::livewire.sidebar` — because Filament 5.8.1 has no nonce
+support anywhere. `tests/Feature/Security/PublishedFilamentViewsTest.php` stores
+the SHA-256 of each vendor original, so **a Filament upgrade turns the suite
+red**, and the fix is to re-publish the three files, re-add the nonce
+attributes, and update the three hashes in the same commit. Never update a hash
+on its own.
+
+**Rocket Loader must stay off on this Cloudflare zone**; it and a nonce-based
+policy cannot both be true. It rewrites every proxied `<script>` and re-executes
+it from its own loader without the nonce, and no CI job can see it because no CI
+job goes through Cloudflare.
+
+## Health
+
+`/up` answers "is PHP serving" and is what Docker and Coolify watch. It cannot
+answer the things that fail silently:
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec "$C" su-exec app php artisan cass:health
+```
+
+| Row | Red means |
+|---|---|
+| `database` | the connection named by `DB_CONNECTION` does not answer `select 1`. Every page is 500ing. |
+| `migrations` | the image deployed and nobody ran `migrate --force`. Every page touching a new column is 500ing. |
+| `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. |
+| `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. |
+| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. |
+| `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. |
+
+`--json` for a cron. It exits 1 if any row is red, so
+`cass:health --json || mail -s 'CASS unhealthy' you@example.org` is a monitor.
+
+## Erasing one person's data
+
+The hard purge deletes a tenant's rows and **deliberately does not touch
+`activity_log`**: the record of who did what — including the purge — is the
+last thing a purge should erase.
+
+That is right for an audit trail and insufficient for an erasure request, so
+this is the manual part. `activity_log.properties` carries invitee email
+addresses, decision notes and member roles, and `causer_id` names the actor.
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+
+# 1. What is there. Read it before deleting any of it.
+sudo docker exec "$C" su-exec app php artisan tinker --execute='
+$email = "person@example.org";
+$user = App\Models\User::query()->where("email", $email)->first();
+printf("user: %s\n", $user?->id ?? "none");
+printf("as causer: %d\n", Spatie\Activitylog\Models\Activity::query()->where("causer_id", $user?->id)->count());
+printf("in properties: %d\n", Spatie\Activitylog\Models\Activity::query()->where("properties", "like", "%".$email."%")->count());
+printf("as author: %d\n", App\Models\SubmissionAuthor::query()->where("email", $email)->count());
+printf("in email_logs: %d\n", App\Models\EmailLog::query()->where("to_email", $email)->count());'
+
+# 2. Then decide, per row, what goes and what is anonymised. There is no
+#    command for this on purpose: an erasure that also deletes the evidence of
+#    a decision an author is disputing is not a service to anybody.
+```
+
+`email_logs` prunes itself after `CASS_EMAIL_LOG_RETENTION_DAYS` (365), so that
+half resolves on its own within a year.
 
 ## Resource limits, and how to measure them
 
