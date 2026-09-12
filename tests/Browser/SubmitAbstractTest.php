@@ -55,18 +55,33 @@ it('takes an author from the call for abstracts to a reference number', function
         // click is the only test that proves the link actually goes somewhere.
         ->click('Submit abstract')
         ->assertPathEndsWith('/gpcc26/submit')
+        // Wait for the component's script to be there before touching a
+        // wire:model input. Every assertion in this chain retries through
+        // Execution::waitForExpectation, so an assertion IS the wait, and this
+        // one costs nothing once the page has booted.
+        ->assertScript('typeof window.Livewire !== "undefined"');
+
+    $page
+        ->type('title', 'Early mobilisation after paediatric cardiac surgery')
+        ->type('abstract', 'Background. We studied early mobilisation. Methods. A prospective cohort of 120 children. Results. Ventilator-free days increased. Conclusion. Early mobilisation is feasible and safe.')
         // The track the organizer configured reached the form. The plan asked
         // for assertSee('Neurocritical care') here, which cannot work: the
         // track exists only as an <option> inside a closed <select>, an
         // <option> has no layout box, and assertSee() requires Playwright's
         // isVisible() (MakesElementAssertions::assertSee, v5.0.1). Selecting it
         // proves the same thing and proves more - that the value round-trips.
+        //
+        // It happens AFTER the two typed fields, and that ordering is the fix
+        // for a CI run where track_id came back null while assertValue passed:
+        // Livewire binds a wire:model listener when the component initialises,
+        // and a change event fired before that moment is lost - the DOM keeps
+        // the new value, so the assertion reads back what the browser is
+        // showing, and the component never hears about it. The two type() calls
+        // above land their values in the row that is asserted at the end of
+        // this test, which is what proves the listeners are bound by the time
+        // this line runs.
         ->select('track', (string) $this->track->id)
-        ->assertValue('track', (string) $this->track->id);
-
-    $page
-        ->type('title', 'Early mobilisation after paediatric cardiac surgery')
-        ->type('abstract', 'Background. We studied early mobilisation. Methods. A prospective cohort of 120 children. Results. Ventilator-free days increased. Conclusion. Early mobilisation is feasible and safe.')
+        ->assertValue('track', (string) $this->track->id)
         ->radio('presentation_preference', 'oral')
         ->type('author-name-0', 'Dr Sara Al-Harbi')
         ->type('author-email-0', 'sara@example.org')
