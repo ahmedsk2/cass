@@ -40,8 +40,13 @@ class SubmissionInfolist
                         ? null
                         : OrganizationResource::getUrl('view', ['record' => $record->conference->organization], panel: 'admin')),
                 TextEntry::make('conference.status')->badge(),
+                // The fallback is load-bearing, not decoration: Conference
+                // soft-deletes and nothing cascades, so this page still opens
+                // for an abstract whose conference is gone - and Carbon's
+                // setTimezone('') throws InvalidTimeZoneException, a 500 on the
+                // one screen a platform admin has for exactly that mess.
                 TextEntry::make('submitted_at')->dateTime('j M Y, H:i')
-                    ->timezone(fn (Submission $record): string => (string) $record->conference?->timezone)
+                    ->timezone(fn (Submission $record): string => (string) ($record->conference?->timezone ?: config('app.timezone')))
                     ->placeholder('-'),
             ]),
 
@@ -89,8 +94,9 @@ class SubmissionInfolist
                 ->visible(fn (Submission $record): bool => $record->decisions()->exists())
                 ->components([
                     TextEntry::make('decision')->badge()->placeholder('-'),
+                    // Same null conference, same fallback, same reason.
                     TextEntry::make('decision_notified_at')->dateTime('j M Y, H:i')
-                        ->timezone(fn (Submission $record): string => (string) $record->conference?->timezone)
+                        ->timezone(fn (Submission $record): string => (string) ($record->conference?->timezone ?: config('app.timezone')))
                         ->placeholder(__('admin.submissions.not_notified')),
                     // The whole history, newest first, with the letter that was
                     // actually sent - which is the thing no organizer screen

@@ -61,8 +61,13 @@ class SubmissionsTable
                     ->label(__('admin.submissions.columns.submitted'))
                     ->dateTime('j M Y, H:i')
                     // The conference's own timezone (spec section 10), read
-                    // off the row the query already eager-loaded.
-                    ->timezone(fn (Submission $record): string => (string) $record->conference?->timezone)
+                    // off the row the query already eager-loaded. The fallback
+                    // is not decoration: Conference soft-deletes and nothing
+                    // cascades, so an abstract under a deleted conference is
+                    // still listed here with a null relation - and Carbon's
+                    // setTimezone('') throws InvalidTimeZoneException, which
+                    // would 500 the whole screen rather than blank one cell.
+                    ->timezone(fn (Submission $record): string => (string) ($record->conference?->timezone ?: config('app.timezone')))
                     ->sortable()
                     ->placeholder('-'),
             ])

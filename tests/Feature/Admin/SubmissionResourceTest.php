@@ -113,6 +113,43 @@ it('gives the platform admin nothing that writes', function () {
         ->and(livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])->instance()->getCachedHeaderActions())->toBe([]);
 });
 
+it('still lists and opens an abstract whose conference the organizer soft-deleted', function () {
+    SubmissionAuthor::factory()->for($this->submission)->create(['name' => 'Sara Al-Harbi']);
+    SubmissionDecision::factory()->for($this->submission)->create([
+        'decision' => Decision::Waitlisted,
+        'decided_at' => now()->subDay(),
+    ]);
+    $this->submission->forceFill([
+        'decision' => Decision::Waitlisted,
+        'decision_notified_at' => now()->subDay(),
+    ])->save();
+
+    // Conference soft-deletes and nothing cascades, so the abstract stays
+    // untrashed and keeps being listed. The conference relation then resolves
+    // to null on every screen that reads it.
+    $this->conference->delete();
+
+    // A null conference used to reach Carbon::setTimezone(''), which throws
+    // InvalidTimeZoneException - a 500 on the list and on the view page for
+    // every submitted abstract under a deleted conference.
+    livewire(ListSubmissions::class)
+        ->assertCanSeeTableRecords([$this->submission])
+        // Eager-loaded withTrashed, so the conference and organization columns
+        // still say whose abstract this is. (The organization name is in the
+        // filter options too; the conference name is only on the row.)
+        ->assertSee('Alpha Annual Meeting');
+
+    get(SubmissionResource::getUrl('view', ['record' => $this->submission], panel: 'admin'))
+        ->assertOk()
+        ->assertSee('Alpha Annual Meeting')
+        ->assertSee('Alpha Society');
+});
+
+it('calls the screen Abstracts in the navigation and in the heading', function () {
+    expect(SubmissionResource::getNavigationLabel())->toBe(__('admin.submissions.title'))
+        ->and(livewire(ListSubmissions::class)->instance()->getTitle())->toBe(__('admin.submissions.title'));
+});
+
 it('is forbidden to an organization owner who can see the same rows in their own panel', function () {
     $owner = User::factory()->create();
     $this->organization->addMember($owner, OrganizationRole::Owner);

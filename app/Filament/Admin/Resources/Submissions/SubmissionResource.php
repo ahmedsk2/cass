@@ -8,6 +8,7 @@ use App\Filament\Admin\Resources\Submissions\Pages\ListSubmissions;
 use App\Filament\Admin\Resources\Submissions\Pages\ViewSubmission;
 use App\Filament\Admin\Resources\Submissions\Schemas\SubmissionInfolist;
 use App\Filament\Admin\Resources\Submissions\Tables\SubmissionsTable;
+use App\Models\Conference;
 use App\Models\Submission;
 use App\Models\User;
 use BackedEnum;
@@ -16,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Spec section 4's "View submissions and files" for the platform admin, three
@@ -69,15 +71,52 @@ class SubmissionResource extends Resource
      * the infolist links to both. Eager-loading them here is what keeps that
      * from being two queries per row.
      *
-     * withoutGlobalScopes is deliberately NOT used: a soft-deleted abstract is
-     * an organizer's own deletion and the admin list is not a recycle bin. The
-     * purge screen is on the conference, not here.
+     * The conference is loaded withTrashed on purpose. Conference soft-deletes
+     * and nothing cascades to its submissions, so an abstract whose conference
+     * an organizer deleted is still listed here — and without this the relation
+     * resolves to null, which blanks the two columns that say whose abstract it
+     * is. The admin ConferenceResource drops the same scope, so the link out of
+     * the infolist opens rather than 404s.
+     *
+     * `conference.organization` is named explicitly, and that is not a
+     * tidying-up: Filament adds a missing relationship eager-load per visible
+     * column (InteractsWithTableQuery::applyEagerLoading), and Laravel's
+     * with(['conference.organization']) re-registers the parent segment as a
+     * no-op through addNestedWiths + array_merge — which would silently replace
+     * the closure below and put the soft-delete scope back.
+     *
+     * withoutGlobalScopes on the submission itself is deliberately NOT used: a
+     * soft-deleted abstract is an organizer's own deletion and the admin list
+     * is not a recycle bin. The purge screen is on the conference, not here.
      *
      * @return Builder<Submission>
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['conference.organization', 'track']);
+        return parent::getEloquentQuery()->with([
+            'conference' => self::eagerLoadTrashedConference(...),
+            'conference.organization',
+            'track',
+        ]);
+    }
+
+    /**
+     * The two screens call an abstract an abstract, which is what the people
+     * who run this platform call it. Filament derives the navigation label and
+     * the list heading from the plural model label, so one override answers
+     * both (HasNavigation.php:140, ListRecords.php:76).
+     */
+    public static function getPluralModelLabel(): string
+    {
+        return __('admin.submissions.title');
+    }
+
+    /**
+     * @param  BelongsTo<Conference, Submission>  $query
+     */
+    private static function eagerLoadTrashedConference(BelongsTo $query): void
+    {
+        $query->withTrashed();
     }
 
     public static function infolist(Schema $schema): Schema
