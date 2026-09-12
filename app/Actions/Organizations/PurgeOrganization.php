@@ -14,6 +14,7 @@ use App\Models\ShortLink;
 use App\Models\ShortLinkVisit;
 use App\Models\Submission;
 use App\Models\User;
+use App\Support\Domains\CustomDomains;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -132,6 +133,14 @@ final class PurgeOrganization
         }
 
         $result['private files'] = count($paths);
+
+        // Plan 6 Task 4's own line, reachable only now that Task 1 has landed
+        // App\Support\Domains\CustomDomains: the slug and the custom domain are
+        // both unique and both checked withTrashed(), so both are free the
+        // moment the row is gone - and the cached verified-host list has to be
+        // told, or a purged tenant's host keeps resolving until the cache
+        // expires.
+        CustomDomains::forget();
 
         if ($actor instanceof User) {
             // No performedOn(): the subject is gone. Optional, because
