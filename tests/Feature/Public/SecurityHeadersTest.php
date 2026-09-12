@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Enums\ConferenceStatus;
+use App\Enums\OrganizationRole;
+use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\Submission;
@@ -161,6 +163,51 @@ it('sets the policy on an error page too', function () {
         ->and(policyOf($response))->toMatch("/script-src [^;]*'nonce-[A-Za-z0-9]{40}'/");
 });
 
+it('nonces the styles on the error page, so a production 404 is not plain text', function (string $url) {
+    // style-src is 'self' plus a nonce, and a nonce makes the browser IGNORE
+    // 'unsafe-inline' - so Laravel's own errors::minimal, whose two <style>
+    // blocks are bare, renders every 404/403/419/429/500/503 in production as
+    // unstyled text. Nothing else in this suite looks at the BODY of an error
+    // page.
+    $response = get($url)->assertNotFound();
+
+    preg_match("/'nonce-([A-Za-z0-9]{40})'/", policyOf($response), $matches);
+    $nonce = (string) ($matches[1] ?? '');
+
+    expect($nonce)->not->toBe('');
+
+    $content = (string) $response->getContent();
+
+    expect($content)->toContain('<style nonce="'.$nonce.'">')
+        // Not one bare <style> left anywhere on the page.
+        ->and($content)->not->toContain('<style>')
+        ->and(substr_count($content, '<style nonce="'.$nonce.'">'))->toBe(2);
+})->with([
+    'a missing page' => ['/nonexistent-probe.css'],
+    'a missing nested page' => ['/nonexistent-probe/deeper'],
+]);
+
+it('has not drifted from the laravel error view it was published from', function () {
+    // Same contract as PublishedFilamentViewsTest: when this fails the fix is
+    // to diff the new vendor file, re-publish it, re-add the two nonces and
+    // update the hash in the same commit - never to update the hash alone.
+    //
+    // errors::minimal is the ONE view that matters: all eight of Laravel's
+    // default error views (@extends('errors::minimal')) resolve it, and
+    // RegisterErrorViewPaths puts resources/views/errors ahead of the package
+    // directory, so the published copy wins for all of them.
+    $vendor = base_path('vendor/laravel/framework/src/Illuminate/Foundation/Exceptions/views/minimal.blade.php');
+    $published = base_path('resources/views/errors/minimal.blade.php');
+
+    expect(file_exists($vendor))->toBeTrue('Missing the vendor error view - did Laravel move it?')
+        ->and(file_exists($published))->toBeTrue('Missing resources/views/errors/minimal.blade.php - every error page is unstyled without it.')
+        ->and(hash_file('sha256', $vendor))->toBe(
+            '62228df05aa2bfc488be577807e83c743d4726de50b22f896c2cf3a018db8990',
+            'minimal.blade.php changed upstream. Re-publish it, re-add the two nonces, then update this hash.'
+        )
+        ->and(substr_count((string) file_get_contents($published), 'nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}"'))->toBe(2);
+});
+
 it('nonces the brand lock-up stylesheet the layout inlines', function () {
     // brand/logo.blade.php ends in a <style> ELEMENT (the dark-mode wordmark
     // rule, which has no inline-attribute equivalent). style-src is 'self'
@@ -207,4 +254,36 @@ it('renders an authenticated panel page with no off-origin image source', functi
     // name sent to a third party on every page load. Every case above requests
     // a LOGIN page, which has no avatar, so nothing else here would catch it.
     expect($html)->not->toContain('ui-avatars.com');
+});
+
+it('ships the rich editor base styles under the nonce, because tiptap injects them without one', function () {
+    // Filament 5.8.1 constructs TipTap with injectNonce undefined
+    // (vendor/filament/forms/dist/components/rich-editor.js), so the
+    // <style data-tiptap-style> block it appends at runtime is refused by
+    // style-src 'self' 'nonce-...' - a nonce makes the browser ignore
+    // 'unsafe-inline' entirely. Without those rules the organizer's
+    // conference-description editor loses white-space: pre-wrap, the gap
+    // cursor and the separator image, and no test renders a RichEditor.
+    $organization = Organization::factory()->approved()->create();
+    $owner = User::factory()->create();
+    $organization->addMember($owner, OrganizationRole::Owner);
+    actingAs($owner);
+    bootOrganizerPanel($organization);
+
+    $conference = Conference::factory()->for($organization)->create();
+
+    $response = get(ConferenceResource::getUrl(
+        'edit', ['record' => $conference], panel: 'organizer', tenant: $organization
+    ))->assertOk();
+
+    preg_match("/'nonce-([A-Za-z0-9]{40})'/", policyOf($response), $matches);
+    $nonce = (string) ($matches[1] ?? '');
+
+    expect($nonce)->not->toBe('');
+
+    $html = (string) $response->getContent();
+
+    expect($html)->toContain('<style nonce="'.$nonce.'" data-cass-prosemirror>')
+        ->and($html)->toContain('img.ProseMirror-separator')
+        ->and($html)->toContain('.ProseMirror-gapcursor');
 });

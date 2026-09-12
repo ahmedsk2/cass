@@ -3,11 +3,23 @@
 declare(strict_types=1);
 
 use App\Support\Legacy\SqlDumpReader;
+use Illuminate\Support\Str;
 
 // No database at all: this class turns a file into arrays.
 
 beforeEach(function () {
     $this->reader = new SqlDumpReader(base_path('tests/Fixtures/legacy/dump.sql'));
+
+    // A fixture path of this run's own. The two cases below used to write to
+    // a fixed name and unlink it only on the happy path, so a failing
+    // assertion left the file behind for the next run to read.
+    $this->scratch = sys_get_temp_dir().'/cass-legacy-'.Str::random(12).'.sql';
+});
+
+afterEach(function () {
+    if (is_string($this->scratch ?? null) && is_file($this->scratch)) {
+        unlink($this->scratch);
+    }
 });
 
 it('lists the tables the dump declares', function () {
@@ -68,12 +80,10 @@ it('reads two insert statements into one table as one list', function () {
     $sql = (string) file_get_contents(base_path('tests/Fixtures/legacy/dump.sql'));
     $sql .= "\nINSERT INTO `conferences` (`id`, `name`, `submission_deadline`) VALUES\n(9, 'A third edition', '2025-11-25');\n";
 
-    $path = sys_get_temp_dir().'/cass-legacy-two-inserts.sql';
+    $path = $this->scratch;
     file_put_contents($path, $sql);
 
     expect(iterator_to_array((new SqlDumpReader($path))->rows('conferences')))->toHaveCount(3);
-
-    unlink($path);
 });
 
 it('reports a value that is not valid utf-8 rather than transcoding it', function () {
@@ -86,7 +96,7 @@ it('reports a value that is not valid utf-8 rather than transcoding it', functio
     // a table the dump does not DECLARE, and tables() reads CREATE statements -
     // so an INSERT on its own throws "The dump declares no table [t]." before
     // value()'s encoding guard is ever reached.
-    $path = sys_get_temp_dir().'/cass-legacy-bad-bytes.sql';
+    $path = $this->scratch;
     file_put_contents($path, "CREATE TABLE `t` (\n  `a` varchar(255) NOT NULL\n) ENGINE=MyISAM DEFAULT CHARSET=latin1;\n\nINSERT INTO `t` (`a`) VALUES\n('caf\xE9');\n");
 
     $reader = new SqlDumpReader($path);
@@ -94,8 +104,6 @@ it('reports a value that is not valid utf-8 rather than transcoding it', functio
 
     expect($reader->encodingProblems())->toHaveCount(1)
         ->and($rows[0]['a'])->toBeString();
-
-    unlink($path);
 });
 
 it('refuses a file that is not there', function () {

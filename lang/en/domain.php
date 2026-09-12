@@ -82,5 +82,11 @@ return [
         // empty - so the sentence lives in this namespace rather than in
         // another file's. The wording follows submission.errors.too_many.
         'throttled' => 'Too many checks in a row. Please try again in :seconds seconds.',
+        // The TITLE of the throttled notification. Separate from `throttled`
+        // because the body carries the countdown, and separate from
+        // `lookup_failed` because "we could not reach the DNS servers" sends an
+        // organizer off to edit a record that is already correct when all they
+        // did was click faster than the limiter allows.
+        'throttled_title' => 'Too many checks in a row',
     ],
 ];

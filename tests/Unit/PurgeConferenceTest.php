@@ -6,6 +6,7 @@ use App\Actions\Conferences\PurgeConference;
 use App\Actions\Organizations\PurgeOrganization;
 use App\Enums\ConferenceStatus;
 use App\Enums\Decision;
+use App\Enums\OrganizationRole;
 use App\Enums\ReviewStatus;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
@@ -14,6 +15,7 @@ use App\Models\EmailLog;
 use App\Models\EmailTemplate;
 use App\Models\LegacyImport;
 use App\Models\Organization;
+use App\Models\OrganizationInvitation;
 use App\Models\Review;
 use App\Models\ReviewAnswer;
 use App\Models\ReviewAssignment;
@@ -250,6 +252,18 @@ it('leaves the tenant purge answering the same numbers as before', function () {
     conferenceWithEverything($organization);
     conferenceWithEverything($organization);
 
+    // A whole second society, standing beside it. Nothing else in the suite
+    // proves another tenant's rows survive: DemoResetTest's survivor case
+    // checks only a bare Conference and a ConferenceReviewer, and its sibling
+    // asserts EmailLog::count() === 0 globally - which a delete that forgot its
+    // where('organization_id') also satisfies.
+    $other = Organization::factory()->approved()->create();
+    conferenceWithEverything($other);
+    $otherLog = EmailLog::factory()->create(['organization_id' => $other->getKey()]);
+    $other->addMember(User::factory()->create(), OrganizationRole::Owner);
+    OrganizationInvitation::factory()->for($other)->create();
+    ShortLink::forTarget($other);
+
     $counts = app(PurgeOrganization::class)->handle($organization, $this->admin);
 
     expect(Organization::withTrashed()->whereKey($organization->getKey())->exists())->toBeFalse()
@@ -258,6 +272,41 @@ it('leaves the tenant purge answering the same numbers as before', function () {
         ->and($counts['reviews'])->toBe(2)
         ->and($counts['private files'])->toBe(2)
         ->and($counts['organizations'])->toBe(1);
+
+    expect(Organization::withTrashed()->whereKey($other->getKey())->exists())->toBeTrue()
+        ->and(EmailLog::query()->whereKey($otherLog->getKey())->exists())->toBeTrue()
+        ->and($other->conferences()->count())->toBe(1)
+        ->and($other->members()->count())->toBe(1)
+        ->and(OrganizationInvitation::query()->where('organization_id', $other->getKey())->count())->toBe(1)
+        ->and(ShortLink::query()->where('target_type', Organization::class)->where('target_id', $other->getKey())->count())->toBe(1)
+        ->and(Submission::withTrashed()->whereIn('conference_id', $other->conferences()->pluck('id'))->count())->toBe(2);
+});
+
+it('previews the tenant purge with the numbers the run reports', function () {
+    // PurgeOrganization::preview() is what OrganizationsTable feeds straight
+    // into the typed confirmation modal, and it deliberately uses a SET union
+    // for email_logs where handle() sums per-conference deletions plus the
+    // tenant-level one. The two can drift, and then an admin types a slug
+    // against counts that no longer describe what is about to be destroyed.
+    $organization = Organization::factory()->approved()->create();
+    conferenceWithEverything($organization);
+    conferenceWithEverything($organization);
+    EmailLog::factory()->create(['organization_id' => $organization->getKey()]);
+    $organization->addMember(User::factory()->create(), OrganizationRole::Owner);
+    OrganizationInvitation::factory()->for($organization)->create();
+    ShortLink::forTarget($organization);
+
+    $preview = app(PurgeOrganization::class)->preview($organization);
+
+    expect(Organization::whereKey($organization->getKey())->exists())->toBeTrue();
+
+    $counts = app(PurgeOrganization::class)->handle($organization, $this->admin);
+
+    expect($counts)->not->toBeEmpty();
+
+    foreach ($counts as $table => $count) {
+        expect($preview[$table] ?? null)->toBe($count, $table);
+    }
 });
 
 it('sweeps the legacy mapping rows with the conference, and keeps the user mappings', function () {

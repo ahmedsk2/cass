@@ -10,7 +10,9 @@ use App\Models\User;
 use App\Notifications\CustomDomainVerified;
 use App\Support\Domains\FakeDnsResolver;
 use Filament\Actions\Testing\TestAction;
+use Filament\Notifications\Notification as FilamentNotification;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Livewire\livewire;
@@ -133,16 +135,43 @@ it('verifies, tells the organizer the platform team has been emailed, and logs i
 });
 
 it('keeps the organizer on the page and says what is wrong when the record is missing', function () {
+    // BEFORE the call, not after: NotificationFake::assertNotSentTo() filters
+    // by the notifiable's key, so a platform admin created on the assertion
+    // line could never have been sent anything and the assertion could never
+    // fail.
+    User::factory()->platformAdmin()->create();
+
     livewire(EditOrganizationProfile::class)->callAction(domainAction('claimCustomDomain'), ['domain' => 'abstracts.example.org']);
 
     // No record set on the fake at all: the same answer an organizer gets two
     // minutes after adding one, before it has propagated.
     livewire(EditOrganizationProfile::class)
         ->callAction(domainAction('verifyCustomDomain'))
-        ->assertNotified();
+        // The exact sentence, not a bare assertNotified() - which passes for
+        // the SUCCESS notification too and would leave the whole failure path
+        // pinned by the verified_at null check alone.
+        ->assertNotified(FilamentNotification::make()->danger()->title(
+            __('domain.errors.no_record', ['name' => '_cass-verify.abstracts.example.org'])
+        ));
 
     expect($this->organization->fresh()?->custom_domain_verified_at)->toBeNull();
-    Notification::assertNotSentTo(User::factory()->platformAdmin()->create(), CustomDomainVerified::class);
+    Notification::assertNothingSent();
+});
+
+it('tells a throttled organizer they clicked too fast, not that DNS is down', function () {
+    config()->set('cass.domains.verify_rate_limit', 1);
+    livewire(EditOrganizationProfile::class)->callAction(domainAction('claimCustomDomain'), ['domain' => 'abstracts.example.org']);
+
+    $page = livewire(EditOrganizationProfile::class);
+    $page->callAction(domainAction('verifyCustomDomain'));
+
+    // domain.errors.lookup_failed is "We could not reach the DNS servers for
+    // that domain just now", which sends an organizer off to edit a record
+    // that is already correct.
+    $page->callAction(domainAction('verifyCustomDomain'))
+        ->assertNotified(FilamentNotification::make()->warning()
+            ->title(__('domain.errors.throttled_title'))
+            ->body(__('domain.errors.throttled', ['seconds' => RateLimiter::availableIn('domain-verify:'.$this->owner->getAuthIdentifier())])));
 });
 
 it('stops an organizer who clicks verify in a loop', function () {

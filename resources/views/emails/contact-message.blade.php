@@ -17,7 +17,14 @@
 <x-mail::message>
 # {{ __('mail.contact.heading') }}
 
-**{{ __('mail.contact.from') }}** {{ $senderName }} &lt;{{ $senderEmail }}&gt;
+{{-- An HTML block, for the same reason the panel slot below is one: the name
+     is visitor-controlled and validated only as required|string|max:120, so a
+     Markdown echo here renders `**Platform Support**` as bold and a name
+     carrying a blank line ends the block entirely and hands the rest of the
+     line back to the parser as a heading. nl2br(e(...)) - e() first so
+     nothing but the line breaks survives, nl2br after so no line inside this
+     block is blank. --}}
+<p><strong>{{ __('mail.contact.from') }}</strong> {!! nl2br(e($senderName)) !!} &lt;{{ $senderEmail }}&gt;</p>
 
 <x-mail::panel>
 <p>{!! nl2br(e($body)) !!}</p>

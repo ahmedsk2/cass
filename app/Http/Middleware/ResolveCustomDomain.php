@@ -9,7 +9,6 @@ use App\Support\Domains\CustomDomains;
 use App\Support\Domains\DomainName;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -47,6 +46,14 @@ class ResolveCustomDomain
         'c', 'q', 's', 'invite', 'files', 'conference-assets',
         'about', 'privacy', 'terms', 'contact', 'register',
         'org', 'admin', 'review',
+        // Not in routes/web.php, but registered all the same and therefore
+        // answerable here: Filament's export/import download routes
+        // (filament/exports/{export}/download) and Laravel's local-disk serve
+        // route (storage/{path}). Neither is needed on a tenant host - the
+        // panels are already reserved and the public disk's URLs are built
+        // from APP_URL - and the derived case in CustomDomainRoutingTest is
+        // what stops the next registered segment from being missed too.
+        'filament', 'storage',
     ];
 
     public function handle(Request $request, Closure $next): Response
@@ -99,16 +106,22 @@ class ResolveCustomDomain
 
         $request->attributes->set(self::ATTRIBUTE, $organization);
 
-        // route(), URL::temporarySignedRoute() and Filament's getUrl() all
-        // build from UrlGenerator::formatRoot(), which is the CURRENT request
-        // root unless a root is forced. Without these two lines an abstract
-        // submitted here would be emailed a /s/{token} link on the organizer's
-        // own host - a 404 by the RESERVED list above, and a 64-character
-        // bearer token handed to whoever that host's DNS points at tomorrow.
-        // The asset origin stays on THIS host so @vite and the Livewire
-        // endpoint remain same-origin under script-src 'self'.
-        URL::forceRootUrl((string) config('app.url'));
-        URL::useAssetOrigin($request->getSchemeAndHttpHost());
+        // The URL root is deliberately NOT forced to APP_URL here.
+        //
+        // route() and url() both build from UrlGenerator::formatRoot(), and so
+        // does Livewire: FrontendAssets emits `data-update-uri` and
+        // window.livewireScriptConfig.uri as url(getUpdateUri())
+        // (FrontendAssets.php:221 and :242). Forcing the root therefore moved
+        // Livewire's own POST onto the platform host, where it is cross-origin
+        // - refused by this branch's connect-src 'self', unanswered by any CORS
+        // middleware, and carrying none of the SameSite=lax host-only session
+        // cookie. The submission form rendered and could never save.
+        //
+        // The links that genuinely belong to the platform - /s/{token},
+        // /files/{ulid}, /invite/{token} and the footer's own pages, every one
+        // of them a 404 by the RESERVED list above - are minted through
+        // App\Support\Domains\PlatformUrl instead, which prefixes APP_URL onto
+        // a path taken from the route table.
 
         return $next($request);
     }

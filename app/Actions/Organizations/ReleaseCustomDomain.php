@@ -25,7 +25,7 @@ class ReleaseCustomDomain
     {
         $previous = $organization->custom_domain;
 
-        return DB::transaction(function () use ($organization, $previous, $actor): Organization {
+        $organization = DB::transaction(function () use ($organization, $previous, $actor): Organization {
             $organization->forceFill([
                 'custom_domain' => null,
                 'custom_domain_token' => null,
@@ -38,9 +38,15 @@ class ReleaseCustomDomain
                 ->withProperties(['domain' => $previous])
                 ->log('organization.custom_domain_released');
 
-            CustomDomains::forget();
-
             return $organization->refresh();
         });
+
+        // After the COMMIT, not inside it: verifiedHosts() re-populates the
+        // cache key on any request that lands between a forget and the commit,
+        // which would put the released host back in the trusted list for the
+        // full CASS_DOMAIN_CACHE_SECONDS.
+        CustomDomains::forget();
+
+        return $organization;
     }
 }

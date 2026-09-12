@@ -8,6 +8,7 @@ use App\Models\Organization;
 use App\Models\User;
 use App\Support\ClientIp;
 use Filament\Facades\Filament;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -44,15 +45,38 @@ it('keys panel login on the email and the cloudflare client address', function (
 });
 
 it('honours the cloudflare header the rest of the application honours', function () {
-    Filament::setCurrentPanel('organizer');
+    // Against a request that is actually trusted, and through getRateLimitKey()
+    // - the method the package calls. Comparing rateLimitKeyFor() with two
+    // different literal IPs is injective by construction and would still pass
+    // if getRateLimitKey() read request()->ip(), which behind Cloudflare is one
+    // bucket for the whole internet: five wrong passwords anywhere would lock
+    // out every organizer for a minute.
+    //
+    // Trusted proxies are global static state on the Request class, set by the
+    // TrustProxies middleware during a real request, so this sets its own and
+    // puts back whatever was there - the idiom tests/Unit/ClientIpTest.php uses.
+    $proxies = Request::getTrustedProxies();
+    $headerSet = Request::getTrustedHeaderSet();
+    Request::setTrustedProxies(['10.0.0.0/8'], Request::HEADER_X_FORWARDED_FOR);
 
-    $page = livewire(Login::class);
+    try {
+        Filament::setCurrentPanel('organizer');
 
-    // App\Support\ClientIp::from() reads CF-Connecting-IP; the package's own
-    // key reads request()->ip(). Every other limiter in this application uses
-    // the first.
-    expect($page->instance()->rateLimitKeyFor('a@example.org', '203.0.113.7'))
-        ->not->toBe($page->instance()->rateLimitKeyFor('a@example.org', request()->ip() ?? '127.0.0.1'));
+        $request = Request::create('/org/login', server: ['REMOTE_ADDR' => '10.0.0.5']);
+        $request->headers->set('CF-Connecting-IP', '203.0.113.7');
+        app()->instance('request', $request);
+
+        $login = new Login;
+        $login->data = ['email' => 'a@example.org'];
+
+        expect(ClientIp::from($request))->toBe('203.0.113.7')
+            ->and((fn (): string => $this->getRateLimitKey('authenticate'))->call($login))
+            ->toBe($login->rateLimitKeyFor('a@example.org', '203.0.113.7'))
+            ->and((fn (): string => $this->getRateLimitKey('authenticate'))->call($login))
+            ->not->toBe($login->rateLimitKeyFor('a@example.org', '10.0.0.5'));
+    } finally {
+        Request::setTrustedProxies($proxies, $headerSet);
+    }
 });
 
 it('locks one email out after five wrong passwords and leaves another alone', function () {

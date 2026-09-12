@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Models\Organization;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 use function Pest\Laravel\artisan;
 
@@ -19,7 +21,9 @@ beforeEach(function () {
     Storage::fake('local');
 
     $this->dump = base_path('tests/Fixtures/legacy/dump.sql');
-    $this->uploads = sys_get_temp_dir().'/cass-legacy-uploads';
+    // A directory of this RUN's own, removed in afterEach - see the same
+    // comment in tests/Unit/ImportLegacyTest.php.
+    $this->uploads = sys_get_temp_dir().'/cass-legacy-'.Str::random(12);
 
     if (! is_dir($this->uploads)) {
         mkdir($this->uploads, 0777, true);
@@ -32,6 +36,10 @@ beforeEach(function () {
         'name' => 'Example Society',
         'slug' => 'example-society',
     ]);
+});
+
+afterEach(function () {
+    File::deleteDirectory((string) $this->uploads);
 });
 
 it('prints the manual-review list itself when a dry run writes no report file', function () {

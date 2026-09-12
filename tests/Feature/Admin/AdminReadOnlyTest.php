@@ -27,6 +27,7 @@ use App\Models\ReviewQuestion;
 use App\Models\Submission;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
@@ -185,4 +186,81 @@ it('refuses the review list to an organization owner', function () {
 
 it('registers exactly two review routes', function () {
     expect(array_keys(ReviewResource::getPages()))->toBe(['index', 'view']);
+});
+
+it('does not hydrate every answer of every review on the index', function () {
+    // getEloquentQuery() is the ListRecords table query as well as the view
+    // query, and ReviewsTable renders no answer at all - so eager-loading them
+    // there costs two extra queries and hydrates every review_answers row (and
+    // its review_questions row) for a whole page of reviews, which is exactly
+    // the cost the resource's docblock says it is avoiding.
+    $seen = [];
+    DB::listen(function ($query) use (&$seen): void {
+        $seen[] = $query->sql;
+    });
+
+    livewire(ListReviews::class)->assertCanSeeTableRecords([$this->review]);
+
+    expect(collect($seen)->filter(fn (string $sql): bool => str_contains($sql, 'review_answers'))->values()->all())
+        ->toBe([]);
+});
+
+it('still loads a single review answers in the form order', function () {
+    $seen = [];
+    DB::listen(function ($query) use (&$seen): void {
+        $seen[] = $query->sql;
+    });
+
+    get(ReviewResource::getUrl('view', ['record' => $this->review], panel: 'admin'))
+        ->assertOk()
+        ->assertSee('The sample size is small but the design is sound.');
+
+    // review_answers has no sort column of its own; review_questions.sort is
+    // the order the reviewer saw the form in, and an admin has to read the
+    // review the way it was filled in.
+    $answers = collect($seen)->filter(fn (string $sql): bool => str_contains($sql, 'review_answers'))->values();
+
+    expect($answers)->not->toBeEmpty()
+        ->and($answers->first())->toContain('order by')
+        ->and($answers->first())->toContain('review_questions');
+});
+
+it('scopes the reviews index to one conference and to one society', function () {
+    // Both closures reach through a relation - whereHas('submission') and
+    // whereHas('submission.conference') - because a review carries neither a
+    // conference_id nor an organization_id. A wrong relation path silently
+    // shows another society's reviews under a filter that claims to scope to
+    // one, and neither closure ran in any test.
+    [$theirs, $theirConference] = withoutTenant(function (): array {
+        $conference = Conference::factory()->create();
+        $form = ReviewForm::factory()->for($conference)->create(['is_active' => true]);
+        $submission = Submission::factory()->for($conference)->submitted()->create();
+
+        return [Review::factory()->create([
+            'submission_id' => $submission->getKey(),
+            'reviewer_user_id' => User::factory()->create()->getKey(),
+            'review_form_id' => $form->getKey(),
+            'status' => ReviewStatus::Submitted,
+            'submitted_at' => now(),
+        ]), $conference];
+    });
+
+    expect($theirConference->organization_id)->not->toBe($this->organization->getKey());
+
+    livewire(ListReviews::class)
+        ->filterTable('organization', $this->organization->getKey())
+        ->assertCanSeeTableRecords([$this->review])
+        ->assertCanNotSeeTableRecords([$theirs]);
+
+    livewire(ListReviews::class)
+        ->filterTable('conference', $this->conference->getKey())
+        ->assertCanSeeTableRecords([$this->review])
+        ->assertCanNotSeeTableRecords([$theirs]);
+
+    // And the mirror image, so a closure that ignored its argument entirely
+    // would fail rather than pass both ways.
+    livewire(ListReviews::class)
+        ->filterTable('organization', $theirConference->organization_id)
+        ->assertCanSeeTableRecords([$theirs])
+        ->assertCanNotSeeTableRecords([$this->review]);
 });

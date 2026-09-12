@@ -254,7 +254,11 @@ class EditOrganizationProfile extends EditTenantProfile
 
                 if (RateLimiter::tooManyAttempts($key, $limit)) {
                     Notification::make()->warning()
-                        ->title(__('domain.errors.lookup_failed'))
+                        // Not domain.errors.lookup_failed: "we could not reach
+                        // the DNS servers" tells an organizer who simply
+                        // clicked too fast to go and edit a record that is
+                        // already correct.
+                        ->title(__('domain.errors.throttled_title'))
                         ->body(__('domain.errors.throttled', ['seconds' => RateLimiter::availableIn($key)]))
                         ->send();
 

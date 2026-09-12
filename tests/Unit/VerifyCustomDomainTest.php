@@ -6,11 +6,13 @@ use App\Actions\Organizations\ClaimCustomDomain;
 use App\Actions\Organizations\ReleaseCustomDomain;
 use App\Actions\Organizations\VerifyCustomDomain;
 use App\Contracts\DnsResolver;
+use App\Enums\OrganizationStatus;
 use App\Exceptions\CustomDomainRefused;
 use App\Models\Organization;
 use App\Models\User;
 use App\Notifications\CustomDomainVerified;
 use App\Support\Domains\FakeDnsResolver;
+use App\Support\Domains\SystemDnsResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Activitylog\Models\Activity;
@@ -178,4 +180,64 @@ it('releases a domain and clears all three columns', function () {
         ->toBe('abstracts.example.org');
 
     expect(Activity::query()->where('description', 'organization.custom_domain_released')->exists())->toBeTrue();
+});
+
+it('does not re-mail every platform admin when a verified domain is verified again', function () {
+    $admin = User::factory()->platformAdmin()->create();
+
+    $organization = app(ClaimCustomDomain::class)->handle($this->organization, 'abstracts.example.org', $this->actor);
+    $this->dns->set('_cass-verify.abstracts.example.org', [(string) $organization->custom_domain_token]);
+
+    $first = app(VerifyCustomDomain::class)->handle($organization, $this->actor);
+    $verifiedAt = $first->custom_domain_verified_at;
+
+    $second = app(VerifyCustomDomain::class)->handle($organization->fresh(), $this->actor);
+
+    // Re-verification IS the Verify button - nothing re-checks on a schedule -
+    // so the second click still succeeds. It just must not tell every platform
+    // admin a second time to add a host they have already added to Coolify,
+    // and must not grow the audit log by one row per click: the only bound on
+    // either is the 10-per-minute per-actor limiter, which is 14,400 clicks a
+    // day.
+    expect($second->hasVerifiedCustomDomain())->toBeTrue()
+        ->and($second->custom_domain_verified_at?->toIso8601String())->toBe($verifiedAt?->toIso8601String());
+
+    Notification::assertSentToTimes($admin, CustomDomainVerified::class, 1);
+
+    expect(Activity::query()->where('description', 'organization.custom_domain_verified')->count())->toBe(1);
+});
+
+it('refuses a tenant the platform has not approved', function () {
+    // The factory default is OrganizationStatus::Pending. Both actions carry
+    // the same guard and nothing else in the suite reaches it, so deleting
+    // either one let an unapproved or suspended tenant put a host into the
+    // TrustHosts list and mail every platform admin on each Verify click.
+    $pending = withoutTenant(fn (): Organization => Organization::factory()->create());
+
+    expect($pending->isApproved())->toBeFalse()
+        ->and(fn () => app(ClaimCustomDomain::class)->handle($pending, 'pending.example.org', $this->actor))
+        ->toThrow(CustomDomainRefused::class, __('domain.errors.not_approved'));
+
+    $claimed = app(ClaimCustomDomain::class)->handle($this->organization, 'abstracts.example.org', $this->actor);
+    $this->dns->set('_cass-verify.abstracts.example.org', [(string) $claimed->custom_domain_token]);
+
+    $claimed->forceFill(['status' => OrganizationStatus::Suspended])->save();
+
+    expect(fn () => app(VerifyCustomDomain::class)->handle($claimed->fresh(), $this->actor))
+        ->toThrow(CustomDomainRefused::class, __('domain.errors.not_approved'));
+
+    expect($claimed->fresh()?->custom_domain_verified_at)->toBeNull();
+    Notification::assertNothingSent();
+});
+
+it('binds the real resolver outside a test', function () {
+    // Both domain test files install their own fake with app()->instance(),
+    // so removing the bind() in AppServiceProvider::register() could not fail
+    // a single case while the first real Verify click threw
+    // BindingResolutionException in an organizer's face. forgetInstance()
+    // drops the beforeEach instance and falls back to the container binding;
+    // SystemDnsResolver's constructor performs no lookup.
+    app()->forgetInstance(DnsResolver::class);
+
+    expect(app(DnsResolver::class))->toBeInstanceOf(SystemDnsResolver::class);
 });

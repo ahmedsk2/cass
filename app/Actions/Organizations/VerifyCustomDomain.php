@@ -66,7 +66,18 @@ class VerifyCustomDomain
             throw CustomDomainRefused::because(__('domain.errors.token_mismatch', ['name' => $name]));
         }
 
-        return DB::transaction(function () use ($organization, $domain, $actor): Organization {
+        // Re-verification IS the Verify button - nothing in this application
+        // re-checks a record on a schedule - so a second click on a domain that
+        // is already verified is a legitimate action and still answers success.
+        // It just writes nothing and mails nobody: the admin has already added
+        // this host to Coolify, and the only bound on the button is the
+        // 10-per-minute per-actor limiter, which is 14,400 letters a day to
+        // every is_platform_admin user and 14,400 rows in the audit log.
+        if ($organization->custom_domain_verified_at !== null) {
+            return $organization;
+        }
+
+        $organization = DB::transaction(function () use ($organization, $domain, $actor): Organization {
             $organization->forceFill(['custom_domain_verified_at' => now()])->save();
 
             activity()
@@ -75,12 +86,6 @@ class VerifyCustomDomain
                 ->withProperties(['domain' => $domain])
                 ->log('organization.custom_domain_verified');
 
-            // The trusted-host list and the routing middleware both read a
-            // cached list (Task 3). Forgetting it here is what makes the
-            // domain work in the same second it is verified rather than up to
-            // CASS_DOMAIN_CACHE_SECONDS later.
-            CustomDomains::forget();
-
             Notification::send(
                 User::query()->where('is_platform_admin', true)->get(),
                 new CustomDomainVerified($organization, $domain),
@@ -88,6 +93,17 @@ class VerifyCustomDomain
 
             return $organization->refresh();
         });
+
+        // The trusted-host list and the routing middleware both read a cached
+        // list (Task 3). Forgetting it is what makes the domain work in the
+        // same second it is verified rather than up to
+        // CASS_DOMAIN_CACHE_SECONDS later - but AFTER the commit, not inside
+        // it: verifiedHosts() re-populates the key on any request that lands
+        // between the forget and the COMMIT, which would cache the pre-commit
+        // answer and leave the just-verified domain 404ing for the full TTL.
+        CustomDomains::forget();
+
+        return $organization;
     }
 
     /**

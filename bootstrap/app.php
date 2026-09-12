@@ -7,6 +7,7 @@ use App\Console\Commands\ImportLegacyCommand;
 use App\Console\Commands\RescoreConferenceCommand;
 use App\Console\Commands\SendReviewerRemindersCommand;
 use App\Http\Middleware\ContentSecurityPolicy;
+use App\Http\Middleware\RequireCustomDomain;
 use App\Http\Middleware\ResolveCustomDomain;
 use App\Http\Middleware\SecurityHeaders;
 use App\Support\Domains\CustomDomains;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\StartSession;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -48,6 +50,26 @@ return Application::configure(basePath: dirname(__DIR__))
         // request for /about on a custom domain never reaches the route that
         // serves the platform's about page (fact 15).
         $middleware->append(ResolveCustomDomain::class);
+
+        // GET /{conference} is registered inside the `web` group, so on the
+        // PLATFORM host every slug-shaped 404 - /wp-admin, /backup, /login,
+        // whatever a scanner is asking for this minute - matched that route and
+        // ran EncryptCookies, StartSession and ValidateCsrfToken before
+        // RequireCustomDomain aborted. With SESSION_DRIVER=database that is one
+        // INSERT and one Set-Cookie per scan, which no unmatched path produced
+        // before this branch.
+        //
+        // prependToPriorityList, not priority(): it inserts one entry into
+        // Laravel's own default list rather than replacing the list, so
+        // Filament's and Livewire's ordering stay exactly as the framework
+        // defines them. Safe because RequireCustomDomain reads only request
+        // attributes and route parameters - no session, no auth, no bindings -
+        // and rendering a 404 without a session is already what every reserved
+        // path on a custom domain does.
+        $middleware->prependToPriorityList(
+            StartSession::class,
+            RequireCustomDomain::class,
+        );
 
         // env() is used here (not config()) because the application config
         // files are not loaded yet when bootstrap/app.php runs - this is

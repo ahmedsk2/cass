@@ -70,13 +70,11 @@ class ReviewResource extends Resource
      * its conference, its organization and the reviewer. Eager-loaded here so a
      * page of fifty reviews is one query and not two hundred.
      *
-     * The answers are loaded in the FORM's order, not their own, so an admin
-     * reads the review the way the reviewer filled it in: `review_answers` has
-     * no sort column of its own and `review_questions.sort` is the order the
-     * reviewer saw. The nested `question` is loaded inside that same closure
-     * rather than as a second `answers.question` entry, because
-     * Builder::parseWithRelations() re-registers a parent segment as a no-op
-     * closure and a later with() call would then drop this ordering silently.
+     * The ANSWERS are deliberately not here. This query is also the ListRecords
+     * table query, and ReviewsTable renders no answer at all - so loading them
+     * here costs two extra queries per page and hydrates every review_answers
+     * row and its review_questions row for fifty reviews nobody is reading.
+     * ViewReview loads them for the one record it shows.
      *
      * @return Builder<Review>
      */
@@ -85,7 +83,6 @@ class ReviewResource extends Resource
         return parent::getEloquentQuery()->with([
             'submission.conference.organization',
             'reviewer',
-            'answers' => self::eagerLoadAnswersInFormOrder(...),
         ]);
     }
 
@@ -125,9 +122,20 @@ class ReviewResource extends Resource
     }
 
     /**
+     * The answers in the FORM's order, not their own, so an admin reads the
+     * review the way the reviewer filled it in: `review_answers` has no sort
+     * column of its own and `review_questions.sort` is the order the reviewer
+     * saw. The nested `question` is loaded inside this same closure rather than
+     * as a second `answers.question` entry, because
+     * Builder::parseWithRelations() re-registers a parent segment as a no-op
+     * closure and a later with() call would then drop this ordering silently.
+     *
+     * Public because ViewReview is the one caller - the index must not load
+     * these at all.
+     *
      * @param  HasMany<ReviewAnswer, Review>  $query
      */
-    private static function eagerLoadAnswersInFormOrder(HasMany $query): void
+    public static function eagerLoadAnswersInFormOrder(HasMany $query): void
     {
         $query->with('question')->orderBy(
             ReviewQuestion::query()

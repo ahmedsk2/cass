@@ -59,9 +59,26 @@ it('gives every illustration an intrinsic size and serves the hero as webp', fun
 it('points the organizer login at the panel route rather than a hardcoded path', function () {
     $response = get('/')->assertOk();
 
-    // Three views hardcoded url('/org/login'). The panel owns that path, and
-    // a panel whose ->path() changes would leave three dead links nothing
-    // tests.
-    expect((string) $response->getContent())->toContain(route('filament.organizer.auth.login'))
-        ->and((string) $response->getContent())->not->toContain('"/org/login"');
+    // The rendered page cannot tell the two apart: route() is absolute by
+    // default and the panel's path is '/org', so route('filament.organizer.
+    // auth.login') and url('/org/login') produce the identical string - both
+    // assertions below would pass on the old code, and the literal "/org/login"
+    // never appears in either. The page assertion is kept because it proves the
+    // route NAME resolves; the source assertions are what can actually fail on
+    // a revert.
+    expect((string) $response->getContent())->toContain(route('filament.organizer.auth.login'));
+
+    foreach ([
+        'resources/views/components/layouts/public.blade.php',
+        'resources/views/public/landing.blade.php',
+        'resources/views/livewire/public/register-organization.blade.php',
+    ] as $view) {
+        // No second argument: Pest's toContain() is variadic over NEEDLES, not
+        // (needle, message), so a "message" there is a second string the source
+        // is asserted to contain.
+        $source = (string) file_get_contents(base_path($view));
+
+        expect($source)->toContain("route('filament.organizer.auth.login')")
+            ->and($source)->not->toContain("url('/org/login')");
+    }
 });

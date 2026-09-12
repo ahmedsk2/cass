@@ -33,7 +33,15 @@ it('shows what a purge would destroy, and refuses the wrong word', function () {
         // The count is in the modal before anything is typed: a yes/no
         // confirmation for an irreversible cascade over fourteen tables is not
         // a confirmation.
-        ->assertMountedActionModalSee('3')
+        //
+        // The heading and the marked-up number, not a bare '3':
+        // assertMountedActionModalSee() is a plain assertStringContainsString
+        // over the whole modal HTML (TestsActions.php:512-528), which also
+        // carries the record's 26-character ULID, the Livewire keys and every
+        // schema state path - so '3' alone passes with a preview of all zeros.
+        ->assertMountedActionModalSee(__('admin.purge.counts_heading'))
+        ->assertMountedActionModalSeeHtml('<strong>3</strong> submissions')
+        ->assertMountedActionModalSeeHtml('<strong>1</strong> conferences')
         ->setTableActionData(['confirmation' => 'not-the-slug'])
         ->callMountedTableAction()
         ->assertHasTableActionErrors(['confirmation']);

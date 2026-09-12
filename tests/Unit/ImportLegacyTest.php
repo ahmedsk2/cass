@@ -23,8 +23,10 @@ use App\Models\SubmissionAuthor;
 use App\Models\SubmissionFile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -32,7 +34,12 @@ beforeEach(function () {
     Storage::fake('local');
 
     $this->dump = base_path('tests/Fixtures/legacy/dump.sql');
-    $this->uploads = sys_get_temp_dir().'/cass-legacy-uploads';
+    // A directory of this RUN's own, removed in afterEach. The two legacy
+    // test files used to share one fixed path and neither cleaned it up, so
+    // the deliberate orphan this file copies in below survived into the other
+    // file's run and into the next developer's - and the orphan/missing-file
+    // assertions here depend on the directory's exact contents.
+    $this->uploads = sys_get_temp_dir().'/cass-legacy-'.Str::random(12);
 
     // The fixture's own INVENTED invitation tokens, copied verbatim from the
     // two `reviewer_invitations` rows in tests/Fixtures/legacy/dump.sql (legacy
@@ -63,6 +70,10 @@ beforeEach(function () {
         'name' => 'Example Society',
         'slug' => 'example-society',
     ]);
+});
+
+afterEach(function () {
+    File::deleteDirectory((string) $this->uploads);
 });
 
 it('refuses when the organization slug names nothing', function () {
@@ -207,6 +218,18 @@ it('imports invitations as expired, never as usable', function () {
         ->and($invitation?->token_hash)->not->toBe($this->fixtureInvitationTokens[1])
         ->and($invitation?->expires_at?->isPast())->toBeTrue()
         ->and($invitation?->accepted_at)->toBeNull();
+
+    // The plaintext alone is not the failure mode the comment above names.
+    // InvitationToken::hash() is hash('sha256', ...), so an import that simply
+    // re-hashed the legacy MD5 would satisfy `not->toBe($plaintext)` while
+    // handing back a working link for a dead invitation. Pin the hash against
+    // EVERY fixture token under both hashes, not just this row's plaintext.
+    foreach ($this->fixtureInvitationTokens as $token) {
+        expect($invitation?->token_hash)
+            ->not->toBe(hash('sha256', $token))
+            ->not->toBe(md5($token))
+            ->not->toBe($token);
+    }
 
     // 'Pending' with a capital P against a lowercase enum
     // (legacy-review.md:269) must not become a fourth state.

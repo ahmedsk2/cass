@@ -62,15 +62,20 @@
         <div class="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-6 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
             {{-- One sentence with a link in the middle, so it is one key with
                  two placeholders rather than three fragments a translation
-                 cannot reorder. Both values are escaped here. --}}
+                 cannot reorder. Both values are escaped here.
+
+                 PlatformUrl, not route(): this layout also renders on a
+                 verified custom domain, where /about, /privacy, /terms and
+                 /contact are reserved 404s. The path still comes from the
+                 route table, so moving a route moves these links with it. --}}
             <p>{!! __('public.footer.powered_by', [
                 'organization' => e($organization->name),
-                'platform' => '<a href="'.e(route('landing')).'" class="hover:underline">'.e(config('cass.platform_name')).'</a>',
+                'platform' => '<a href="'.e(\App\Support\Domains\PlatformUrl::route('landing')).'" class="hover:underline">'.e(config('cass.platform_name')).'</a>',
             ]) !!}</p>
             <p class="flex gap-4">
-                <a href="{{ route('contact') }}" class="hover:underline">{{ __('public.nav.contact') }}</a>
-                <a href="{{ route('privacy') }}" class="hover:underline">{{ __('public.footer.privacy') }}</a>
-                <a href="{{ route('terms') }}" class="hover:underline">{{ __('public.footer.terms') }}</a>
+                <a href="{{ \App\Support\Domains\PlatformUrl::route('contact') }}" class="hover:underline">{{ __('public.nav.contact') }}</a>
+                <a href="{{ \App\Support\Domains\PlatformUrl::route('privacy') }}" class="hover:underline">{{ __('public.footer.privacy') }}</a>
+                <a href="{{ \App\Support\Domains\PlatformUrl::route('terms') }}" class="hover:underline">{{ __('public.footer.terms') }}</a>
             </p>
         </div>
     </footer>

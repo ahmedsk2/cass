@@ -18,7 +18,9 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
+use Illuminate\Contracts\View\View;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -67,6 +69,14 @@ class OrganizerPanelProvider extends PanelProvider
             ->userMenuItems([
                 PanelSwitch::toReviewer(),
             ])
+            // Filament 5.8.1 builds TipTap with injectNonce undefined, so the
+            // stylesheet the RichEditor appends at runtime is refused by
+            // style-src 'self' 'nonce-...' (a nonce disables 'unsafe-inline').
+            // Shipping the same rules from the server, with the nonce, is what
+            // keeps the conference-description editor's white-space, gap cursor
+            // and separator image working without loosening the policy. This is
+            // the only panel with a RichEditor.
+            ->renderHook(PanelsRenderHook::HEAD_END, fn (): View => view('filament.partials.prosemirror-base-styles'))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

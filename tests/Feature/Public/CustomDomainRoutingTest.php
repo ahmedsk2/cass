@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Enums\ConferenceStatus;
 use App\Http\Middleware\RequireCustomDomain;
+use App\Http\Middleware\ResolveCustomDomain;
 use App\Models\Conference;
 use App\Models\Organization;
+use App\Models\Submission;
 use App\Support\Domains\CustomDomains;
+use App\Support\Domains\PlatformUrl;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 use Livewire\Mechanisms\HandleRequests\EndpointResolver;
@@ -105,6 +108,12 @@ it('404s every platform page on a custom domain', function (string $path) {
     '/invite/'.str_repeat('a', 64),
     '/files/01ARZ3NDEKTSV4RRFFQ69G5FAV',
     '/org', '/admin', '/review',
+    // Registered first segments nobody typed into this list when it was
+    // written: Filament's export/import download routes and the local-disk
+    // serve route. Both match the slug allow-list, so without them in RESERVED
+    // they answer on every verified custom domain.
+    '/filament/exports/1/download',
+    '/storage/branding/logo.png',
     // Percent-encoded first characters. Laravel's UriValidator matches
     // rawurldecode($path), so these route exactly like the plain forms above -
     // a middleware that reads Request::path() instead of decodedPath() lets
@@ -188,28 +197,34 @@ it('substitutes the two models in the order the controller declares them', funct
 });
 
 it('mints status, file and invitation urls on the platform host even when the page is served on a custom domain', function () {
-    $seen = null;
+    $seen = [];
 
     Route::middleware([RequireCustomDomain::class])->get('/{conference}/probe-urls', function () use (&$seen) {
-        $seen = route('submission.status', ['token' => str_repeat('a', 64)]);
+        // The three shapes the application actually mints on a custom-domain
+        // page. All of them go through PlatformUrl, because the URL root is
+        // deliberately not forced any more (that broke Livewire's own POST).
+        $seen['status'] = Submission::factory()->make()->statusUrl(str_repeat('a', 64));
+        $seen['invite'] = PlatformUrl::route('invitation.accept', ['token' => str_repeat('a', 64)]);
+        $seen['contact'] = PlatformUrl::route('contact');
 
         return response('ok');
     })->where('conference', '[a-z0-9-]+');
 
     onDomain('/annual-meeting/probe-urls')->assertOk();
 
-    // Without URL::forceRootUrl() this is https://abstracts.example.org/s/...:
-    // a path the RESERVED list 404s, carrying a 64-character bearer token, on a
+    // A request-relative URL here is https://abstracts.example.org/s/...: a
+    // path the RESERVED list 404s, carrying a 64-character bearer token, on a
     // host whose DNS the organizer can repoint tomorrow.
-    expect($seen)->toStartWith('https://cass.towardpcc.com/s/');
+    expect($seen['status'])->toStartWith('https://cass.towardpcc.com/s/')
+        ->and($seen['invite'])->toStartWith('https://cass.towardpcc.com/invite/')
+        ->and($seen['contact'])->toBe('https://cass.towardpcc.com/contact');
 });
 
 it('links privacy, terms and contact at the platform host from a custom domain', function () {
     $platform = rtrim((string) config('app.url'), '/');
 
-    // The footer's three links are route('contact'|'privacy'|'terms'), and the
-    // forceRootUrl() pin is the only reason they are not dead links to the
-    // reserved 404s on this host.
+    // The footer's three links are reserved 404s on this host, so they are
+    // minted through PlatformUrl rather than through the request root.
     onDomain('/annual-meeting')
         ->assertSee($platform.'/privacy', escape: false)
         ->assertSee($platform.'/terms', escape: false)
@@ -259,4 +274,59 @@ it('still sends a policy on the 404 a reserved path produces', function () {
     $response = onDomain('/register')->assertNotFound();
 
     expect((string) $response->headers->get('Content-Security-Policy'))->toContain("default-src 'self'");
+});
+
+it('posts livewire updates back to the custom domain rather than to the platform host', function () {
+    // FrontendAssets builds both endpoints with url() (FrontendAssets.php:221
+    // and :242), so anything that forces the URL root moves Livewire's POST to
+    // the platform host - where it is cross-origin under this branch's own
+    // connect-src 'self', carries no SameSite=lax host-only session cookie and
+    // has no CORS middleware to answer the preflight. The submit page would
+    // render and never save.
+    $content = (string) onDomain('/annual-meeting/submit')->assertOk()->getContent();
+
+    expect($content)->toContain('data-update-uri="https://abstracts.example.org/livewire-')
+        ->and($content)->not->toContain('data-update-uri="https://cass.towardpcc.com')
+        ->and($content)->not->toContain('"uri":"https:\/\/cass.towardpcc.com\/livewire-');
+});
+
+it('reserves every registered platform first segment, including ones nobody typed into the list', function () {
+    // Derived from the route table rather than hand-written, because the
+    // dataset above cannot notice a segment a later package registers. Read
+    // the constant by reflection so the production class keeps it private.
+    /** @var list<string> $reserved */
+    $reserved = (new ReflectionClassConstant(ResolveCustomDomain::class, 'RESERVED'))->getValue();
+
+    $segments = collect(app('router')->getRoutes()->getRoutes())
+        ->map(fn ($route): string => strtolower(explode('/', trim((string) $route->uri(), '/'))[0]))
+        ->unique()
+        ->reject(fn (string $segment): bool => $segment === ''
+            // Deliberately allowed on a custom domain, and argued in the
+            // middleware's own docblock: the health check must answer
+            // everywhere and Livewire's prefix is derived from APP_KEY.
+            || $segment === 'up'
+            || str_starts_with($segment, 'livewire-')
+            // The catch-all conference route itself.
+            || str_starts_with($segment, '{'))
+        ->values();
+
+    expect($segments)->not->toBeEmpty()
+        ->and($segments->diff($reserved)->values()->all())->toBe([]);
+});
+
+it('starts no session for a slug-shaped 404 on the platform host', function () {
+    // GET /{conference} is registered inside the `web` group, so before this
+    // ordering a scanner asking for /wp-admin, /backup or /wordpress ran
+    // EncryptCookies, StartSession and ValidateCsrfToken before
+    // RequireCustomDomain aborted - one row in the database-backed sessions
+    // table, and one cookie, per unmatched scan. RequireCustomDomain reads only
+    // request attributes and route parameters, so it is safe ahead of the
+    // session.
+    $response = get('https://cass.towardpcc.com/backup')->assertNotFound();
+
+    $cookies = collect($response->headers->getCookies())
+        ->map(fn ($cookie): string => $cookie->getName())
+        ->all();
+
+    expect($cookies)->not->toContain((string) config('session.cookie'));
 });

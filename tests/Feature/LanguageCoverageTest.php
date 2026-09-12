@@ -520,3 +520,58 @@ it('gives both public layouts a direction that a translation can flip', function
     'resources/views/components/layouts/public.blade.php',
     'resources/views/components/layouts/conference.blade.php',
 ]);
+
+it('resolves every translation key the php classes use, not only the ones in the view lists', function () {
+    // Every $planNSources array in this file is a hand-written list of BLADE
+    // views, so no case here checks a single __() call in app/ - and Plan 6
+    // put 158 new admin./domain./legacy. keys into twenty-three classes
+    // (ConferencesTable, SubmissionsTable, ReviewInfolist,
+    // EditOrganizationProfile, ImportLegacy, CustomDomainVerified and the
+    // rest). Laravel returns the key itself on a miss, which renders as a
+    // literal `admin.reviews.title` in a column label, a modal heading or an
+    // email subject while every other test in the suite still passes.
+    //
+    // Derived from the directory rather than a list, so a class added by a
+    // later task is inside the sweep on the day it is written.
+    $namespaces = collect(glob(lang_path('en/*.php')) ?: [])
+        ->map(fn (string $path): string => basename($path, '.php'))
+        ->values();
+
+    expect($namespaces)->not->toBeEmpty();
+
+    $pattern = '/(?:__|@lang|trans)\(\s*[\'"]((?:'.$namespaces->implode('|').')\.[a-z0-9_.]+)[\'"]/';
+
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path(), FilesystemIterator::SKIP_DOTS));
+    $missing = [];
+    $checked = 0;
+
+    foreach ($files as $file) {
+        if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        preg_match_all($pattern, (string) file_get_contents($file->getPathname()), $matches);
+
+        foreach (array_unique($matches[1]) as $key) {
+            // A trailing dot is a key built by concatenation -
+            // __('members.invite.blocked.'.$status->value) and
+            // __('mail.templates.'.$key) are the two in this codebase - so the
+            // literal prefix resolves to nothing by design. Both families are
+            // already pinned case by case elsewhere in this file.
+            if (str_ends_with($key, '.')) {
+                continue;
+            }
+
+            $checked++;
+
+            if (! Lang::has($key)) {
+                $missing[] = $key.' (used in '.str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname()).')';
+            }
+        }
+    }
+
+    // If this drops to nothing the regex or the directory walk has broken, and
+    // the case would pass while checking no key at all.
+    expect($checked)->toBeGreaterThan(200)
+        ->and($missing)->toBe([]);
+});

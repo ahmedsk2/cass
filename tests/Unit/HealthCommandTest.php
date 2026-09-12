@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -54,15 +56,68 @@ it('fails when a migration is pending', function () {
 });
 
 it('fails when the private disk cannot be written', function () {
-    // Not a fake: the real disk, pointed at a directory that does not exist.
+    // Not a fake: the real disk, pointed somewhere no directory can be made.
     // A full or unmounted cass-storage volume is how an abstract upload starts
-    // failing at four in the morning before a deadline.
-    config()->set('filesystems.disks.local.root', '/no/such/place');
+    // failing at four in the morning before a deadline, and Storage::fake() in
+    // beforeEach installs a manager instance that masks the real config
+    // entirely - so the fake is undone here.
+    //
+    // A plain '/no/such/place' is not enough: a standard user can create it on
+    // Windows and on a writable root. An existing FILE as the disk root cannot
+    // be turned into a directory on any OS.
+    config()->set('filesystems.disks.local.root', base_path('composer.json'));
+    Storage::forgetDisk('local');
 
     artisan('cass:health')
         ->expectsOutputToContain('private disk')
         ->assertExitCode(1);
-})->skip('Enable once the check is written; Storage::fake in beforeEach has to be undone for this case.');
+});
+
+it('fails in production when the mailer delivers nowhere', function () {
+    // checkMail() short-circuits outside production and the suite runs as
+    // `testing`, so every one of its failing branches was unreachable - for the
+    // command whose stated purpose includes "a misconfigured mailer queues
+    // perfectly and delivers nothing".
+    app()->detectEnvironment(fn (): string => 'production');
+
+    config()->set('mail.default', 'array');
+
+    artisan('cass:health')
+        ->expectsOutputToContain('mail')
+        ->assertExitCode(1);
+
+    config()->set('mail.default', 'smtp');
+    config()->set('mail.mailers.smtp.host', '');
+
+    artisan('cass:health')
+        ->expectsOutputToContain('mail')
+        ->assertExitCode(1);
+
+    config()->set('mail.mailers.smtp.host', 'mailpit');
+
+    artisan('cass:health')->assertExitCode(0);
+});
+
+it('schedules the heartbeat cass:health reads', function () {
+    // beforeEach puts the key into the cache by hand, so deleting the
+    // Schedule::call() block in routes/console.php left this file green while
+    // production wrote no heartbeat at all and cass:health reported a dead
+    // scheduler for ever.
+    Cache::forget('cass:scheduler-heartbeat');
+
+    // ->name() sets the event description, which is how a closure event can be
+    // found at all.
+    $event = collect(app(Schedule::class)->events())
+        ->first(fn (Event $event): bool => $event->description === 'cass-scheduler-heartbeat');
+
+    expect($event)->not->toBeNull();
+
+    $event?->run(app());
+
+    expect(Cache::get('cass:scheduler-heartbeat'))->toBeString();
+
+    artisan('cass:health')->assertExitCode(0);
+});
 
 it('warns rather than fails on a queue with a backlog', function () {
     // A backlog is a worker that is slow or a burst that is large; a backlog

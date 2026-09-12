@@ -311,13 +311,16 @@ never recovered.
   that mailbox is the same proof `VerifyEmail` asks for. This is the only place
   in CASS that grants verification that way, and it is why accepting while
   signed in as a *different* account is refused outright.
-- **The plaintext token is in the queued job payload** for as long as the
-  notification or mailable is queued, exactly as author status links already
-  are. The `jobs` table is on the internal-only MySQL network and failed jobs
-  are pruned after 30 days (`queue:prune-failed --hours=720`); if a failed job
-  carrying an invitation is ever exported for debugging, treat the export as
-  containing a live credential until the invitation expires (14 days by default,
-  `CASS_INVITATION_EXPIRY_DAYS`).
+- **The queued job payload carrying a token is encrypted.** `TemplatedMail`,
+  `ContactMessage` and `MemberInvitation` all implement `ShouldBeEncrypted`, so
+  the `command` blob in `jobs.payload` — and in `failed_jobs.payload`, which
+  `queue:prune-failed --hours=720` keeps for 30 days, longer than the 14-day
+  invitation expiry — is ciphertext under `APP_KEY` rather than a readable
+  serialization. `tests/Feature/Security/QueuedMailPayloadTest.php` is what
+  keeps it that way. The row's *metadata* (`displayName`, `commandName`) is
+  never encrypted by Laravel and never carries a token. A database dump is
+  therefore not a source of live invitation links, but `APP_KEY` plus a dump
+  still is: treat the two together as a credential.
 
 **Two bearer-token URL shapes are redacted from stored subjects.** There are now
 two credential-carrying URLs in this application — `/s/{64}` (an author's status
@@ -943,13 +946,17 @@ current one. `/s/{token}`, `/files/{ulid}` and `/q/{code}` stay on
 `cass.towardpcc.com` — a status token is a bearer credential, a file URL is a
 signature bound to its host, and a short code is printed on posters that
 outlive a domain registration. **So an author who submits on a custom domain
-ends up on the platform host**, because that is where their status page lives:
-`ResolveCustomDomain` pins `URL::forceRootUrl()` to `APP_URL` for the whole
-request, so every `route()` on a custom-domain page — the footer's Privacy and
-Terms links included — is minted on the platform host rather than on the
-organizer's. The asset origin is deliberately left on the custom host
-(`URL::useAssetOrigin()`), so `@vite` and the Livewire endpoint stay
-same-origin under `script-src 'self'`.
+ends up on the platform host**, because that is where their status page lives.
+The URL root is **not** forced to `APP_URL` for the request — that moved
+Livewire's own endpoint onto the platform host, where its POST is cross-origin
+under `connect-src 'self'` and carries no `SameSite=lax` host-only session
+cookie, so the submission form rendered and could never save. Instead the
+handful of links that genuinely belong to the platform go through
+`App\Support\Domains\PlatformUrl`, which prefixes `APP_URL` onto a path taken
+from the route table: the author's `/s/{token}` status link
+(`Submission::statusUrl()`), the post-submit redirect, and the conference
+footer's Contact, Privacy and Terms links. Everything else — `@vite`, the
+Livewire endpoint, the conference and submit URLs — stays on the custom host.
 
 **One local consequence.** `ResolveCustomDomain` 404s any host that is neither
 `APP_URL`'s host nor a verified domain, and `php artisan serve` answers on

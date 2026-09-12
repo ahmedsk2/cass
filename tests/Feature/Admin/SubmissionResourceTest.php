@@ -18,6 +18,7 @@ use App\Models\SubmissionDecision;
 use App\Models\SubmissionFile;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\DB;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
@@ -62,6 +63,26 @@ it('filters by organization, by conference status and by decision', function () 
         ->filterTable('decision', Decision::AcceptedOral->value)
         ->assertCanSeeTableRecords([$decided])
         ->assertCanNotSeeTableRecords([$this->submission]);
+
+    // The other society's abstract, under a conference of its own. Both
+    // filters below are hand-written query closures reaching through
+    // `conference` - submissions carry no organization_id - and the
+    // organization one is the single control that scopes a cross-tenant screen
+    // to one society.
+    $theirs = withoutTenant(fn (): Submission => Submission::factory()->submitted()->create());
+
+    expect($theirs->conference?->organization_id)->not->toBe($this->organization->getKey())
+        ->and($theirs->conference?->status)->not->toBe(ConferenceStatus::Reviewing);
+
+    livewire(ListSubmissions::class)
+        ->filterTable('organization', $this->organization->getKey())
+        ->assertCanSeeTableRecords([$this->submission, $decided])
+        ->assertCanNotSeeTableRecords([$theirs]);
+
+    livewire(ListSubmissions::class)
+        ->filterTable('conference_status', ConferenceStatus::Reviewing->value)
+        ->assertCanSeeTableRecords([$this->submission])
+        ->assertCanNotSeeTableRecords([$theirs]);
 });
 
 it('opens one submission with its authors, its files and its decision history', function () {
@@ -172,8 +193,11 @@ it('links a submission to its conference and its organization, and both open', f
 });
 
 it('finds an organization and a conference by name in global search, and never an abstract', function () {
-    expect(OrganizationResource::getGloballySearchableAttributes())->toContain('name')
-        ->and(AdminConferenceResource::getGloballySearchableAttributes())->toContain('name')
+    // toBe, not toContain('name'): both resources declare a recordTitleAttribute
+    // of `name`, so toContain('name') already passed before the slug was added
+    // and would not notice it being dropped again.
+    expect(OrganizationResource::getGloballySearchableAttributes())->toBe(['name', 'slug'])
+        ->and(AdminConferenceResource::getGloballySearchableAttributes())->toBe(['name', 'slug'])
         // An abstract title is author-supplied text and a global search box
         // indexes it across every tenant at once. The resource's own filtered
         // table is one click further.
@@ -181,5 +205,44 @@ it('finds an organization and a conference by name in global search, and never a
 
     $results = OrganizationResource::getGlobalSearchResults('Alpha');
 
-    expect($results)->not->toBeEmpty();
+    expect($results)->not->toBeEmpty()
+        ->and(array_keys((array) $results->first()?->details))
+        ->toBe([__('admin.search.status'), __('admin.search.conferences')]);
+
+    // The conference half of this case ran no search at all before, so neither
+    // getGlobalSearchResultDetails() nor getGlobalSearchEloquentQuery() on
+    // ConferenceResource was invoked anywhere in the suite.
+    $conferences = AdminConferenceResource::getGlobalSearchResults('Alpha Annual');
+
+    expect($conferences)->not->toBeEmpty()
+        ->and(array_keys((array) $conferences->first()?->details))
+        ->toBe([__('admin.search.organization'), __('admin.search.status')])
+        ->and((array) $conferences->first()?->details)
+        ->toContain('Alpha Society');
+});
+
+it('counts an organization conferences once per search, not once per result', function () {
+    Conference::factory()->for($this->organization)->create(['name' => 'Alpha Winter School']);
+
+    $second = withoutTenant(fn (): Organization => Organization::factory()->approved()->create(['name' => 'Alpha Neonatal Group']));
+    Conference::factory()->for($second)->create();
+
+    $seen = [];
+    DB::listen(function ($query) use (&$seen): void {
+        $seen[] = $query->sql;
+    });
+
+    $results = OrganizationResource::getGlobalSearchResults('Alpha');
+
+    $counts = $results->map(fn ($result): array => (array) $result->details)
+        ->pluck(__('admin.search.conferences'))
+        ->sort()->values()->all();
+
+    expect($results)->toHaveCount(2)
+        ->and($counts)->toBe(['1', '2'])
+        // ONE query for the whole search. A per-row conferences()->count() is
+        // one extra aggregate for every result the search returns, up to the
+        // 50-result limit, on every keystroke; withCount() folds it into the
+        // search query itself.
+        ->and($seen)->toHaveCount(1);
 });

@@ -17,8 +17,18 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * The @extends is the sibling ConferenceResource's convention and is not
+ * decoration: Filament\Resources\Resource declares `@template TModel of Model
+ * = Model`, so without it every inherited `Builder<TModel>` - including the
+ * one getGlobalSearchEloquentQuery() below has to return - resolves to
+ * Builder<Model> rather than to this resource's own model.
+ *
+ * @extends \Filament\Resources\Resource<Organization>
+ */
 class OrganizationResource extends Resource
 {
     protected static ?string $model = Organization::class;
@@ -103,7 +113,21 @@ class OrganizationResource extends Resource
         /** @var Organization $record */
         return [
             __('admin.search.status') => $record->status->getLabel(),
-            __('admin.search.conferences') => (string) $record->conferences()->count(),
+            __('admin.search.conferences') => (string) ($record->conferences_count ?? 0),
         ];
+    }
+
+    /**
+     * The global search prints a conference count per result, and
+     * `$record->conferences()->count()` is one extra aggregate query for every
+     * row the search returns - up to the 50-result limit, on every keystroke.
+     * withCount() folds it into the search query itself, which is what the
+     * sibling ConferenceResource does with its organization relation.
+     *
+     * @return Builder<Organization>
+     */
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->withCount('conferences');
     }
 }

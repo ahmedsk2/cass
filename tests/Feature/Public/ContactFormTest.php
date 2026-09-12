@@ -74,3 +74,29 @@ it('blocks the fourth message from the same client', function () {
 
     Mail::assertQueuedCount(3);
 });
+
+it('renders the visitor-controlled sender name as escaped text too', function () {
+    // The body was neutralised; the From line was not. `name` is validated only
+    // as required|string|max:120 (ContactForm::rules()), so a visitor can put
+    // Markdown - or a blank line, which ends the surrounding block and hands
+    // everything after it back to the parser - into the one line the platform
+    // team reads first.
+    $html = (string) (new ContactMessage(
+        "Bob\n\n# URGENT reset your CASS password",
+        'visitor@example.org',
+        'A genuine message that is long enough to pass validation.',
+    ))->render();
+
+    expect($html)->not->toContain('<h1>URGENT')
+        ->and($html)->not->toContain('URGENT reset your CASS password</h1>')
+        ->and($html)->toContain('URGENT reset your CASS password');
+
+    $bold = (string) (new ContactMessage(
+        '**Platform Support**',
+        'visitor@example.org',
+        'A genuine message that is long enough to pass validation.',
+    ))->render();
+
+    expect($bold)->not->toContain('<strong>Platform Support</strong>')
+        ->and($bold)->toContain('**Platform Support**');
+});

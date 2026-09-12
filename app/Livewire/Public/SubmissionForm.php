@@ -24,6 +24,7 @@ use App\Models\Track;
 use App\Models\User;
 use App\Support\Branding\OrganizationTheme;
 use App\Support\ClientIp;
+use App\Support\Domains\PlatformUrl;
 use App\Support\Text\WordCounter;
 use App\Support\Turnstile;
 use Illuminate\Support\Collection;
@@ -347,7 +348,7 @@ class SubmissionForm extends Component
             return $this->redirect(
                 $this->token === null
                     ? $this->conference->publicUrl()
-                    : route('submission.status', ['token' => $this->token]),
+                    : PlatformUrl::route('submission.status', ['token' => $this->token]),
                 navigate: false,
             );
         }
@@ -446,7 +447,7 @@ class SubmissionForm extends Component
         return $this->redirect(
             $token === null
                 ? $this->conference->publicUrl()
-                : route('submission.status', ['token' => $token]),
+                : PlatformUrl::route('submission.status', ['token' => $token]),
             navigate: false,
         );
     }
