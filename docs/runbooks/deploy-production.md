@@ -592,6 +592,108 @@ Both writers prefix an apostrophe to any cell beginning with `=`, `+`, `-`, `@`,
 a tab or a carriage return (`App\Support\Export\SpreadsheetCell`). In XLSX this
 is not cosmetic: without it openspout writes a real formula cell.
 
+## Demo data
+
+`cass:demo-seed` builds a self-contained demonstration tenant so the whole loop —
+organization, conference, abstracts, reviewers, reviews, ranking, decisions,
+decision letters — can be walked on the live site without inventing fifteen
+abstracts first. `cass:demo-reset` removes every trace of it.
+
+Everything it creates is fictional: the organization is "Demo Pediatric Society"
+at the slug `demo-society`, the conference is `demo-2027` with the reference
+prefix `DEMO27`, and every author and reviewer address is inside `example.com`,
+the domain RFC 2606 reserves so that sample data cannot reach a real mailbox.
+
+### Seeding
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec -it "$C" su-exec app php artisan cass:demo-seed --stage=reviewing
+```
+
+`--stage` decides how far the data goes, and each stage deliberately stops one
+click short of the next irreversible thing so the owner performs it themselves:
+
+| `--stage`   | What you get                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `open`      | Published conference, submissions open, fifteen abstracts present. Submit one yourself as an author with your own address.       |
+| `reviewing` | The default. Submissions closed, reviewing started, two reviewers have scored eight of the twelve, a third has two drafts open.  |
+| `decided`   | Also applies twelve decisions (4 oral, 4 poster, 2 waitlisted, 2 rejected). **No letters are sent** and the conference is still `reviewing`, so "Send decision emails" and "Mark decided" are both still yours to click. |
+
+Two more options:
+
+- `--owner-email=` — the existing account that owns the demo organization.
+  Defaults to `CASS_ADMIN_EMAIL`. **The account has to exist already**; the
+  command creates no user and never changes a password. If the address has no
+  account it exits 1 and writes nothing.
+- `--reviewer-password=` — the password for the three reviewer accounts. Omit it
+  and a 16-character one is generated and **printed once** at the end of the run.
+  It is not stored in plaintext anywhere; if it is lost, reset and seed again.
+
+### Signing in
+
+| Who          | Where                             | Credentials                                                        |
+| ------------ | --------------------------------- | ------------------------------------------------------------------ |
+| Owner        | `/org/demo-society`               | your own platform account (`CASS_ADMIN_EMAIL`) and its own password |
+| Reviewer 1–3 | `/review`                         | `demo.reviewer1@example.com` … `demo.reviewer3@example.com`, with the password above |
+| Author       | the `{{status_link}}` in `/s/…`   | no account; the demo authors' links are never emailed anywhere      |
+
+The public page and the short link are printed in the summary table at the end
+of the run, along with the counts per status and the exact reset command.
+
+### It sends nothing
+
+The seed run installs `Mail::fake()` and `Notification::fake()` and swaps
+`SendTemplatedEmail` for a silent stand-in for its own duration, so **no message
+leaves and no `email_logs` row is written** — an organizer opening the mail log
+after a seed does not find a hundred letters nobody received. Faking the mailer
+alone would not have been enough: `SendTemplatedEmail` *queues*, and the queue
+worker is a separate process holding the real mail configuration, so a job
+pushed during the seed would have been delivered for real a second later.
+
+None of that persists. The demo flows you run afterwards — the confirmation
+email when you submit an abstract, the reviewer invitation, the decision
+letters — all use the real mailer and all appear in `email_logs` as usual.
+
+### Resetting
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec -it "$C" su-exec app php artisan cass:demo-reset --confirm
+```
+
+**This is a hard delete and there is no undo.** It removes, permanently: the
+organization, its members and invitations, the conference, its tracks, custom
+fields, review form and questions, short link and scans, email templates and
+email logs; and every abstract under it with its authors, files, reviews,
+answers, assignments and decision history. The files are deleted from the
+private disk as well as from the database. Nothing is soft-deleted and nothing
+is recoverable except from the nightly `mysqldump`.
+
+Three things stand between an operator and that:
+
+1. it only ever acts on the organization at the slug `demo-society`;
+2. that organization must carry `organizations.is_demo`, a column no form can
+   write and only `cass:demo-seed` sets — a real organization that somehow
+   occupied the slug is refused with exit 1;
+3. `--confirm` must be given explicitly; without it the command exits 1 and
+   changes nothing.
+
+It prints a row count per table. **The owner's account is never touched.** The
+three demo reviewer accounts are deleted only if the purge leaves them with no
+organization, no reviewership, no review and no assignment anywhere on the
+platform — a reviewer you also invited to a real conference keeps their account
+and their password.
+
+Two things it deliberately leaves behind: rows in `activity_log`, whose subject
+and causer columns are nullable morphs with no foreign key (the audit trail of
+who deleted what is the last thing a purge should erase), and the `is_demo`
+column itself.
+
+Re-seeding is safe: `cass:demo-seed` refuses to run while `demo-society` exists
+and tells you to reset first, exiting **0** so a deploy script that calls it
+twice does not fail.
+
 ## Brand assets
 
 Every brand file is committed and served straight from `public/`. Nothing is generated at deploy time, and no build step touches them — a release that forgets this section still ships the right logo.
