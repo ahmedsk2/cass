@@ -1,0 +1,310 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Filament\Organizer\Resources\Conferences\Pages;
+
+use App\Enums\Decision;
+use App\Enums\SubmissionStatus;
+use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
+use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
+use App\Models\Conference;
+use App\Models\Submission;
+use App\Models\Track;
+use App\Support\Scoring\RankedSubmissions;
+use Filament\Actions\Action;
+use Filament\Forms\Components\TextInput;
+use Filament\Resources\Pages\Concerns\InteractsWithRecord;
+use Filament\Resources\Pages\Page;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+
+/**
+ * Spec 5.6's ranking table, one conference at a time.
+ *
+ * **A resource page, not a second resource.** The ranking's every number is per
+ * conference (its "fewer than N reviews" default is this conference's
+ * `reviewers_per_submission`; its summary strip's denominator is this
+ * conference's abstracts), SubmissionResource is already the panel-wide list,
+ * and a second Resource over Submission would need a second copy of that
+ * resource's `$isScopedToTenant = false` override and its HasOneThrough
+ * warning. A page inherits ConferenceResource's real tenancy through
+ * resolveRecord() and then scopes by conference_id, which needs no override.
+ *
+ * **Unlike ConferenceEmailTemplates, the table is query-backed.** `Table::query()`
+ * rather than `Table::records()`, so sorting, filtering, searching, pagination
+ * and bulk selection are all SQL (Filament takes the array branch only when
+ * `! $table->hasQuery()`, vendor/filament/tables/src/Concerns/HasRecords.php:95).
+ * That is what meets spec section 10's budget: every column here is a column on
+ * `submissions`, so the page never touches `reviews`, and
+ * tests/Feature/Organizer/ConferenceRankingPerformanceTest.php asserts exactly
+ * that.
+ */
+class ConferenceRanking extends Page implements HasTable
+{
+    use InteractsWithRecord;
+    use InteractsWithTable;
+
+    protected static string $resource = ConferenceResource::class;
+
+    protected string $view = 'filament.organizer.pages.conference-ranking';
+
+    public function mount(int|string $record): void
+    {
+        // resolveRecord() runs through ConferenceResource::getEloquentQuery(),
+        // which carries the panel's tenancy global scope, so another
+        // organization's conference is already a 404 before the policy is
+        // consulted. The policy check is defence in depth, exactly as on
+        // ConferenceEmailTemplates and ConferenceShortLink.
+        $this->record = $this->resolveRecord($record);
+
+        abort_unless(static::getResource()::canView($this->getRecord()), 404);
+    }
+
+    public function getTitle(): string
+    {
+        return __('decisions.ranking.title');
+    }
+
+    public function getSubheading(): ?string
+    {
+        return __('decisions.ranking.subheading');
+    }
+
+    public function getConference(): Conference
+    {
+        /** @var Conference $conference */
+        $conference = $this->getRecord();
+
+        return $conference;
+    }
+
+    /**
+     * The summary strip, computed once per render and handed to the view.
+     *
+     * @return array{total: int, reviewed: int, unreviewed: int, mean_score: float|null, decided: int, undecided: int, by_decision: array<string, int>}
+     */
+    public function summary(): array
+    {
+        return $this->getConference()->rankingSummary();
+    }
+
+    public function table(Table $table): Table
+    {
+        $conference = $this->getConference();
+
+        // The configured default, FOLDED INTO the fixed ladder rather than
+        // inserted into it. Filament renders $pageOptions verbatim
+        // (vendor/filament/support/resources/views/components/pagination/index.blade.php
+        // foreaches it with no dedupe), so an operator who sets
+        // CASS_RANKING_PAGE_SIZE=100 - one of the three numbers already on
+        // screen, and the likeliest value to pick - would otherwise get "100"
+        // twice in the dropdown. array_unique() keeps first-occurrence order,
+        // so sort() afterwards is what stops a 250 or a 500 leaving the ladder
+        // out of order. max(1, ...) is the house rule for every read of a
+        // count knob, and because the result is folded in rather than appended,
+        // even CASS_RANKING_PAGE_SIZE=0 leaves defaultPaginationPageOption()
+        // naming an option that is really in the list. 'all' stays out of the
+        // sort: it is not a number, and array_unique over mixed types is not
+        // worth the argument.
+        $pageSize = max(1, (int) config('cass.decisions.page_size'));
+        $pageOptions = array_unique([25, $pageSize, 100, 250]);
+        sort($pageOptions);
+
+        return $table
+            ->query(fn (): Builder => RankedSubmissions::query($conference)->with('track'))
+            // Best first. NULL sorts last descending on both drivers, so an
+            // unreviewed abstract sinks to the bottom rather than heading the
+            // list (verified in Task 11's MySQL run).
+            ->defaultSort('score', 'desc')
+            ->paginated([...$pageOptions, 'all'])
+            ->defaultPaginationPageOption($pageSize)
+            // The row goes to Plan 3's submission view, which is the one place
+            // an organizer reads an abstract. Not a modal: the view page has the
+            // files, the authors and the withdraw action already.
+            ->recordUrl(fn (Submission $record): string => SubmissionResource::getUrl('view', ['record' => $record]))
+            ->columns([
+                TextColumn::make('reference')
+                    ->label(__('decisions.ranking.columns.reference'))
+                    ->fontFamily('mono')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('-'),
+                TextColumn::make('title')
+                    ->label(__('decisions.ranking.columns.title'))
+                    ->searchable()
+                    ->sortable()
+                    ->wrap()
+                    ->limit(80),
+                TextColumn::make('track.name')
+                    ->label(__('decisions.ranking.columns.track'))
+                    ->sortable()
+                    ->placeholder('-')
+                    ->toggleable(),
+                TextColumn::make('presentation_preference')
+                    ->label(__('decisions.ranking.columns.preference'))
+                    ->badge()
+                    ->placeholder('-')
+                    ->toggleable(),
+                TextColumn::make('score')
+                    ->label(__('decisions.ranking.columns.score'))
+                    ->numeric(2)
+                    ->sortable()
+                    ->weight('semibold')
+                    // An em dash, not a zero: nobody has scored this yet, and a
+                    // 0.00 in this column is a real and very different answer.
+                    ->placeholder('—'),
+                TextColumn::make('score_spread')
+                    ->label(__('decisions.ranking.columns.spread'))
+                    ->numeric(2)
+                    ->sortable()
+                    ->tooltip(__('decisions.ranking.columns.spread_help'))
+                    ->placeholder('—'),
+                TextColumn::make('review_count')
+                    ->label(__('decisions.ranking.columns.reviews'))
+                    ->badge()
+                    ->sortable()
+                    ->color(fn (Submission $record): string => $record->review_count
+                        >= max(1, (int) $this->getConference()->reviewers_per_submission) ? 'success' : 'warning'),
+                TextColumn::make('status')
+                    ->label(__('decisions.ranking.columns.status'))
+                    ->badge()
+                    ->sortable()
+                    ->toggleable(),
+                TextColumn::make('decision')
+                    ->label(__('decisions.ranking.columns.decision'))
+                    ->badge()
+                    ->sortable()
+                    ->placeholder(__('decisions.ranking.not_decided')),
+                TextColumn::make('decision_notified_at')
+                    ->label(__('decisions.ranking.columns.notified'))
+                    ->dateTime('j M Y, H:i')
+                    ->timezone($conference->timezone)
+                    ->description($conference->timezone)
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->placeholder(__('decisions.ranking.not_sent')),
+            ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->label(__('decisions.ranking.columns.status'))
+                    // Only the statuses this page can show, derived from the one
+                    // definition rather than repeated. `SubmissionStatus::class`
+                    // would offer draft and withdrawn, which RankedSubmissions
+                    // has already excluded from the base query - an option that
+                    // can only ever produce the "Nothing to rank yet" empty
+                    // state reads as a bug, not as a rule.
+                    ->options(fn (): array => collect(RankedSubmissions::statuses())
+                        ->mapWithKeys(fn (string $value): array => [
+                            $value => SubmissionStatus::from($value)->getLabel(),
+                        ])
+                        ->all())
+                    ->multiple(),
+                SelectFilter::make('track_id')
+                    ->label(__('decisions.ranking.columns.track'))
+                    // This conference's tracks only. `->relationship()` would
+                    // query every track on the platform, because this page is
+                    // not a tenant-scoped resource.
+                    ->options(fn (): array => Track::query()
+                        ->where('conference_id', $conference->getKey())
+                        ->orderBy('sort')
+                        ->pluck('name', 'id')
+                        ->all()),
+                SelectFilter::make('decision')
+                    ->label(__('decisions.ranking.columns.decision'))
+                    ->options(self::decisionFilterOptions())
+                    // A custom query rather than the built-in equality: "not
+                    // decided" is a NULL, and a SelectFilter cannot express one
+                    // through its options alone.
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+
+                        return match (true) {
+                            $value === null, $value === '' => $query,
+                            $value === 'none' => $query->whereNull('decision'),
+                            default => $query->where('decision', $value),
+                        };
+                    }),
+                Filter::make('under_reviewed')
+                    ->label(__('decisions.ranking.filters.under_reviewed'))
+                    ->schema([
+                        TextInput::make('count')
+                            ->label(__('decisions.ranking.filters.under_reviewed_count'))
+                            ->numeric()
+                            ->minValue(1)
+                            ->maxValue(99)
+                            // NOT ->default(). A filter schema's defaults are
+                            // hydrated on boot
+                            // ($this->getTableFiltersForm()->fill($this->tableFilters),
+                            // vendor/filament/tables/src/Concerns/InteractsWithTable.php:81
+                            // -> HasState::fill(null), schemas/src/Concerns/HasState.php:324-341)
+                            // and, because filters are deferred by default, the
+                            // next lines copy them straight back into
+                            // $tableFilters (:83-84). A custom-schema Filter has
+                            // no `isActive` key for apply() to skip on
+                            // (Filters/Concerns/InteractsWithTableQuery.php:19-40),
+                            // so a default here would silently reduce the WHOLE
+                            // ranking to `review_count < 2` on first load - and
+                            // the in-order listing test, assertCountTableRecords(3),
+                            // the search and summary cases, the 500-row budget
+                            // and both export tests would all be looking at a
+                            // filtered table. The conference's own target is a
+                            // hint instead.
+                            ->placeholder((string) max(1, (int) $conference->reviewers_per_submission))
+                            ->helperText(__('decisions.ranking.filters.under_reviewed_help', [
+                                'count' => max(1, (int) $conference->reviewers_per_submission),
+                            ])),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $count = $data['count'] ?? null;
+
+                        return blank($count) ? $query : $query->where('review_count', '<', (int) $count);
+                    })
+                    ->indicateUsing(function (array $data): ?string {
+                        $count = $data['count'] ?? null;
+
+                        return blank($count)
+                            ? null
+                            : __('decisions.ranking.filters.under_reviewed_indicator', ['count' => (int) $count]);
+                    }),
+            ])
+            ->emptyStateHeading(__('decisions.ranking.empty_heading'))
+            ->emptyStateDescription(__('decisions.ranking.empty_body'));
+    }
+
+    /**
+     * The four decisions plus "not decided". Built here rather than inline so
+     * the same list can be reused by Task 6's decide action without the two
+     * drifting.
+     *
+     * @return array<string, string>
+     */
+    public static function decisionFilterOptions(): array
+    {
+        $options = ['none' => __('decisions.ranking.not_decided')];
+
+        foreach (Decision::inReportOrder() as $decision) {
+            $options[$decision->value] = $decision->getLabel();
+        }
+
+        return $options;
+    }
+
+    /** @return list<Action> */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('backToConference')
+                ->label(__('decisions.ranking.back'))
+                ->icon(Heroicon::OutlinedCalendarDays)
+                ->color('gray')
+                ->url(fn (): string => ConferenceResource::getUrl('view', ['record' => $this->getRecord()])),
+        ];
+    }
+}

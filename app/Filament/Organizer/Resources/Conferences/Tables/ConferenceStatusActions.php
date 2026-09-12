@@ -144,6 +144,28 @@ class ConferenceStatusActions
             ->url(fn (Conference $record): string => ConferenceResource::getUrl('emails', ['record' => $record]));
     }
 
+    public static function ranking(): Action
+    {
+        return Action::make('ranking')
+            ->label(__('decisions.ranking.action'))
+            ->icon(Heroicon::OutlinedTrophy)
+            ->color('gray')
+            // Only once there is something to rank. Before `reviewing` every
+            // number on that page is null and every decision action is refused,
+            // which is a screen that answers a question nobody asked.
+            //
+            // Archived is in the list on purpose: archiving takes a conference
+            // off the public site and changes nothing about the committee's
+            // record of what it decided, and an organizer asked six months
+            // later "what did we accept" must still be able to look.
+            ->visible(fn (Conference $record): bool => in_array(
+                $record->status,
+                [ConferenceStatus::Reviewing, ConferenceStatus::Decided, ConferenceStatus::Archived],
+                true,
+            ) && Gate::allows('view', $record))
+            ->url(fn (Conference $record): string => ConferenceResource::getUrl('ranking', ['record' => $record]));
+    }
+
     public static function reviewers(): Action
     {
         return Action::make('reviewers')
@@ -244,7 +266,7 @@ class ConferenceStatusActions
     public static function all(): array
     {
         return [
-            static::share(), static::emails(), static::reviewers(), static::assignments(),
+            static::share(), static::emails(), static::ranking(), static::reviewers(), static::assignments(),
             static::remindReviewers(), static::publish(), static::startReviewing(),
             static::close(), static::archive(),
         ];

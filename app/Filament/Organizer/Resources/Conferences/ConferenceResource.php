@@ -6,6 +6,7 @@ namespace App\Filament\Organizer\Resources\Conferences;
 
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceAssignments;
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceEmailTemplates;
+use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceRanking;
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceReviewers;
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceShortLink;
 use App\Filament\Organizer\Resources\Conferences\Pages\CreateConference;
@@ -94,6 +95,7 @@ class ConferenceResource extends Resource
             'create' => CreateConference::route('/create'),
             'view' => ViewConference::route('/{record}'),
             'short-link' => ConferenceShortLink::route('/{record}/share'),
+            'ranking' => ConferenceRanking::route('/{record}/ranking'),
             'emails' => ConferenceEmailTemplates::route('/{record}/emails'),
             'reviewers' => ConferenceReviewers::route('/{record}/reviewers'),
             'assignments' => ConferenceAssignments::route('/{record}/assignments'),
