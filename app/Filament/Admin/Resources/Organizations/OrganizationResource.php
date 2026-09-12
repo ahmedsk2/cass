@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class OrganizationResource extends Resource
 {
@@ -63,6 +64,28 @@ class OrganizationResource extends Resource
         return [
             'index' => ListOrganizations::route('/'),
             'view' => ViewOrganization::route('/{record}'),
+        ];
+    }
+
+    /**
+     * Spec section 4's "See all organizations and conferences" in the form
+     * somebody actually uses it: a support email arrives naming a society, and
+     * the search bar has to find it. Both attributes are indexed columns.
+     *
+     * @return array<int, string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['name', 'slug'];
+    }
+
+    /** @return array<string, string> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var Organization $record */
+        return [
+            __('admin.search.status') => $record->status->getLabel(),
+            __('admin.search.conferences') => (string) $record->conferences()->count(),
         ];
     }
 }
