@@ -123,6 +123,25 @@ return [
         'decide_chunk' => (int) env('CASS_DECISION_DECIDE_CHUNK', 250),
     ],
 
+    /*
+     * Custom domains (spec 5.8). The three columns have existed since Plan 1;
+     * Plan 6 is what reads them.
+     */
+    'domains' => [
+        // What an organizer points their CNAME at. Defaults to APP_URL's host
+        // so a staging deployment is correct without a second variable, and is
+        // settable because the runbook's Coolify step names the same value.
+        'cname_target' => env('CASS_DOMAIN_CNAME_TARGET'),
+        // How long the verified-host list is cached. Every request through
+        // TrustHosts reads it, so it is not read from the database every time;
+        // 60 seconds is short enough that a newly verified domain works before
+        // the organizer has finished reading the confirmation.
+        'cache_seconds' => (int) env('CASS_DOMAIN_CACHE_SECONDS', 60),
+        // Verification is one outbound DNS lookup per click, from the php-fpm
+        // worker that is also serving public pages. Metered per actor.
+        'verify_rate_limit' => (int) env('CASS_DOMAIN_VERIFY_LIMIT', 10),
+    ],
+
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',

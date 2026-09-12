@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\OrganizationRole;
 use App\Enums\OrganizationStatus;
 use App\Enums\OrganizationType;
+use App\Support\Domains\DomainName;
 use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -109,6 +110,41 @@ class Organization extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * A domain is only a *routing* fact once it is verified. Every reader in
+     * this application asks this question and not `custom_domain !== null`,
+     * because a claimed-but-unverified domain is somebody halfway through a
+     * DNS panel and must serve nothing.
+     */
+    public function hasVerifiedCustomDomain(): bool
+    {
+        return $this->custom_domain !== null && $this->custom_domain_verified_at !== null;
+    }
+
+    /** The host this organization's public pages are served from, or null for the platform's own. */
+    public function customDomainHost(): ?string
+    {
+        return $this->hasVerifiedCustomDomain() ? (string) $this->custom_domain : null;
+    }
+
+    /** The full name the TXT record lives at, or null when no domain is claimed. */
+    public function customDomainTxtName(): ?string
+    {
+        return $this->custom_domain === null ? null : DomainName::txtRecordName((string) $this->custom_domain);
+    }
+
+    /**
+     * https://{domain} with no trailing slash. Plain concatenation rather than
+     * url(): url() builds from APP_URL, which is the one host this method
+     * exists to avoid.
+     */
+    public function customDomainUrl(): ?string
+    {
+        $host = $this->customDomainHost();
+
+        return $host === null ? null : 'https://'.$host;
     }
 
     public function addMember(User $user, OrganizationRole $role): void
