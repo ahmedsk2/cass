@@ -1,6 +1,12 @@
 # --- private material never published ---
-Legacy/
-legacy-review.md
+# Anchored with a leading slash: an unanchored `Legacy/` matches a directory of
+# that name at ANY depth, and git on this machine runs with core.ignorecase=true,
+# so it silently swallowed app/Actions/Legacy, app/Support/Legacy and
+# tests/Fixtures/legacy - the import code itself - while still reporting a clean
+# tree. The real dump and the uploads live at the repository root and nowhere
+# else, so the root is the only place this has to cover.
+/Legacy/
+/legacy-review.md
 assets/envato/
 
 # --- environment and secrets ---

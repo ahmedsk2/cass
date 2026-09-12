@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\ImportLegacyCommand;
 use App\Console\Commands\RescoreConferenceCommand;
 use App\Console\Commands\SendReviewerRemindersCommand;
 use App\Http\Middleware\SecurityHeaders;
@@ -23,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands([
         SendReviewerRemindersCommand::class,
         RescoreConferenceCommand::class,
+        ImportLegacyCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);
