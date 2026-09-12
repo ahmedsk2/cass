@@ -346,7 +346,7 @@ class SubmissionForm extends Component
             // that has already been written.
             return $this->redirect(
                 $this->token === null
-                    ? route('conference.show', [$this->organization, $this->conference])
+                    ? $this->conference->publicUrl()
                     : route('submission.status', ['token' => $this->token]),
                 navigate: false,
             );
@@ -380,7 +380,7 @@ class SubmissionForm extends Component
 
         session()->flash('status', __('submission.flash.draft_saved'));
 
-        return $this->redirect($link->url() ?? route('conference.show', [$this->organization, $this->conference]), navigate: false);
+        return $this->redirect($link->url() ?? $this->conference->publicUrl(), navigate: false);
     }
 
     public function submit(SaveSubmissionDraft $save, UpdateSubmission $update, SubmitAbstract $submitAbstract, StoreSubmissionFile $store): mixed
@@ -445,7 +445,7 @@ class SubmissionForm extends Component
 
         return $this->redirect(
             $token === null
-                ? route('conference.show', [$this->organization, $this->conference])
+                ? $this->conference->publicUrl()
                 : route('submission.status', ['token' => $token]),
             navigate: false,
         );
@@ -721,7 +721,7 @@ class SubmissionForm extends Component
     {
         session()->flash('status', __('submission.flash.draft_saved'));
 
-        $this->redirect(route('conference.show', [$this->organization, $this->conference]), navigate: false);
+        $this->redirect($this->conference->publicUrl(), navigate: false);
     }
 
     /** @return array<string, mixed> */

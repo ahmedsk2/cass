@@ -31,6 +31,13 @@
     <php>
         <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
+        <!-- The one line in this block that deliberately diverges from
+             phpunit.xml. The plugin serves the application on 127.0.0.1
+             (ServerManager.php:28) and that is the Host Laravel sees, so
+             APP_URL's host has to be the same name: otherwise
+             ResolveCustomDomain 404s every browser request and the
+             ->domain() constraint on `landing` matches nothing. -->
+        <env name="APP_URL" value="http://127.0.0.1"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
