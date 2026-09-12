@@ -186,6 +186,20 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://127.0.0.1:8080/review)
           echo "reviewer panel -> $code"; test "$code" = "302"
           curl -sf -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/review/login
+          # The Plan 5 page inside the built image, under route:cache +
+          # config:cache + opcache validate_timestamps=0. route:cache runs in the
+          # entrypoint, so a page registered with the wrong parameters would
+          # either have failed the boot or be missing from the cached table.
+          # (A curl of /org would prove nothing here: that route resolves to
+          # Filament's RedirectToTenantController and never reaches the ranking.)
+          docker exec cass su-exec app php artisan route:list --except-vendor | tee /tmp/routes
+          grep -q 'conferences/{record}/ranking' /tmp/routes
+          # And a guest on it is redirected to the organizer login, not 500:
+          # Filament's Authenticate middleware runs before IdentifyTenant
+          # (vendor/filament/filament/routes/web.php:60 vs :119), so the tenant
+          # slug is never resolved and need not exist.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: localhost' http://127.0.0.1:8080/org/any-org/conferences/01ARZ3NDEKTSV4RRFFQ69G5FAV/ranking)
+          echo "ranking page -> $code"; test "$code" = "302"
           # A guest on an authenticated asset route reaches PHP and is sent to
           # the organizer login (redirectGuestsTo in bootstrap/app.php). This
           # URI has no dot extension, so the static-extension location never
