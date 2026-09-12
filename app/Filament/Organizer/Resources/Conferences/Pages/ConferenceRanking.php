@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Organizer\Resources\Conferences\Pages;
 
+use App\Actions\Submissions\ExportRankingCsv;
+use App\Actions\Submissions\ExportRankingXlsx;
 use App\Enums\Decision;
 use App\Enums\SubmissionStatus;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
@@ -12,8 +14,11 @@ use App\Models\Conference;
 use App\Models\Submission;
 use App\Models\Track;
 use App\Support\Scoring\RankedSubmissions;
+use App\Support\Scoring\RankingRows;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
 use Filament\Support\Icons\Heroicon;
@@ -24,6 +29,8 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Gate;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Spec 5.6's ranking table, one conference at a time.
@@ -274,6 +281,28 @@ class ConferenceRanking extends Page implements HasTable
                             : __('decisions.ranking.filters.under_reviewed_indicator', ['count' => (int) $count]);
                     }),
             ])
+            ->headerActions([
+                // TABLE header actions. `table()` is an instance method on the
+                // page, so `$this->exportAction(...)` resolves, and Filament
+                // evaluates the closures without rebinding `$this`
+                // (vendor/filament/support/src/Concerns/EvaluatesClosures.php:35),
+                // so `$this->getFilteredTableQuery()` inside the action still
+                // runs on the page.
+                $this->exportAction(
+                    'exportCsv',
+                    __('decisions.ranking.export_csv'),
+                    Heroicon::OutlinedArrowDownTray,
+                    fn (Builder $query, Conference $conference): StreamedResponse => app(ExportRankingCsv::class)
+                        ->handle($query, $conference, RankingRows::fileName($conference, 'csv')),
+                ),
+                $this->exportAction(
+                    'exportXlsx',
+                    __('decisions.ranking.export_xlsx'),
+                    Heroicon::OutlinedTableCells,
+                    fn (Builder $query, Conference $conference): StreamedResponse => app(ExportRankingXlsx::class)
+                        ->handle($query, $conference, RankingRows::fileName($conference, 'xlsx')),
+                ),
+            ])
             ->emptyStateHeading(__('decisions.ranking.empty_heading'))
             ->emptyStateDescription(__('decisions.ranking.empty_body'));
     }
@@ -294,6 +323,43 @@ class ConferenceRanking extends Page implements HasTable
         }
 
         return $options;
+    }
+
+    /**
+     * The two exports differ only in a name, an icon and a writer, and both
+     * need the same four things: the export ability, the table's own filtered
+     * query, a null guard on it, and the conference. One builder rather than
+     * two near-identical closures, so a fix to the guard is a fix to both.
+     *
+     * @param  Closure(Builder<Submission>, Conference): StreamedResponse  $writer
+     */
+    private function exportAction(string $name, string $label, Heroicon $icon, Closure $writer): Action
+    {
+        return Action::make($name)
+            ->label($label)
+            ->icon($icon)
+            ->color('gray')
+            ->visible(fn (): bool => Gate::allows('export', Submission::class))
+            ->action(function () use ($writer): ?StreamedResponse {
+                Gate::authorize('export', Submission::class);
+
+                // The table's own query: already scoped to this conference and
+                // already carrying whatever filters and search the organizer is
+                // looking at, so the file matches the screen. Filament types it
+                // `?Builder` with no generic (Tables\Contracts\HasTable), which
+                // Larastan level 6 will not hand to a `Builder<Submission>`
+                // parameter - hence the annotation and the null guard.
+                /** @var Builder<Submission>|null $query */
+                $query = $this->getFilteredTableQuery();
+
+                if ($query === null) {
+                    Notification::make()->danger()->title(__('decisions.ranking.nothing_to_export'))->send();
+
+                    return null;
+                }
+
+                return $writer($query, $this->getConference());
+            });
     }
 
     /** @return list<Action> */

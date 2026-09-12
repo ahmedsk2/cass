@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Submissions;
 
 use App\Models\Submission;
+use App\Support\Export\SpreadsheetCell;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use OpenSpout\Common\Entity\Row;
@@ -78,7 +79,7 @@ class ExportSubmissionsCsv
         $conference = $submission->conference;
         $timezone = (string) ($conference->timezone ?? config('app.timezone'));
 
-        return array_map($this->guard(...), [
+        return array_map(SpreadsheetCell::text(...), [
             (string) $submission->reference,
             (string) ($conference->name ?? ''),
             (string) $submission->title,
@@ -130,16 +131,5 @@ class ExportSubmissionsCsv
         }
 
         return implode('; ', $parts);
-    }
-
-    /**
-     * CSV injection. Excel and LibreOffice execute a cell that begins with
-     * `=`, `+`, `-`, `@`, a tab or a carriage return, and every text column
-     * here was typed by an author nobody vetted. A leading apostrophe makes the
-     * cell text, which is what it always was.
-     */
-    private function guard(string $value): string
-    {
-        return preg_match('/^[=+\-@\t\r]/', $value) === 1 ? "'".$value : $value;
     }
 }
