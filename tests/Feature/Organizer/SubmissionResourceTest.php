@@ -461,6 +461,18 @@ it('shows an organizer what the reviewers wrote, once reviewing has started', fu
         ->assertSee('Dr Salah Almubarak')
         ->assertSee('Is the methodology sound?')
         ->assertSee('Small sample, sound design.');
+
+    // The same submitted review, the same answer, one status earlier: the
+    // conference half of the visibility gate on its own. The draft case below
+    // cannot prove this, because a draft is hidden by submittedReviews()
+    // whatever the status is - so without these three lines the in_array()
+    // could be deleted and the suite would stay green.
+    $this->conference->forceFill(['status' => ConferenceStatus::Open])->save();
+
+    get(SubmissionResource::getUrl('view', ['record' => $this->submission], tenant: $this->organization))
+        ->assertOk()
+        ->assertDontSee('Small sample, sound design.')
+        ->assertDontSee(__('reviewer.review.organizer_heading'));
 });
 
 it('hides a draft review and hides the whole section while the call is still open', function () {
