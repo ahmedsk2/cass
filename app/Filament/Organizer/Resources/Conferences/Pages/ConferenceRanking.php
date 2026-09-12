@@ -9,6 +9,7 @@ use App\Actions\Submissions\ExportRankingXlsx;
 use App\Enums\Decision;
 use App\Enums\SubmissionStatus;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
+use App\Filament\Organizer\Resources\Conferences\Tables\DecisionActions;
 use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
 use App\Models\Conference;
 use App\Models\Submission;
@@ -303,8 +304,31 @@ class ConferenceRanking extends Page implements HasTable
                         ->handle($query, $conference, RankingRows::fileName($conference, 'xlsx')),
                 ),
             ])
+            ->recordActions(DecisionActions::rowActions($this->mayDecide()))
+            ->toolbarActions([
+                DecisionActions::decideSelected(),
+            ])
             ->emptyStateHeading(__('decisions.ranking.empty_heading'))
             ->emptyStateDescription(__('decisions.ranking.empty_body'));
+    }
+
+    /**
+     * One authorization answer for the whole table, asked once per render.
+     *
+     * `decide` depends only on the conference's organization
+     * (SubmissionPolicy::decide() asks for membership directly), and
+     * User::roleIn() is a query, so a Gate call inside a row action's visible()
+     * would be one query per rendered row: 500 rows is 500 queries and it
+     * breaks the query-count ceiling in ConferenceRankingPerformanceTest. A
+     * probe carrying the loaded conference asks the real policy without a row,
+     * so the answer is the policy's, not a re-implementation of it.
+     */
+    protected function mayDecide(): bool
+    {
+        $probe = new Submission;
+        $probe->setRelation('conference', $this->getConference());
+
+        return Gate::allows('decide', $probe);
     }
 
     /**
