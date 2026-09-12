@@ -27,6 +27,18 @@ declare(strict_types=1);
  */
 
 return [
+    /*
+     * The internal contact-form email. Not a spec 5.9 template key: it goes to
+     * the platform team, not to an author, and no organizer may edit it - but
+     * its three strings belong in a language file for the same reason every
+     * other string does (spec section 10).
+     */
+    'contact' => [
+        'heading' => 'New message from the CASS contact form',
+        'from' => 'From:',
+        'reply' => 'Reply directly to this email to answer.',
+    ],
+
     'templates' => [
 
         'submission_received' => [
@@ -213,7 +225,22 @@ return [
             'body' => <<<'MARKDOWN'
             We were not able to approve **{{organization}}** at this time.
 
+            **Reason:** {{reason}}
+
             If you think this is a mistake, reply to this email and we will look again.
+
+            [{{status_link}}]({{status_link}})
+            MARKDOWN,
+        ],
+
+        'organization_suspended' => [
+            'subject' => '{{organization}} has been suspended on CASS',
+            'body' => <<<'MARKDOWN'
+            **{{organization}}** has been suspended and its conferences are no longer public.
+
+            **Reason:** {{reason}}
+
+            Reply to this email with more details and we will take another look.
 
             [{{status_link}}]({{status_link}})
             MARKDOWN,

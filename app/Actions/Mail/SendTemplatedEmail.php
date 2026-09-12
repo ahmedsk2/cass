@@ -9,11 +9,20 @@ use App\Enums\EmailTemplateKey;
 use App\Mail\TemplatedMail;
 use App\Models\Conference;
 use App\Models\EmailLog;
+use App\Models\Organization;
 use App\Models\Submission;
 use Illuminate\Support\Facades\Mail;
 
 /**
- * The one way this application sends a conference-scoped email.
+ * The one way this application sends a templated email.
+ *
+ * The context is `Conference|Organization`, with no `null`: one argument that
+ * says "brand as this and, if it is a conference, scope to it". The three
+ * platform-wide keys (organization approved / rejected / suspended) are sent
+ * before any conference exists, which is exactly why
+ * EmailTemplateKey::isConferenceScoped() answers false for them - and why they
+ * could not use this pipeline until the parameter widened. Every caller has one
+ * or the other, so the union does not admit a send with no branding at all.
  *
  * The `email_logs` row is written **here**, before the mailable is queued,
  * rather than in the MessageSending listener, for two reasons: this is the only
@@ -31,12 +40,20 @@ class SendTemplatedEmail
      */
     public function handle(
         EmailTemplateKey $key,
-        Conference $conference,
+        Conference|Organization $context,
         string $toEmail,
         array $values,
         ?Submission $submission = null,
     ): EmailLog {
-        $rendered = $this->render->handle($key, $conference, $values);
+        $rendered = $this->render->handle($key, $context, $values);
+
+        // The branded layout needs the organization itself; the log row needs
+        // only the keys, and email_logs.conference_id is already nullable for
+        // exactly the platform-wide case
+        // (2026_09_11_001500_create_email_logs_table.php).
+        $organization = $context instanceof Conference ? $context->organization : $context;
+        $organizationId = $context instanceof Conference ? $context->organization_id : $context->getKey();
+        $conferenceId = $context instanceof Conference ? $context->getKey() : null;
 
         // Never let a bearer token into a subject line, whatever a template
         // said.
@@ -62,8 +79,8 @@ class SendTemplatedEmail
 
         $log = new EmailLog;
         $log->forceFill([
-            'organization_id' => $conference->organization_id,
-            'conference_id' => $conference->getKey(),
+            'organization_id' => $organizationId,
+            'conference_id' => $conferenceId,
             'submission_id' => $submission?->getKey(),
             'template_key' => $key->value,
             'mailable' => TemplatedMail::class,
@@ -80,7 +97,7 @@ class SendTemplatedEmail
             logUlid: (string) $log->ulid,
             subjectLine: $subject,
             body: $rendered->body,
-            organization: $conference->organization,
+            organization: $organization,
             templateKey: $key->value,
         ));
 

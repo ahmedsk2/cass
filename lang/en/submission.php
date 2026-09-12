@@ -26,6 +26,25 @@ return [
         'body' => 'This page is not visible to the public. Only members of :organization can see it.',
     ],
 
+    /*
+     * The deadline countdown. Whole phrases rather than words, because
+     * resources/js/countdown.js cannot call __() and because English's
+     * `days === 1 ? '' : 's'` has no Arabic analogue - Arabic has six plural
+     * forms, and a translator needs a sentence to work with.
+     *
+     * `passed` is NEW COPY, not an extraction: today the badge is simply
+     * removed when the deadline passes and there is no message at all.
+     */
+    'countdown' => [
+        'days' => ':days days, :hours hours left',
+        'days_one' => '1 day, :hours hours left',
+        'hours' => ':hours hours, :minutes minutes left',
+        'hours_one' => '1 hour, :minutes minutes left',
+        'minutes' => ':minutes minutes left',
+        'minutes_one' => '1 minute left',
+        'passed' => 'The deadline has passed',
+    ],
+
     'sections' => [
         'abstract' => 'Your abstract',
         'authors' => 'Authors',

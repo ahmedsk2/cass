@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Actions\Mail\SendTemplatedEmail;
 use App\Enums\EmailLogStatus;
+use App\Enums\EmailTemplateKey;
 use App\Enums\OrganizationRole;
+use App\Mail\TemplatedMail;
 use App\Models\Conference;
 use App\Models\EmailLog;
 use App\Models\Organization;
@@ -11,7 +14,6 @@ use App\Models\Submission;
 use App\Models\User;
 use App\Notifications\MemberInvitation;
 use App\Notifications\NewSubmissionNotice;
-use App\Notifications\OrganizationApproved;
 use App\Support\Tokens\InvitationToken;
 use Illuminate\Support\Facades\Notification;
 
@@ -21,18 +23,31 @@ use Illuminate\Support\Facades\Notification;
 // QUEUE_CONNECTION=sync, so a queued notification is delivered into the array
 // transport inside the same request and the events fire for real.
 
-it('logs a plan 1 notification that knows nothing about templates', function () {
+it('logs a platform-wide templated email that has no conference at all', function () {
     $organization = Organization::factory()->create();
     $owner = User::factory()->create(['email' => 'owner@example.org']);
     $organization->addMember($owner, OrganizationRole::Owner);
 
-    $owner->notify(new OrganizationApproved($organization));
+    // An Organization, not a Conference: this is the send ApproveOrganization
+    // makes, and the whole reason SendTemplatedEmail's context is a union. The
+    // row is written by the action itself and then flipped to `sent` by the
+    // MessageSent listener, which is the pipeline this file exists to exercise.
+    app(SendTemplatedEmail::class)->handle(
+        EmailTemplateKey::OrganizationApproved,
+        $organization,
+        'owner@example.org',
+        [
+            'organization' => (string) $organization->name,
+            'status_link' => url('/org/'.$organization->slug),
+        ],
+    );
 
     $log = EmailLog::query()->firstOrFail();
 
     expect($log->to_email)->toBe('owner@example.org')
-        ->and($log->mailable)->toBe(OrganizationApproved::class)
-        ->and($log->template_key)->toBeNull()
+        ->and($log->mailable)->toBe(TemplatedMail::class)
+        ->and($log->template_key)->toBe('organization_approved')
+        ->and($log->organization_id)->toBe($organization->id)
         ->and($log->status)->toBe(EmailLogStatus::Sent)
         ->and($log->sent_at)->not->toBeNull()
         // No conference exists at approval time; the columns are nullable for

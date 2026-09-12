@@ -37,3 +37,48 @@ it('sends security headers on a 404 for an unrouted static-looking path', functi
     get('/nonexistent-probe.css')->assertNotFound()
         ->assertHeader('X-Frame-Options', 'DENY');
 });
+
+it('gives every illustration an intrinsic size and serves the hero as webp', function () {
+    $response = get('/')->assertOk();
+    $html = (string) $response->getContent();
+
+    // Five of the six site images had no width/height (Plan 6 fact 41), which
+    // is five separate layout shifts on the slowest connection the site has.
+    preg_match_all('/<img\b[^>]*>/i', $html, $images);
+
+    foreach ($images[0] as $tag) {
+        expect($tag)->toMatch('/\bwidth="\d+"/', $tag)
+            ->and($tag)->toMatch('/\bheight="\d+"/', $tag);
+    }
+
+    // The hero is 158 KB of PNG at 1600x1051. WebP at the size it is displayed
+    // is the single biggest byte on this page.
+    expect($html)->toContain('hero-researcher.webp');
+});
+
+it('points the organizer login at the panel route rather than a hardcoded path', function () {
+    $response = get('/')->assertOk();
+
+    // The rendered page cannot tell the two apart: route() is absolute by
+    // default and the panel's path is '/org', so route('filament.organizer.
+    // auth.login') and url('/org/login') produce the identical string - both
+    // assertions below would pass on the old code, and the literal "/org/login"
+    // never appears in either. The page assertion is kept because it proves the
+    // route NAME resolves; the source assertions are what can actually fail on
+    // a revert.
+    expect((string) $response->getContent())->toContain(route('filament.organizer.auth.login'));
+
+    foreach ([
+        'resources/views/components/layouts/public.blade.php',
+        'resources/views/public/landing.blade.php',
+        'resources/views/livewire/public/register-organization.blade.php',
+    ] as $view) {
+        // No second argument: Pest's toContain() is variadic over NEEDLES, not
+        // (needle, message), so a "message" there is a second string the source
+        // is asserted to contain.
+        $source = (string) file_get_contents(base_path($view));
+
+        expect($source)->toContain("route('filament.organizer.auth.login')")
+            ->and($source)->not->toContain("url('/org/login')");
+    }
+});

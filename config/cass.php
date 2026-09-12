@@ -23,6 +23,13 @@ return [
     // Visit rows older than this are deleted nightly by `model:prune`. The
     // sharing page reports 30 days, so nothing inside the window is lost.
     'short_link_visit_retention_days' => (int) env('CASS_SHORT_LINK_VISIT_RETENTION_DAYS', 90),
+
+    /*
+     * Days an email_logs row is kept. Longer than a short-link visit's ninety
+     * because this table answers support questions months after a conference.
+     * Pruned nightly by model:prune (routes/console.php).
+     */
+    'email_log_retention_days' => (int) env('CASS_EMAIL_LOG_RETENTION_DAYS', 365),
     'qr' => [
         // The PNG is rendered at whole-module scale, so the real width is the
         // smallest multiple of the module count that reaches this size.
@@ -121,6 +128,47 @@ return [
         // the same shape as send_chunk. ApplyDecision commits per row, so a
         // run that did time out would lose only the report, never the writes.
         'decide_chunk' => (int) env('CASS_DECISION_DECIDE_CHUNK', 250),
+    ],
+
+    'security' => [
+        // The wide, per-IP login bucket. The per-email+IP key in
+        // App\Filament\Auth\Login is what spec section 9 asks for; on its own
+        // it makes spraying unmetered, because a fresh address is a fresh
+        // budget.
+        'login_ip_limit' => (int) env('CASS_LOGIN_IP_LIMIT', 20),
+        // True sends Content-Security-Policy-Report-Only instead, so the first
+        // production week can run with a human watching the browser console
+        // before the header becomes a gate. There is no report endpoint.
+        'csp_report_only' => filter_var(env('CASS_CSP_REPORT_ONLY', false), FILTER_VALIDATE_BOOL),
+    ],
+
+    /*
+     * Custom domains (spec 5.8). The three columns have existed since Plan 1;
+     * Plan 6 is what reads them.
+     */
+    'domains' => [
+        // What an organizer points their CNAME at. Defaults to APP_URL's host
+        // so a staging deployment is correct without a second variable, and is
+        // settable because the runbook's Coolify step names the same value.
+        'cname_target' => env('CASS_DOMAIN_CNAME_TARGET'),
+        // How long the verified-host list is cached. Every request through
+        // TrustHosts reads it, so it is not read from the database every time;
+        // 60 seconds is short enough that a newly verified domain works before
+        // the organizer has finished reading the confirmation.
+        'cache_seconds' => (int) env('CASS_DOMAIN_CACHE_SECONDS', 60),
+        // Verification is one outbound DNS lookup per click, from the php-fpm
+        // worker that is also serving public pages. Metered per actor.
+        'verify_rate_limit' => (int) env('CASS_DOMAIN_VERIFY_LIMIT', 10),
+    ],
+
+    'legacy' => [
+        // Where cass:import-legacy writes its manual-review report. On the
+        // `local` disk, whose root is storage/app/private - and storage/app is
+        // the ONLY part of storage/ on the cass-storage volume
+        // (docker-compose.production.yml:52). storage/logs and
+        // storage/framework live in the container layer and vanish on the next
+        // deploy, which is not where a file somebody has to read belongs.
+        'report_directory' => env('CASS_LEGACY_REPORT_DIR', 'legacy'),
     ],
 
     'countries' => [

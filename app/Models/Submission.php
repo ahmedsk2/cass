@@ -6,7 +6,9 @@ namespace App\Models;
 
 use App\Enums\Decision;
 use App\Enums\PresentationPreference;
+use App\Enums\ReviewStatus;
 use App\Enums\SubmissionStatus;
+use App\Support\Domains\PlatformUrl;
 use App\Support\Tokens\SubmissionToken;
 use Database\Factories\SubmissionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -136,6 +138,19 @@ class Submission extends Model
     public function reviews(): HasMany
     {
         return $this->hasMany(Review::class);
+    }
+
+    /**
+     * The reviews an organizer is allowed to read: submitted ones, newest
+     * first. The filter is in the RELATION rather than in the screen that
+     * renders it, which is what keeps a draft - a reviewer mid-sentence - out
+     * of the query and not merely out of the render.
+     *
+     * @return HasMany<Review, $this>
+     */
+    public function submittedReviews(): HasMany
+    {
+        return $this->reviews()->where('status', ReviewStatus::Submitted)->latest('submitted_at');
     }
 
     /** @return HasMany<ReviewAssignment, $this> */
@@ -297,10 +312,16 @@ class Submission extends Model
      * The `submission.status` route this resolves is registered in Task 4,
      * ahead of the component behind it, precisely because this method is called
      * from Task 5 onwards.
+     *
+     * PlatformUrl, not route(): an abstract submitted on a verified custom
+     * domain is emailed this link, and /s/{token} is a reserved 404 on that
+     * host - so a request-relative URL here is a dead link carrying a
+     * 64-character bearer token to whoever the organizer's DNS points at
+     * tomorrow.
      */
     public function statusUrl(string $plainToken): string
     {
-        return route('submission.status', ['token' => $plainToken]);
+        return PlatformUrl::route('submission.status', ['token' => $plainToken]);
     }
 
     public function getActivitylogOptions(): LogOptions

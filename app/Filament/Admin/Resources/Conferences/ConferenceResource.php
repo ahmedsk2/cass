@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Resources\Conferences;
 
 use App\Filament\Admin\Resources\Conferences\Pages\ListConferences;
 use App\Filament\Admin\Resources\Conferences\Pages\ViewConference;
+use App\Filament\Admin\Resources\Conferences\RelationManagers\ReviewersRelationManager;
 use App\Filament\Admin\Resources\Conferences\Tables\ConferencesTable;
 use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Models\Conference;
@@ -19,6 +20,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 /** @extends \Filament\Resources\Resource<Conference> */
@@ -100,11 +102,58 @@ class ConferenceResource extends Resource
             ->with('organization');
     }
 
+    /**
+     * The reviewer pool, read-only by class. Spec section 4's admin row is
+     * "See all", and until now nothing outside the organizer panel - which is
+     * membership-gated - could show who reviews an edition.
+     *
+     * @return array<int, class-string>
+     */
+    public static function getRelations(): array
+    {
+        return [
+            ReviewersRelationManager::class,
+        ];
+    }
+
     public static function getPages(): array
     {
         return [
             'index' => ListConferences::route('/'),
             'view' => ViewConference::route('/{record}'),
         ];
+    }
+
+    /**
+     * Spec section 4's "See all organizations and conferences" in the form
+     * somebody actually uses it: a support email names an edition, and the
+     * search bar has to find it. Both attributes are indexed columns.
+     *
+     * @return array<int, string>
+     */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['name', 'slug'];
+    }
+
+    /** @return array<string, string> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var Conference $record */
+        return [
+            __('admin.search.organization') => (string) $record->organization?->name,
+            __('admin.search.status') => $record->status->getLabel(),
+        ];
+    }
+
+    /**
+     * The global search runs one query per result for the details above, so
+     * the relation it prints is eager-loaded here rather than lazily per row.
+     *
+     * @return Builder<Conference>
+     */
+    public static function getGlobalSearchEloquentQuery(): Builder
+    {
+        return parent::getGlobalSearchEloquentQuery()->with('organization');
     }
 }

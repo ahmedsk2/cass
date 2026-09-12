@@ -2,17 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Actions\Organizations\RejectOrganization;
 use App\Enums\OrganizationRole;
 use App\Enums\OrganizationStatus;
 use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Filament\Admin\Resources\Organizations\Pages\ListOrganizations;
 use App\Filament\Admin\Resources\Organizations\Pages\ViewOrganization;
+use App\Mail\TemplatedMail;
+use App\Models\EmailLog;
 use App\Models\Organization;
 use App\Models\User;
-use App\Notifications\OrganizationApproved;
 use App\Notifications\OrganizationRegistered;
-use App\Notifications\OrganizationRejected;
 use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 
 use function Pest\Laravel\actingAs;
@@ -21,6 +23,10 @@ use function Pest\Livewire\livewire;
 
 beforeEach(function () {
     Notification::fake();
+    // The two approval letters are TemplatedMail now, not notifications: the
+    // copy lives in lang/en/mail.php and a transport failure marks its own
+    // email_logs row.
+    Mail::fake();
     $this->admin = User::factory()->platformAdmin()->create();
     actingAs($this->admin);
     Filament::setCurrentPanel('admin');
@@ -62,7 +68,16 @@ it('approves a pending organization and emails the owner', function () {
         ->and($org->approved_by)->toBe($this->admin->id)
         ->and($org->approved_at)->not->toBeNull();
 
-    Notification::assertSentTo($owner, OrganizationApproved::class);
+    Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo($owner->email));
+
+    $log = EmailLog::query()->where('to_email', $owner->email)->firstOrFail();
+
+    expect($log->template_key)->toBe('organization_approved')
+        ->and($log->mailable)->toBe(TemplatedMail::class)
+        ->and($log->organization_id)->toBe($org->id)
+        // No conference exists at approval time, and email_logs.conference_id
+        // is nullable for exactly this message.
+        ->and($log->conference_id)->toBeNull();
 });
 
 it('rejects with a reason and emails the owner', function () {
@@ -78,7 +93,40 @@ it('rejects with a reason and emails the owner', function () {
     expect($org->status)->toBe(OrganizationStatus::Suspended)
         ->and($org->status_reason)->toBe('We could not verify this society.');
 
-    Notification::assertSentTo($owner, OrganizationRejected::class);
+    Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo($owner->email));
+
+    expect(EmailLog::query()->where('to_email', $owner->email)->firstOrFail()->template_key)
+        ->toBe('organization_rejected');
+});
+
+it('tells an organization that was approved that it is suspended, not that it was refused', function () {
+    // RejectOrganization sent two different letters off one $wasApproved flag
+    // before this plan. A union-typed context carries no room for a boolean, so
+    // the branch is a second template key - and "we could not approve you" to an
+    // organization that WAS approved is the regression this case exists to stop.
+    $org = Organization::factory()->approved()->create();
+    $owner = User::factory()->create();
+    $org->addMember($owner, OrganizationRole::Owner);
+
+    livewire(ListOrganizations::class)
+        ->removeTableFilter('status')
+        ->callTableAction('reject', $org, data: ['reason' => 'Repeated policy violations.'])
+        ->assertNotified();
+
+    expect(EmailLog::query()->where('to_email', $owner->email)->firstOrFail()->template_key)
+        ->toBe('organization_suspended');
+});
+
+it('still tells a rejected owner why', function () {
+    $organization = Organization::factory()->create();
+    $owner = User::factory()->create();
+    $organization->addMember($owner, OrganizationRole::Owner);
+
+    app(RejectOrganization::class)
+        ->handle($organization, User::factory()->platformAdmin()->create(), 'Not a real society');
+
+    Mail::assertQueued(TemplatedMail::class,
+        fn (TemplatedMail $mail): bool => str_contains($mail->body, 'Not a real society'));
 });
 
 it('requires a reason to reject', function () {

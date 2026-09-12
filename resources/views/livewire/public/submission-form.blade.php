@@ -40,7 +40,7 @@
             @unless ($showForm)
                 {{-- Offered only as a dead end. Above a form the author is still
                      typing into, a link away from the page is a trap. --}}
-                <a href="{{ route('conference.show', [$organization, $conference]) }}"
+                <a href="{{ $conference->publicUrl() }}"
                    class="mt-4 inline-block text-sm font-medium text-[var(--org-primary)] hover:underline">
                     {{ __('submission.window.back') }}
                 </a>
@@ -67,7 +67,7 @@
                     <div class="cf-turnstile"
                          data-sitekey="{{ $turnstileSiteKey }}"
                          data-callback="cassTurnstileCallback"></div>
-                    <script>
+                    <script nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}">
                         window.cassTurnstileCallback = (token) => window.Livewire.find('{{ $this->getId() }}').set('turnstileToken', token, false);
                         // $this->dispatch('turnstile-reset') reaches
                         // dispatchGlobal(), which is a window CustomEvent. A
@@ -76,6 +76,11 @@
                         // replacement before its own refresh-expired timer.
                         window.addEventListener('turnstile-reset', () => window.turnstile && window.turnstile.reset());
                     </script>
+                    {{-- No nonce on this one: it is an EXTERNAL script and
+                         script-src already names challenges.cloudflare.com. A
+                         nonce here would be allowed and would add nothing,
+                         which is worse than not having it - a reader would
+                         wonder why one tag carries it and the other does not. --}}
                     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
                 </div>
                 @error('turnstileToken') <p class="text-sm text-red-600">{{ $message }}</p> @enderror

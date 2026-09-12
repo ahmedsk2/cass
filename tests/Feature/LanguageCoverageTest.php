@@ -377,3 +377,201 @@ it('has an english line for every reminder threshold and reviewer status', funct
         expect(Lang::has('members.invite.blocked.'.$status->value))->toBeTrue($status->value);
     }
 });
+
+/**
+ * Every file Plans 1 and 2 left in English, which spec section 10 says must
+ * live in a language file before any Arabic work. The list includes two
+ * ORGANIZER views (the dashboard banners and the short-link page) that no
+ * existing backlog item mentions and that no previous sweep covered - they are
+ * the same vintage and the same problem.
+ */
+$plan6Sources = [
+    'resources/views/components/layouts/public.blade.php',
+    'resources/views/components/layouts/conference.blade.php',
+    'resources/views/public/landing.blade.php',
+    'resources/views/public/about.blade.php',
+    'resources/views/public/privacy.blade.php',
+    'resources/views/public/terms.blade.php',
+    'resources/views/public/conference.blade.php',
+    'resources/views/public/partials/submit-cta.blade.php',
+    'resources/views/livewire/public/contact-form.blade.php',
+    'resources/views/livewire/public/register-organization.blade.php',
+    'resources/views/pdf/conference-poster.blade.php',
+    'resources/views/emails/contact-message.blade.php',
+    'resources/views/filament/organizer/pages/dashboard.blade.php',
+    'resources/views/filament/organizer/resources/conferences/pages/short-link.blade.php',
+];
+
+// The key-resolution case below reads every file in that list. The
+// visible-English case after it reads every file EXCEPT the one mail view:
+// resources/views/emails/contact-message.blade.php is a <x-mail::message>
+// MARKDOWN document, and Blade::compileString() + strip_tags() leave its
+// syntax behind as the literal lines `#` and `** ** &lt; &gt;` (measured,
+// not guessed). No language key can remove those, and an allow-list entry
+// would only hide them. Task 8 moved that view's three English strings
+// into lang/en/mail.php, so the key-resolution case is what proves it.
+$plan6Views = array_values(array_diff($plan6Sources, [
+    'resources/views/emails/contact-message.blade.php',
+]));
+
+it('resolves every translation key plans 1 and 2 now use', function () use ($plan6Sources) {
+    $missing = [];
+
+    foreach ($plan6Sources as $relative) {
+        $path = base_path($relative);
+
+        expect(file_exists($path))->toBeTrue("Expected {$relative} to exist.");
+
+        // `public`, `conference` and `poster` are this task's three new files;
+        // the rest of the alternation is what the Plan 5 case already allows,
+        // because eight of these strings are REUSED from submission.* and
+        // members.* rather than duplicated (Plan 6 fact 39).
+        preg_match_all(
+            '/(?:__|@lang|trans)\(\s*[\'"]((?:public|conference|poster|submission|mail|members|reviewer|decisions|admin|domain|legacy)\.[a-z0-9_.]+)[\'"]/',
+            (string) file_get_contents($path),
+            $matches,
+        );
+
+        foreach (array_unique($matches[1]) as $key) {
+            if (! Lang::has($key)) {
+                $missing[] = "{$key} (used in {$relative})";
+            }
+        }
+    }
+
+    expect($missing)->toBe([]);
+});
+
+it('leaves no visible english at all in the plans 1 and 2 pages', function () use ($plan6Views) {
+    // The threshold is ONE word, not three.
+    //
+    // Every existing case in this file uses `str_word_count($line) >= 3`, and
+    // that is why this task exists at all: "About", "Contact", "Terms",
+    // "Privacy", "Organizer login", "Call for abstracts", "What to prepare",
+    // "Submit abstract", "Total scans", "Deadline", "Venue" and "Tracks" are
+    // every one of them two words or fewer. A case copied from the Plan 5 one
+    // would pass with the navigation bar, both footers and half the conference
+    // page still in English.
+    //
+    // The allow-list is what is genuinely not prose: the brand, the four step
+    // numerals on the landing page, the two file-size units, the file type and
+    // the two typographic separators.
+    $allowed = ['CASS', '01', '02', '03', '04', 'KB', 'MB', 'PDF', '·', '–', '—'];
+    $offenders = [];
+
+    foreach ($plan6Views as $relative) {
+        $compiled = Blade::compileString((string) file_get_contents(base_path($relative)));
+
+        $stripped = (string) preg_replace([
+            '/<\?php.*?\?>/s',
+            '/<\?php.*$/s',
+            '/<script\b[^>]*>.*?<\/script>/s',
+            '/<style\b[^>]*>.*?<\/style>/s',
+        ], ' ', $compiled);
+
+        preg_match_all(
+            '/\b(?:placeholder|title|alt|aria-label)\s*=\s*"([^"]*)"|\b(?:placeholder|title|alt|aria-label)\s*=\s*\'([^\']*)\'/i',
+            $stripped,
+            $attributes,
+        );
+
+        $text = strip_tags($stripped)."\n".implode("\n", [...$attributes[1], ...$attributes[2]]);
+
+        foreach (preg_split('/\r?\n/', $text) ?: [] as $line) {
+            $line = trim(preg_replace('/\s+/', ' ', $line) ?? '');
+
+            if ($line === '' || in_array($line, $allowed, true)) {
+                continue;
+            }
+
+            $offenders[] = "{$relative}: {$line}";
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});
+
+it('carries the countdown phrases as data attributes rather than words in a script', function () {
+    // __() cannot reach a .js module, and the script's English is built by
+    // inline ternaries (days === 1 ? '' : 's') that have no Arabic analogue -
+    // Arabic has six plural forms. So the view passes finished phrases and the
+    // script chooses between them.
+    $source = (string) file_get_contents(base_path('resources/js/countdown.js'));
+
+    expect($source)->not->toContain("' day'")
+        ->and($source)->not->toContain("'days'")
+        ->and($source)->not->toContain("' left'")
+        ->and($source)->toContain('dataset');
+
+    foreach (['countdown.days', 'countdown.hours', 'countdown.minutes', 'countdown.passed'] as $key) {
+        expect(Lang::has('submission.'.$key))->toBeTrue($key);
+    }
+});
+
+it('gives both public layouts a direction that a translation can flip', function (string $view) {
+    $compiled = Blade::compileString((string) file_get_contents(base_path($view)));
+
+    // Both already set lang=; neither set dir=, so an `ar` locale would render
+    // left to right and "Arabic is a copy of lang/en" would be false in one
+    // attribute.
+    expect($compiled)->toContain('dir=')
+        ->and(Lang::get('public.dir'))->toBe('ltr');
+})->with([
+    'resources/views/components/layouts/public.blade.php',
+    'resources/views/components/layouts/conference.blade.php',
+]);
+
+it('resolves every translation key the php classes use, not only the ones in the view lists', function () {
+    // Every $planNSources array in this file is a hand-written list of BLADE
+    // views, so no case here checks a single __() call in app/ - and Plan 6
+    // put 158 new admin./domain./legacy. keys into twenty-three classes
+    // (ConferencesTable, SubmissionsTable, ReviewInfolist,
+    // EditOrganizationProfile, ImportLegacy, CustomDomainVerified and the
+    // rest). Laravel returns the key itself on a miss, which renders as a
+    // literal `admin.reviews.title` in a column label, a modal heading or an
+    // email subject while every other test in the suite still passes.
+    //
+    // Derived from the directory rather than a list, so a class added by a
+    // later task is inside the sweep on the day it is written.
+    $namespaces = collect(glob(lang_path('en/*.php')) ?: [])
+        ->map(fn (string $path): string => basename($path, '.php'))
+        ->values();
+
+    expect($namespaces)->not->toBeEmpty();
+
+    $pattern = '/(?:__|@lang|trans)\(\s*[\'"]((?:'.$namespaces->implode('|').')\.[a-z0-9_.]+)[\'"]/';
+
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path(), FilesystemIterator::SKIP_DOTS));
+    $missing = [];
+    $checked = 0;
+
+    foreach ($files as $file) {
+        if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        preg_match_all($pattern, (string) file_get_contents($file->getPathname()), $matches);
+
+        foreach (array_unique($matches[1]) as $key) {
+            // A trailing dot is a key built by concatenation -
+            // __('members.invite.blocked.'.$status->value) and
+            // __('mail.templates.'.$key) are the two in this codebase - so the
+            // literal prefix resolves to nothing by design. Both families are
+            // already pinned case by case elsewhere in this file.
+            if (str_ends_with($key, '.')) {
+                continue;
+            }
+
+            $checked++;
+
+            if (! Lang::has($key)) {
+                $missing[] = $key.' (used in '.str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname()).')';
+            }
+        }
+    }
+
+    // If this drops to nothing the regex or the directory walk has broken, and
+    // the case would pass while checking no key at all.
+    expect($checked)->toBeGreaterThan(200)
+        ->and($missing)->toBe([]);
+});

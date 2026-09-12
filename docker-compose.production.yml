@@ -47,6 +47,10 @@ services:
       CASS_ADMIN_PASSWORD: ${CASS_ADMIN_PASSWORD}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # Send Content-Security-Policy-Report-Only instead of the enforcing
+      # header. Deploy with this 'true', walk docs/launch-checklist.md section 4
+      # with the browser console open, then set it 'false' and redeploy.
+      CASS_CSP_REPORT_ONLY: ${CASS_CSP_REPORT_ONLY:-false}
       TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     volumes:
       - cass-storage:/var/www/html/storage/app
@@ -66,7 +70,11 @@ services:
       start_period: 40s
 
   mysql:
-    image: mysql:8.4
+    # Pinned by the multi-architecture INDEX digest, the same rule the
+    # Dockerfile's comment block states: the host is linux/arm64 and a platform
+    # digest from `docker inspect` would resolve on exactly one architecture.
+    # .github/dependabot.yml (docker-compose ecosystem) moves this weekly.
+    image: mysql:8.4@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a
     restart: unless-stopped
     deploy:
       resources:

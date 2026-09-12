@@ -4,17 +4,36 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Organizer\ConferenceAssetController;
 use App\Http\Controllers\Public\ConferenceController;
+use App\Http\Controllers\Public\CustomDomainController;
 use App\Http\Controllers\Public\ShortLinkController;
 use App\Http\Controllers\Public\SubmissionFileController;
+use App\Http\Middleware\RequireCustomDomain;
 use App\Livewire\Public\AcceptInvitation;
 use App\Livewire\Public\ContactForm;
 use App\Livewire\Public\RegisterOrganization;
 use App\Livewire\Public\SubmissionForm;
 use App\Livewire\Public\SubmissionStatus;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'public.landing')->name('landing');
+// The platform landing page. It carries an explicit host constraint because
+// the custom-domain group at the bottom of this file also registers `/`, and
+// Laravel matches in registration order: without a domain this route would win
+// on every host and a verified custom domain's root would show the CASS
+// landing page instead of the organizer's conference.
+//
+// The constraint is applied by a GROUP, not by ->domain() on the route itself.
+// RouteCollection::addToCollections() files a route under $domainRoutes or
+// $routes by asking $route->getDomain() at the moment it is added, and keys it
+// by domain.uri - so a domain set AFTER registration leaves this route filed as
+// the domainless "GET|HEAD/", where the custom-domain group's own `/` below
+// then overwrites it and `landing` stops existing at all. A group merges the
+// attribute in Router::createRoute(), before the route is added.
+Route::domain((string) (parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'localhost'))
+    ->group(function (): void {
+        Route::view('/', 'public.landing')->name('landing');
+    });
 Route::view('/about', 'public.about')->name('about');
 Route::view('/privacy', 'public.privacy')->name('privacy');
 Route::view('/terms', 'public.terms')->name('terms');
@@ -139,3 +158,46 @@ Route::get('/invite/{token}', AcceptInvitation::class)
     ->where('token', '[A-Za-z0-9]{64}')
     ->middleware('throttle:invitation-accept')
     ->name('invitation.accept');
+
+// --- Verified custom domains (spec 5.8) -------------------------------------
+//
+// LAST in the file on purpose. `/{conference}` is a single-segment catch-all,
+// and Laravel matches routes in registration order, so every platform route
+// above wins on the platform host. On a *custom* domain the platform paths
+// never get this far: ResolveCustomDomain (global, before routing) answers 404
+// for each of them.
+//
+// {conference} is a plain string, NOT an implicit {conference:slug} binding.
+// (conference_id, slug) is unique per organization, not globally, so implicit
+// binding would resolve the first matching row in the database and serve
+// another society's meeting from this domain. RequireCustomDomain resolves it
+// through $organization->conferences() and substitutes both models.
+//
+// /s/{token}, /files/{ulid} and /q/{code} are deliberately NOT here: a status
+// token is a bearer credential, a file URL is a signature bound to its host,
+// and a short code is printed on posters that outlive a domain registration.
+// All three stay on APP_URL's host, which is where route() puts them.
+//
+// RequireCustomDomain resolves {conference} THROUGH the resolved organization
+// and sets both route parameters to real models. It is ROUTE middleware, and
+// SubstituteBindings sits in the `web` GROUP and is in Kernel::$middlewarePriority
+// while this one is not - so without the exclusion SubstituteBindings runs
+// FIRST, ImplicitRouteBinding resolves the plain slug against
+// Conference::getRouteKeyName() (the ULID) and throws ModelNotFoundException:
+// a 404 before this middleware is ever reached. Excluding it is safe precisely
+// because this group does its own binding, and Livewire re-runs
+// substituteImplicitBindings() at mount (Drawer/ImplicitRouteBinding.php:83),
+// where both parameters are already models and are skipped.
+Route::middleware(RequireCustomDomain::class)
+    ->withoutMiddleware(SubstituteBindings::class)
+    ->group(function (): void {
+        Route::get('/', CustomDomainController::class)->name('custom-domain.home');
+
+        Route::get('/{conference}', [ConferenceController::class, 'show'])
+            ->where('conference', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('custom-domain.conference.show');
+
+        Route::get('/{conference}/submit', SubmissionForm::class)
+            ->where('conference', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('custom-domain.conference.submit');
+    });

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Auth\Login;
+use App\Support\Panels\InitialsAvatarProvider;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -29,7 +31,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(Login::class)
             ->passwordReset()
             ->profile()
             ->multiFactorAuthentication([
@@ -39,6 +41,10 @@ class AdminPanelProvider extends PanelProvider
             ->brandLogo(fn () => view('brand.logo'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('favicon.ico'))
+            // Initials as a data: URI, not a fetch to ui-avatars.com - which
+            // img-src does not allow and which would send every panel user's
+            // name to a third party on every page load.
+            ->defaultAvatarProvider(InitialsAvatarProvider::class)
             ->colors([
                 'primary' => Color::hex('#176BB8'),
             ])

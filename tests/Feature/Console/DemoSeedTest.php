@@ -15,7 +15,6 @@ use App\Models\Submission;
 use App\Models\SubmissionDecision;
 use App\Models\SubmissionFile;
 use App\Models\User;
-use App\Notifications\OrganizationApproved;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -110,22 +109,22 @@ it('seeds an open conference with abstracts and PDFs, and sends nothing', functi
 
     // Nothing left the building and nothing was logged as if it had.
     //
-    // The seeder goes through the real actions, so the real actions raise their
-    // real notifications - `assertSentTimes` below is the proof that
-    // ApproveOrganization actually ran rather than being skipped. What makes
-    // the run silent is that the seeder installed the two fakes first, so a
+    // The seeder goes through the real actions, so the real actions really
+    // send - the approved status asserted at the top of this test is the proof
+    // that ApproveOrganization ran rather than being skipped. What makes the
+    // run silent is that the seeder installed the two fakes first, so a
     // notification never reaches a channel and a mailable never reaches the
     // queue that a production worker would drain with the real mail
     // configuration. The one thing a fake would NOT have stopped is the
-    // `email_logs` row SendTemplatedEmail writes itself, and that is what the
-    // count on the last line is about.
+    // `email_logs` row SendTemplatedEmail writes itself - which is why the
+    // seeder binds SilentTemplatedEmail over it, and what the count on the
+    // last line is about. ApproveOrganization goes through that binding too,
+    // now that its letter is a TemplatedMail rather than a notification.
     expect(Mail::getFacadeRoot())->toBeInstanceOf(MailFake::class)
         ->and(Notification::getFacadeRoot())->toBeInstanceOf(NotificationFake::class);
 
     Mail::assertNothingQueued();
     Mail::assertNothingSent();
-    Notification::assertSentTimes(OrganizationApproved::class, 1);
-
     expect(EmailLog::query()->count())->toBe(0);
 });
 

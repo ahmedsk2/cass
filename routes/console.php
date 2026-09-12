@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Console\Commands\SendReviewerRemindersCommand;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -36,3 +38,17 @@ Schedule::command(SendReviewerRemindersCommand::class)
     // (docker-compose.production.yml sets CACHE_STORE=database), so nothing
     // clears it on restart either. At 55 minutes the next hourly run takes over.
     ->withoutOverlapping(55);
+
+// The scheduler has no "last run" anywhere in Laravel, so cass:health cannot
+// answer "is schedule:work alive" without one. Five minutes, a one-hour TTL:
+// a heartbeat older than fifteen minutes is a scheduler that has been dead
+// long enough to have missed something, and in production the cache store is
+// the database (CACHE_STORE=database), so this is one small write.
+//
+// ->name() BEFORE ->withoutOverlapping(): a closure event has no command
+// string to key its mutex on and throws RuntimeException without one (the
+// comment on the reminder schedule above records the same fact from the other
+// side, where the name is optional).
+Schedule::call(static function (): void {
+    Cache::put('cass:scheduler-heartbeat', CarbonImmutable::now()->toIso8601String(), 3600);
+})->everyFiveMinutes()->name('cass-scheduler-heartbeat')->withoutOverlapping();

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Contracts\DnsResolver;
 use App\Listeners\RecordOutgoingEmail;
 use App\Support\ClientIp;
+use App\Support\Domains\SystemDnsResolver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -24,7 +26,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // The first container binding in this application, and the reason is
+        // narrow: DnsResolver wraps dns_get_record(), a global function, which
+        // no test can substitute any other way. Everything else in app/ is
+        // resolved by autowiring and faked with $this->mock().
+        $this->app->bind(DnsResolver::class, SystemDnsResolver::class);
     }
 
     /**

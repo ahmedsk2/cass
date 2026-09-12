@@ -3,7 +3,16 @@
 # nginx + php-fpm + queue worker + scheduler under supervisord; app processes run as `app`.
 # Migrations are NOT run at boot; the owner runs them (see docs/runbooks/deploy-production.md).
 
-FROM node:24-alpine AS assets
+# Base images are pinned by DIGEST (spec section 11). The digest is the
+# multi-architecture index digest from `docker buildx imagetools inspect`, not
+# the platform digest from `docker inspect`: this image is built for
+# linux/arm64 in production and linux/amd64 in the CI smoke job, and a platform
+# digest resolves on exactly one of them.
+#
+# .github/dependabot.yml raises a weekly pull request when any of these moves.
+# Do not "unpin to get the security fix" - let Dependabot open the PR, so the
+# change is reviewed and the digest stays recorded.
+FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS assets
 WORKDIR /build
 COPY package*.json vite.config.js ./
 RUN npm ci
@@ -11,14 +20,14 @@ COPY resources ./resources
 COPY public ./public
 RUN npm run build
 
-FROM composer:2 AS vendor
+FROM composer:2@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 AS vendor
 WORKDIR /build
 COPY composer.json composer.lock ./
 # intl and gd are installed in the runtime stage; the platform check is waived only here.
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-progress \
     --ignore-platform-req=ext-intl --ignore-platform-req=ext-gd
 
-FROM php:8.4-fpm-alpine AS runtime
+FROM php:8.4-fpm-alpine@sha256:49734670eccf414af884c2a0c2e558401e228615f8028f1c9fca30a0d4fb1bc2 AS runtime
 RUN apk add --no-cache nginx supervisor su-exec icu-libs libpng libjpeg-turbo freetype libzip mysql-client tzdata \
  && apk add --no-cache --virtual .build icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
  && docker-php-ext-configure gd --with-freetype --with-jpeg \
@@ -39,6 +48,11 @@ COPY docker/php.ini /usr/local/etc/php/conf.d/zz-cass.ini
 COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+# Not run in the container - it docker-execs into the mysql container and
+# writes to a host path. It is here so an operator on the host can `docker cp`
+# it out of the running image rather than hunting for the repository, and
+# --chmod so its mode is not an accident of the host filesystem.
+COPY --chmod=755 docker/backup.sh /usr/local/bin/cass-backup.sh
 # Filament's CSS/JS/fonts and Livewire's script are git-ignored and composer
 # runs with --no-scripts, so publish them into public/ here. Livewire serves
 # /vendor/livewire/livewire.min.js once public/vendor/livewire/manifest.json exists.

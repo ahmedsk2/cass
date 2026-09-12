@@ -7,6 +7,7 @@ namespace App\Notifications;
 use App\Enums\OrganizationRole;
 use App\Models\Organization;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -22,11 +23,17 @@ use Symfony\Component\Mime\Email;
  * message and reads the X-CASS-Organization header added below, exactly as it
  * does for NewSubmissionNotice.
  *
- * The plaintext token travels in the queued job payload for as long as the job
- * is queued. That is the same exposure Plan 3's status links already have, and
- * it is written down in the runbook rather than pretended away.
+ * ShouldBeEncrypted because the 64-hex token this carries is the whole
+ * credential: anybody holding it can POST /invite/{token} and take an Owner or
+ * Admin membership of this organization. Without it the plaintext sits in
+ * jobs.payload while the job is queued and - after a final failure - in
+ * failed_jobs.payload, which routes/console.php keeps for 720 hours, longer
+ * than the 14-day invitation expiry. SendQueuedNotifications reads the
+ * interface off the NOTIFICATION (:111) exactly as SendQueuedMailable reads it
+ * off the mailable, so this is the same closure Task 8 put on TemplatedMail and
+ * ContactMessage.
  */
-class MemberInvitation extends Notification implements ShouldQueue
+class MemberInvitation extends Notification implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 

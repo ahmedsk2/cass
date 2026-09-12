@@ -7,8 +7,8 @@ namespace App\Enums;
 use Filament\Support\Contracts\HasLabel;
 
 /**
- * The eleven keys of spec 5.9, and which of the ten placeholders each one may
- * use. The placeholder list is what the editor prints as a legend, what the
+ * The twelve keys of spec 5.9, and which of the eleven placeholders each one
+ * may use. The placeholder list is what the editor prints as a legend, what the
  * preview fills with sample values, and what the unit test checks a default
  * body never exceeds - an unknown placeholder is left literal at render time
  * rather than blanked, so a typo shows up in the preview instead of in an
@@ -27,6 +27,7 @@ enum EmailTemplateKey: string implements HasLabel
     case DecisionRejected = 'decision_rejected';
     case OrganizationApproved = 'organization_approved';
     case OrganizationRejected = 'organization_rejected';
+    case OrganizationSuspended = 'organization_suspended';
 
     public function getLabel(): string
     {
@@ -42,21 +43,27 @@ enum EmailTemplateKey: string implements HasLabel
             self::DecisionRejected => 'Decision: not accepted',
             self::OrganizationApproved => 'Organization approved',
             self::OrganizationRejected => 'Organization rejected',
+            self::OrganizationSuspended => 'Organization suspended',
         };
     }
 
     /**
-     * The two organization keys are platform-wide: they are sent once, to an
-     * organization owner, by Plan 1's OrganizationApproved / OrganizationRejected
-     * notifications, at a moment when no conference exists. They appear in the
-     * per-conference editor (so the list of template keys an organizer sees
-     * matches the spec) but cannot be overridden there, because a
-     * conference-scoped override of them would never be read. Moving those two
-     * notifications onto this pipeline is Plan 6.
+     * The three organization keys are platform-wide: they are sent once, to an
+     * organization owner, by ApproveOrganization and RejectOrganization, at a
+     * moment when no conference need exist. They appear in the per-conference
+     * editor (so the list of template keys an organizer sees matches the spec)
+     * but cannot be overridden there, because a conference-scoped override of
+     * them would never be read - SendTemplatedEmail is handed the Organization
+     * rather than a Conference, and RenderEmailTemplate only looks for an
+     * override when it has the latter.
      */
     public function isConferenceScoped(): bool
     {
-        return ! in_array($this, [self::OrganizationApproved, self::OrganizationRejected], true);
+        return ! in_array($this, [
+            self::OrganizationApproved,
+            self::OrganizationRejected,
+            self::OrganizationSuspended,
+        ], true);
     }
 
     /** @return list<string> */
@@ -72,8 +79,13 @@ enum EmailTemplateKey: string implements HasLabel
             self::DecisionAcceptedPoster,
             self::DecisionWaitlisted,
             self::DecisionRejected => ['author_name', 'title', 'reference', 'conference', 'organization', 'decision', 'status_link'],
-            self::OrganizationApproved,
-            self::OrganizationRejected => ['organization', 'status_link'],
+            self::OrganizationApproved => ['organization', 'status_link'],
+            // `reason` is what the admin typed into the reject action. An owner
+            // who is not told why cannot act on it, and spec 5.1 step 4 is
+            // "rejects with a reason (organization becomes suspended, owner
+            // emailed)".
+            self::OrganizationRejected,
+            self::OrganizationSuspended => ['organization', 'reason', 'status_link'],
         };
     }
 
@@ -112,6 +124,7 @@ enum EmailTemplateKey: string implements HasLabel
             'status_link' => 'https://cass.towardpcc.com/s/0123456789abcdef',
             'review_link' => 'https://cass.towardpcc.com/review',
             'decision' => 'Accepted for oral presentation',
+            'reason' => 'The society could not be verified from the details given.',
         ];
 
         return array_intersect_key($samples, array_flip($this->placeholders()));
