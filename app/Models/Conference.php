@@ -413,6 +413,45 @@ class Conference extends Model
     }
 
     /**
+     * The decision numbers the conference view and the admin list print. One
+     * grouped query plus two aggregates, and a zero for every decision with no
+     * rows - a count that disappears when it is zero makes a panel change shape
+     * as data arrives.
+     *
+     * Deliberately separate from rankingSummary(), which also carries the score
+     * aggregates the ranking page needs: the conference view wants four numbers
+     * and should not pay for an avg() over every abstract to get them.
+     *
+     * @return array{decided: int, undecided: int, notified: int, by_decision: array<string, int>}
+     */
+    public function decisionCounts(): array
+    {
+        $base = RankedSubmissions::query($this);
+
+        /** @var array<string, int> $byDecision */
+        $byDecision = (clone $base)
+            ->selectRaw('decision, count(*) as aggregate')
+            ->groupBy('decision')
+            ->pluck('aggregate', 'decision')
+            ->all();
+
+        $counts = [];
+        $decided = 0;
+
+        foreach (Decision::inReportOrder() as $decision) {
+            $counts[$decision->value] = (int) ($byDecision[$decision->value] ?? 0);
+            $decided += $counts[$decision->value];
+        }
+
+        return [
+            'decided' => $decided,
+            'undecided' => (clone $base)->whereNull('decision')->count(),
+            'notified' => (clone $base)->whereNotNull('decision_notified_at')->count(),
+            'by_decision' => $counts,
+        ];
+    }
+
+    /**
      * Spec 5.5: "a coverage summary (submissions with fewer than N reviewers)".
      *
      * One grouped query plus one count, rather than a loop over submissions:

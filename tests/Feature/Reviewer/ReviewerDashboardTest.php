@@ -59,3 +59,22 @@ it('shows no progress line for a conference that has not started reviewing', fun
         ->assertSee(__('reviewer.dashboard.not_started'))
         ->assertDontSee(__('reviewer.progress.yours', ['submitted' => 0, 'expected' => 2]));
 });
+
+it('tells a reviewer their reviews are read-only once the conference has decided', function () {
+    $this->conference->forceFill(['status' => ConferenceStatus::Decided])->save();
+
+    // Plan 4 already refuses every write in `decided`
+    // (Conference::acceptsReviewWrites()) and already renders the review form
+    // disabled. What was missing is that nothing said WHY, on the one screen a
+    // reviewer starts from.
+    livewire(Dashboard::class)
+        ->assertSee(__('reviewer.dashboard.decided'))
+        // Still listed, still openable: isOpenToReviewers() admits Decided so a
+        // reviewer can read back what they wrote.
+        ->assertSee($this->conference->name)
+        ->assertSee(__('reviewer.dashboard.open_queue'));
+});
+
+it('does not say that while the conference is still under review', function () {
+    livewire(Dashboard::class)->assertDontSee(__('reviewer.dashboard.decided'));
+});

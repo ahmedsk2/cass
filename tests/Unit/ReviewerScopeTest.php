@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Actions\Decisions\ApplyDecision;
 use App\Enums\ConferenceStatus;
+use App\Enums\Decision;
 use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
 use App\Enums\SubmissionStatus;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
+use App\Models\Review;
 use App\Models\ReviewAssignment;
 use App\Models\Submission;
 use App\Models\User;
@@ -106,4 +109,24 @@ it('lists the conferences a reviewer has work in', function () {
     expect(ReviewerScope::conferences($this->reviewer)->pluck('id')->all())
         ->toContain($this->conference->id)
         ->toContain($quiet->id);
+});
+
+it('keeps a decided abstract readable for the reviewer who reviewed it, and for nobody else', function () {
+    $other = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $other->id]);
+
+    Review::factory()->for($this->submitted)->submitted()->create(['reviewer_user_id' => $this->reviewer->id]);
+
+    // Plan 5's ApplyDecision writes submissions.status, which is exactly what
+    // drops the row out of Plan 4's scope - and it happens while the conference
+    // is still `reviewing`, not at MarkDecided.
+    app(ApplyDecision::class)->handle($this->submitted, Decision::Rejected, User::factory()->create());
+
+    $decided = $this->submitted->fresh() ?? $this->submitted;
+
+    expect(ReviewerScope::allows($this->reviewer, $decided))->toBeTrue()
+        // ...while a decided abstract this reviewer never touched is gone from
+        // the pool, which is the whole point of the narrowing.
+        ->and(ReviewerScope::allows($other, $decided))->toBeFalse()
+        ->and(ReviewerScope::submissions($other)->pluck('id')->all())->not->toContain($decided->id);
 });
