@@ -105,6 +105,10 @@ return [
         'withdrawn_notice' => 'This abstract was withdrawn on :date and will not be reviewed.',
         'draft_warning' => 'This is a draft. It has not been submitted, and a draft is not reviewed. Open it and press "Submit abstract" before the deadline.',
         'decision_pending' => 'The organizers are handling this abstract. They will email you when there is a decision, and the letter will appear here.',
+        'decision' => [
+            'heading' => 'The organizers\' decision',
+            'sent_on' => 'Sent to you on :date.',
+        ],
         'until_deadline' => 'You can edit or withdraw until the submission deadline.',
         'keep_link' => 'Keep this link. It is the only way back to this abstract, and anyone who has it can edit it — please do not forward it.',
     ],

@@ -74,9 +74,21 @@ enum SubmissionStatus: string implements HasColor, HasLabel
         return $this->isOpenToAuthor() || $this === self::UnderReview;
     }
 
-    /** Statuses this plan actually writes; the rest render read-only. */
-    public function isDrivenInPlan3(): bool
+    /**
+     * The author has done their part and the organizers have it: under review,
+     * or decided. The public status page shows the decision letter for these
+     * once it has been sent, and a neutral "we are handling it" line until then.
+     *
+     * This was `isDrivenInPlan3()`, which named the plan that did not write
+     * these statuses rather than what they mean - and from Plan 5 on it is
+     * false for every case it was written to describe.
+     */
+    public function isWithOrganizers(): bool
     {
-        return in_array($this, [self::Draft, self::Submitted, self::Withdrawn], true);
+        return in_array(
+            $this,
+            [self::UnderReview, self::Accepted, self::Rejected, self::Waitlisted],
+            true,
+        );
     }
 }

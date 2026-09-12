@@ -41,10 +41,34 @@
                 'date' => $submission->withdrawn_at?->copy()->setTimezone($conference->timezone)->format('j F Y, H:i'),
             ]) }}
         </div>
-    @elseif (! $submission->status->isDrivenInPlan3())
-        {{-- Plan 5 replaces this block with the decision letter from the
-             matching decision_* template. Until then the page states the
-             status and nothing it cannot stand behind. --}}
+    @elseif ($letter)
+        {{-- The letter as it was SENT, not a fresh render: an organizer who
+             edits the template next March must not rewrite what this author
+             was told in September.
+
+             Rendered rather than escaped, and that is safe because of a chain
+             that already exists: RenderEmailTemplate escapes every substituted
+             value and then every `<` in the finished body before the letter is
+             stored, so no tag can be in one. This is the same
+             Markdown::parse() call ConferenceEmailTemplates::preview() makes on
+             the same text.
+
+             $letterBody is the stored markdown with the withheld status link
+             filled in from this reader's own token; the substitution is in
+             SubmissionStatus::render() because Blade cannot carry the literal
+             placeholder. --}}
+        <section class="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+            <h2 class="text-lg font-semibold">{{ __('submission.status.decision.heading') }}</h2>
+            <p class="mt-1 text-sm text-slate-500">
+                {{ __('submission.status.decision.sent_on', [
+                    'date' => $letter->notified_at?->copy()->setTimezone($conference->timezone)->format('j F Y'),
+                ]) }}
+            </p>
+            <div class="mt-4 text-slate-700 [&_p]:mt-3 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mt-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-[var(--org-primary)] [&_a]:underline [&_strong]:font-semibold">
+                {!! Illuminate\Mail\Markdown::parse((string) $letterBody) !!}
+            </div>
+        </section>
+    @elseif ($submission->status->isWithOrganizers())
         <div class="mt-6 rounded-lg border border-slate-300 bg-slate-50 p-4 text-slate-700">
             {{ __('submission.status.decision_pending') }}
         </div>
