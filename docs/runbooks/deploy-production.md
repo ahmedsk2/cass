@@ -868,6 +868,37 @@ Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted wi
 
 `TRUSTED_PROXIES` is fixed in the compose file to the private Docker ranges where Traefik lives. The app takes the client IP from Cloudflare's `CF-Connecting-IP` header for rate limiting; the OCI security list only admits Cloudflare on 80/443, so that header cannot be spoofed from outside.
 
+## Resource limits, and how to measure them
+
+Spec section 10 calls its memory numbers *"starting values, to be measured under load and adjusted"*. This section is the measurement, not a new guess: **do not change a number here without running both commands below first and writing the result down.**
+
+The arithmetic worth knowing before you start. `docker-compose.production.yml` limits the app container to `768M`/`1.5` CPU and MySQL to `512M`/`1.0`; `Dockerfile` caps php-fpm at `pm.max_children = 4`; `docker/php.ini` sets `memory_limit=256M`. Four children against a 256 MiB cap is a worst case of 1 GiB inside a 768 MiB container. That is not a bug — a real request uses a fraction of the cap, and `pm.max_requests = 500` recycles a worker before it drifts — but it does mean **the container's limit, not php-fpm's, is what would kill a runaway, and it would kill it by OOM rather than by a PHP fatal**, which looks like a 502 from Traefik and not like an error in the log.
+
+```bash
+# 1. What a worker actually uses, under the heaviest thing this app does.
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec "$C" su-exec app php artisan tinker --execute='
+$before = memory_get_usage(true);
+$conference = App\Models\Conference::query()->whereNotNull("published_at")->firstOrFail();
+$pdf = app(App\Actions\Conferences\GenerateConferencePoster::class)->handle($conference, App\Enums\PosterSize::A3);
+printf("poster: %.1f MiB peak\n", memory_get_peak_usage(true) / 1048576);'
+
+# 2. What the containers use over a day, at the peak. The names are not fixed -
+#    neither compose file sets container_name and Coolify generates them - so
+#    resolve both the way the rest of this runbook does. ($C from measurement 1
+#    is the same container as $APP if the block runs in one shell.)
+APP=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+DB=$(sudo docker ps --filter label=com.docker.compose.service=mysql --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker stats --no-stream "$APP" "$DB"
+```
+
+The poster render is the heaviest single request this application has — dompdf, a 1200 px QR PNG and TTF metrics, which is the reason `phpunit.xml` raises the suite to `512M`. Read the two results together:
+
+- **Poster peak comfortably under 256 MiB and the app container's steady state well under 768 MiB: change nothing.** Record the two numbers and the date here.
+- **Poster peak near 256 MiB:** raise `memory_limit` in `docker/php.ini` *and* lower `pm.max_children` to 3 in the `Dockerfile` **in the same commit**. Those two numbers only mean anything together; raising one alone moves the OOM from php-fpm to the container.
+
+Measurements taken so far: *(none yet — the first production peak goes here.)*
+
 ## Known quirk: healthcheck Host header
 
 Laravel's `TrustHosts` middleware (`bootstrap/app.php`) only accepts requests whose `Host` header matches `APP_URL`'s host. Both the Dockerfile's `HEALTHCHECK` and this compose file's `app.healthcheck` therefore send an explicit `Host` header derived from `$APP_URL` when probing `127.0.0.1:8080/up` from inside the container - without it the internal healthcheck gets HTTP 400 and Coolify would report the container unhealthy even though real traffic (which arrives with the correct `Host: cass.towardpcc.com` from Traefik) works fine. If `APP_URL` is ever changed, the healthcheck host follows it automatically; no separate config needed.

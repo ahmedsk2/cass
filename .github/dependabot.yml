@@ -1,0 +1,96 @@
+# Dependabot, five ecosystems, weekly, grouped.
+#
+# Grouped on purpose: an ungrouped run opens eleven pull requests every Monday
+# for a single-maintainer repository, which is how Dependabot gets switched off.
+# One PR per ecosystem is reviewable in the time somebody actually has.
+version: 2
+
+updates:
+  # The Dockerfile's three base images. `directories: [/, /docker]` would be
+  # wrong: docker/ holds entrypoint.sh, nginx.conf, php.ini, supervisord.conf
+  # and backup.sh, and no Dockerfile at all.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 3
+    groups:
+      docker:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(docker)"
+
+  # mysql:8.4 in BOTH compose files and axllent/mailpit in the dev one. This is
+  # a separate ecosystem from `docker`, which reads Dockerfiles only: with the
+  # `docker` block alone the compose digests pinned in the compose files would
+  # never move again, which is worse than not pinning them - the production
+  # database image would silently stop receiving security updates.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 2
+    groups:
+      compose:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(compose)"
+
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 3
+    groups:
+      # Laravel, Filament and Livewire move together and their tests are the
+      # slowest; keeping them out of the small-change group means a red suite
+      # names the framework rather than a linter.
+      framework:
+        patterns: ["laravel/*", "filament/*", "livewire/*"]
+      dev:
+        dependency-type: development
+      production:
+        dependency-type: production
+        exclude-patterns: ["laravel/*", "filament/*", "livewire/*"]
+    commit-message:
+      prefix: "chore(composer)"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 2
+    groups:
+      npm:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(npm)"
+
+  # The reason the workflow pins actions by SHA: a mutable tag on a third-party
+  # action is arbitrary code in the pipeline, and this is what keeps a pinned
+  # SHA current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(actions)"

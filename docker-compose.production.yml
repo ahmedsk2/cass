@@ -70,7 +70,11 @@ services:
       start_period: 40s
 
   mysql:
-    image: mysql:8.4
+    # Pinned by the multi-architecture INDEX digest, the same rule the
+    # Dockerfile's comment block states: the host is linux/arm64 and a platform
+    # digest from `docker inspect` would resolve on exactly one architecture.
+    # .github/dependabot.yml (docker-compose ecosystem) moves this weekly.
+    image: mysql:8.4@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a
     restart: unless-stopped
     deploy:
       resources:
