@@ -2,15 +2,28 @@
 
 declare(strict_types=1);
 
-// The ranking page, the decision actions and the decision emails all land in
-// this file across Tasks 4-9. This task needs exactly one key: the fallback
-// SubmissionDecision::actorName() prints when `decided_by` was nulled by a
-// deleted account.
+// Every organizer-facing string of the ranking page, the decision actions and
+// the decision letters, written across Tasks 1 and 4-9 and swept in Task 10.
+//
+// Two rules for anyone editing this file:
+//
+// 1. The groups are in the order the organizer meets them - `ranking` and
+//    `summary` are the page, `actions`, `bulk` and `send` are what they click,
+//    `mark` ends the conference, `conference` and `infolist` are what they read
+//    afterwards, `history` and `errors` are the machinery underneath. Adding a
+//    group at the bottom out of habit is how that ordering rots.
+// 2. A second `'errors' => [...]` literal further down would *silently replace*
+//    the first one - PHP keeps the last assignment and says nothing, and every
+//    key of the earlier block would then resolve to its own name in the panel.
+//    Append to the existing group; never open a second one.
+//
+// What is deliberately NOT here, and why (Task 11 Step 4 records all three in
+// the backlog): App\Enums\Decision::getLabel(), because every enum from Plans
+// 1-4 is hardcoded English and half-translating one is worse than translating
+// none; App\Support\Scoring\RankingRows::headers(), matching Plan 3's
+// ExportSubmissionsCsv::HEADERS; and the two decision columns on the admin
+// conference table, whose every sibling column is hardcoded too.
 return [
-
-    'history' => [
-        'former_member' => 'a former member',
-    ],
 
     'ranking' => [
         'action' => 'Ranking and decisions',
@@ -106,29 +119,6 @@ return [
         'nothing_sent' => 'Nothing sent',
     ],
 
-    'infolist' => [
-        'heading' => 'Decision',
-        'decision' => 'Decision',
-        'notified' => 'Letter sent',
-        'not_sent' => 'Not sent yet',
-        'score' => 'Score',
-        'reviews' => 'from :count review(s)',
-        'history' => 'History',
-    ],
-
-    'errors' => [
-        'no_conference' => 'This abstract has no conference any more, so it cannot be decided.',
-        'wrong_conference_status' => 'Decisions can only be made while a conference is under review or decided; this one is :status.',
-        'draft' => 'This abstract was never submitted, so there is nothing to decide.',
-        'withdrawn' => 'This abstract was withdrawn by its author and cannot be decided.',
-        'already_notified' => 'This author has already been sent a decision letter. Use "Change decision and resend" if the decision really has changed.',
-        'not_decided' => 'This abstract has no decision yet, so there is no letter to send.',
-        'no_history' => 'This abstract has a decision with no history behind it. Decide it again before sending a letter.',
-        'no_author_email' => 'This abstract has no corresponding author with a usable email address.',
-        'conference_not_sending' => 'This conference is :status and is off the public site, so the link in the letter would not open. Letters cannot be sent from it.',
-        'already_sending' => 'This letter is already being sent, or the decision changed while the run was under way.',
-    ],
-
     'mark' => [
         'action' => 'Mark decisions final',
         'heading' => 'Mark this conference decided?',
@@ -151,6 +141,33 @@ return [
         'undecided' => 'Still open',
         'breakdown' => 'By decision',
         'none' => 'No decisions yet',
+    ],
+
+    'infolist' => [
+        'heading' => 'Decision',
+        'decision' => 'Decision',
+        'notified' => 'Letter sent',
+        'not_sent' => 'Not sent yet',
+        'score' => 'Score',
+        'reviews' => 'from :count review(s)',
+        'history' => 'History',
+    ],
+
+    'history' => [
+        'former_member' => 'a former member',
+    ],
+
+    'errors' => [
+        'no_conference' => 'This abstract has no conference any more, so it cannot be decided.',
+        'wrong_conference_status' => 'Decisions can only be made while a conference is under review or decided; this one is :status.',
+        'draft' => 'This abstract was never submitted, so there is nothing to decide.',
+        'withdrawn' => 'This abstract was withdrawn by its author and cannot be decided.',
+        'already_notified' => 'This author has already been sent a decision letter. Use "Change decision and resend" if the decision really has changed.',
+        'not_decided' => 'This abstract has no decision yet, so there is no letter to send.',
+        'no_history' => 'This abstract has a decision with no history behind it. Decide it again before sending a letter.',
+        'no_author_email' => 'This abstract has no corresponding author with a usable email address.',
+        'conference_not_sending' => 'This conference is :status and is off the public site, so the link in the letter would not open. Letters cannot be sent from it.',
+        'already_sending' => 'This letter is already being sent, or the decision changed while the run was under way.',
     ],
 
 ];

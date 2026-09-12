@@ -214,8 +214,14 @@ it('resolves every translation key plan 4 uses', function () use ($plan4Sources)
         // Lang::has() is false (Arr::get explodes it to a final empty segment)
         // and which no language file can ever satisfy. Those four keys are
         // asserted directly in the third case below, by enum case.
+        // `decisions` is in the alternation even though Plan 4 predates that
+        // file: Plan 5 rewrote two of the files in this very list
+        // (ConferenceStatusActions, ConferenceInfolist) to call
+        // `__('decisions.*')`, and two patterns that disagree about which
+        // prefixes count would let a typo in one of them through whichever
+        // case happens not to look.
         preg_match_all(
-            "/__\\(\\s*'((?:members|reviewer)(?:\\.[a-z0-9_]+)+)'/",
+            "/__\\(\\s*'((?:members|reviewer|decisions)(?:\\.[a-z0-9_]+)+)'/",
             (string) file_get_contents($path),
             $matches,
         );
@@ -250,6 +256,99 @@ it('leaves no visible english hardcoded in the pages plan 4 added', function () 
             '/<script\b[^>]*>.*?<\/script>/s',
             '/<style\b[^>]*>.*?<\/style>/s',
         ], ' ', $compiled));
+
+        foreach (preg_split('/\r?\n/', $text) ?: [] as $line) {
+            $line = trim(preg_replace('/\s+/', ' ', $line) ?? '');
+
+            if ($line === '' || in_array($line, $allowed, true)) {
+                continue;
+            }
+
+            if (str_word_count($line) >= 3) {
+                $offenders[] = "{$relative}: {$line}";
+            }
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});
+
+/**
+ * Every file Plan 5 added or rewrote that may contain a translated string. The
+ * two *modified* files are in the list on purpose: most of Plan 5's
+ * organizer-facing keys live in DecisionActions and ConferenceStatusActions
+ * rather than in a view.
+ */
+$plan5Sources = [
+    'app/Filament/Organizer/Resources/Conferences/Pages/ConferenceRanking.php',
+    'app/Filament/Organizer/Resources/Conferences/Tables/DecisionActions.php',
+    'app/Filament/Organizer/Resources/Conferences/Tables/ConferenceStatusActions.php',
+    'app/Filament/Organizer/Resources/Conferences/Schemas/ConferenceInfolist.php',
+    'app/Filament/Organizer/Resources/Submissions/Schemas/SubmissionInfolist.php',
+    'app/Actions/Decisions/ApplyDecision.php',
+    'app/Actions/Decisions/ApplyDecisions.php',
+    'app/Actions/Decisions/SendDecisionEmails.php',
+    'app/Actions/Decisions/SendOneDecisionEmail.php',
+    'app/Actions/Conferences/MarkDecided.php',
+    'app/Models/SubmissionDecision.php',
+    'resources/views/filament/organizer/pages/conference-ranking.blade.php',
+    'resources/views/livewire/public/submission-status.blade.php',
+    'resources/views/filament/reviewer/pages/dashboard.blade.php',
+];
+
+it('resolves every translation key plan 5 uses', function () use ($plan5Sources) {
+    $missing = [];
+
+    foreach ($plan5Sources as $relative) {
+        $path = base_path($relative);
+
+        expect(file_exists($path))->toBeTrue("Expected {$relative} to exist.");
+
+        preg_match_all(
+            '/(?:__|@lang|trans)\(\s*[\'"]((?:submission|mail|members|reviewer|decisions)\.[a-z0-9_.]+)[\'"]/',
+            (string) file_get_contents($path),
+            $matches,
+        );
+
+        foreach (array_unique($matches[1]) as $key) {
+            if (! Lang::has($key)) {
+                $missing[] = "{$key} (used in {$relative})";
+            }
+        }
+    }
+
+    expect($missing)->toBe([]);
+});
+
+it('leaves no visible english hardcoded in the pages plan 5 added', function () use ($plan5Sources) {
+    // The same compiler-based sweep the Plan 3 case uses, over the Blade files
+    // of this list. Do NOT strip directives with hand-written regexes - the
+    // reasoning is in the Plan 3 case above and all three failure shapes are in
+    // this plan's own views too.
+    $allowed = ['KB', 'MB'];
+    $offenders = [];
+
+    foreach ($plan5Sources as $relative) {
+        if (! str_ends_with($relative, '.blade.php')) {
+            continue;
+        }
+
+        $compiled = Blade::compileString((string) file_get_contents(base_path($relative)));
+
+        $stripped = (string) preg_replace([
+            '/<\?php.*?\?>/s',
+            '/<\?php.*$/s',
+            '/<script\b[^>]*>.*?<\/script>/s',
+            '/<style\b[^>]*>.*?<\/style>/s',
+        ], ' ', $compiled);
+
+        preg_match_all(
+            '/\b(?:placeholder|title|alt|aria-label)\s*=\s*"([^"]*)"|\b(?:placeholder|title|alt|aria-label)\s*=\s*\'([^\']*)\'/i',
+            $stripped,
+            $attributes,
+        );
+
+        $text = strip_tags($stripped)."\n".implode("\n", [...$attributes[1], ...$attributes[2]]);
 
         foreach (preg_split('/\r?\n/', $text) ?: [] as $line) {
             $line = trim(preg_replace('/\s+/', ' ', $line) ?? '');

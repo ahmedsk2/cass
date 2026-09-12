@@ -37,6 +37,22 @@ App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, bra
    Nothing should be Pending. Plan 2 is such a release: it adds seven tables (`conferences`, `tracks`, `custom_fields`, `review_forms`, `review_questions`, `short_links`, `short_link_visits`), and until they exist every organizer dashboard (the Conferences widget queries `conferences`) and every `/org/{tenant}/conferences`, `/c/...` and `/q/...` page returns 500.
 
    Plan 3 is such a release: it adds five tables (`submissions`, `submission_authors`, `submission_files`, `email_templates`, `email_logs`) and two columns on `conferences` (`reference_prefix`, `submission_counter`). Until they exist, `/c/{org}/{conference}/submit`, `/s/{token}`, `/files/{ulid}`, the organizer submission list and the admin email log all return 500, **and every outgoing email fails**, because the mail listener writes an `email_logs` row before the message is sent.
+
+   Plan 5 is such a release: it adds six columns to `submissions` (`score`,
+   `score_spread`, `review_count`, `scored_at`, `decision`,
+   `decision_notified_at`), one to `reviews` (`score`) and one table
+   (`submission_decisions`). Until they exist, three screens that worked before
+   the deploy return 500: the new ranking page; the organizer **conference view**
+   of any conference in Reviewing, Decisions sent or Archived, whose Decisions
+   section calls `Conference::decisionCounts()` (the section is `->visible()`-gated
+   to those three statuses, so a conference in Draft or Open is unaffected); and
+   the admin conference list `/admin/conferences`, whose two new count columns
+   query `decision` and `decision_notified_at` for every row on every render,
+   regardless of status. `/s/{token}` is the one thing that degrades quietly - a
+   missing `decision_notified_at` reads as null and the page shows its neutral
+   "no decision yet" block. Turn auto-deploy off for this release and run
+   `migrate --force` the moment the new container is healthy, then run the
+   `cass:rescore` backfill described under "Scoring, ranking and decisions".
 4. Check https://cass.towardpcc.com/up returns 200, then open the landing page and `/org/login`. **`/org/login` must be styled**: this release is the first image that runs `filament:assets` and publishes Livewire's script, so `/css/filament/filament/app.css` and `/vendor/livewire/livewire.min.js` should both return 200. Cloudflare may still be serving the old 404s — purge `/css/filament/*`, `/js/filament/*`, `/fonts/filament/*` and `/vendor/livewire/*` if so.
 5. Time the public conference page after the deploy. Spec section 10 gives it a 300 ms server budget, which is the reason it is plain Blade instead of Livewire.
 
@@ -351,6 +367,217 @@ organizer knows which of their questions identify an author. Each custom field
 has a **Hide this answer from reviewers** toggle; turn it on for those, and a
 blind conference stops printing them. It changes nothing for a non-blind
 conference, and nothing for the organizer's own screens or the CSV export.
+
+## Scoring, ranking and decisions
+
+Every command in this section looks the container up the way the rest of this
+runbook does and runs artisan as `app` via `su-exec`. The stack is deployed by
+Coolify under its own project name with its own environment, so
+`docker compose -f docker-compose.production.yml ...` from a checkout is a
+*different* stack (or a failure on unset `${...}` variables), and running artisan
+as root leaves root-owned files in `bootstrap/cache` and `storage/framework`.
+
+### Where the numbers come from
+
+`submissions.score`, `submissions.score_spread`, `submissions.review_count` and
+`submissions.scored_at` are **denormalised**. Nothing computes them on read —
+that is what lets the ranking table sort five hundred abstracts without touching
+`reviews` — and exactly one class writes them, `App\Actions\Submissions\ComputeSubmissionScore`,
+with exactly three callers:
+
+| Caller | When |
+|---|---|
+| `App\Actions\Reviews\SubmitReview` | a reviewer submits a review |
+| `App\Actions\Reviews\ReopenReview` | a reviewer reopens one |
+| `cass:rescore {conference}` | you, deliberately |
+
+`reviews.score` is written for drafts too; only submitted reviews reach the
+submission's mean, spread and count.
+
+### `cass:rescore`
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec -it "$C" su-exec app php artisan cass:rescore <CONFERENCE-ULID>
+```
+
+The argument is the ULID from the organizer panel URL (`/org/{org}/conferences/{ULID}`),
+or the numeric `conferences.id` if you are working from the database.
+
+**It is not scheduled, and it is not an organizer feature.** A conference's
+review form locks the moment the first review is submitted (spec section 3), and
+a question's *weight* is part of the question, so nothing an organizer can do
+makes a stored score wrong. Run it in exactly four situations:
+
+1. **immediately after the release that adds the score columns** (this one).
+   The four columns land empty for every abstract that already exists, and
+   nothing recomputes them on read — so a conference whose reviewers finished
+   under the previous release would show an entirely unscored ranking until this
+   runs. Rescore every conference that already has reviews:
+
+   ```bash
+   C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+   sudo docker exec "$C" su-exec app php artisan tinker --execute='
+   App\Models\Conference::query()->whereHas("submissions.reviews")->pluck("ulid")->each(fn ($u) => print($u . PHP_EOL));'
+   # then, one command per ULID printed:
+   sudo docker exec -it "$C" su-exec app php artisan cass:rescore <ULID>
+   ```
+
+2. **after the legacy import** (`cass:import-legacy`, Plan 6), which inserts
+   reviews and answers directly and has no `SubmitReview` to hook;
+3. **after correcting data by hand** in the database;
+4. **after deploying a fix to `App\Support\Scoring`** — then rescore every
+   conference that already had reviews, one command each.
+
+It is safe to run at any time: it recomputes a whole conference and writing the
+same numbers twice changes nothing.
+
+### Sending decision emails
+
+The organizer clicks **Send decision emails** on a conference's Ranking and
+decisions page. One click queues one `TemplatedMail` per abstract that has a
+decision and has never been written to, capped at `CASS_DECISION_SEND_CHUNK`
+(200) per click; the notification says how many are left, and clicking again
+continues.
+
+**Throughput.** One queue worker runs under supervisord. Each job is one SMTP
+handshake and one send against the owner's mailbox, so budget roughly a second
+per letter: 200 letters is about three minutes, 500 is about eight. Before the
+first real batch, send one conference's letters with `CASS_DECISION_SEND_CHUNK`
+left at 200 and watch `supervisorctl status` plus the `sent`/`failed` split; if
+the provider throttles, lower the chunk and click again rather than raising the
+worker count. Watch it in the admin panel's **Email log**
+(`/admin/email-logs`), filtered by template key, or:
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec "$C" su-exec app php artisan tinker --execute="echo App\Models\EmailLog::query()->where('template_key','like','decision_%')->selectRaw('status, count(*) c')->groupBy('status')->pluck('c','status');"
+```
+
+A row stuck at `queued` long after the others finished is the failure described
+in the **Email triage** section above.
+
+**If a batch fails in the worker** — the provider throttled the burst, the
+mailbox credentials expired — the rows show as `failed` in `/admin/email-logs`
+and the jobs are in `failed_jobs`. **Fix the transport, then retry the jobs; do
+not use the per-row "Resend the letter" action.** The queued message already
+carries the rendered subject and body and the `email_logs` ULID, so a retry
+delivers exactly the letter that was stored, changes no token and rewrites no
+history:
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec "$C" su-exec app php artisan queue:failed
+sudo docker exec "$C" su-exec app php artisan queue:retry all
+```
+
+`queue:retry all` retries every failed job in the table, not only the decision
+letters — which is usually what you want after a transport outage.
+
+**A retried row keeps reading `failed` in the email log even when the retry
+delivers.** `RecordOutgoingEmail::sent()` only flips a row that is still
+`queued`, and `TemplatedMail::failed()` already moved it to `failed` on the first
+attempt. Judge a retry by the worker and by the mailbox, not by the log's status
+column; the row's `error` is a record of the first attempt, not of the last.
+
+"Resend the letter" is for one author who says nothing arrived: it re-renders
+from the template **as it stands now**, overwrites the stored letter on that
+decision, and mints that author a new status link. Retry first; resend only what
+is still missing afterwards.
+
+**Sending decision letters rotates every notified author's status link.** The
+access token in `/s/{token}` is stored as a SHA-256 hash and the plaintext
+exists only inside an emailed link (spec section 9), so the only way to put a
+working link in a second email is to mint a new one — which is what
+`IssueSubmissionToken` does, and what "Resend status link" has always done. The
+consequence: after decision letters go out, the link in an author's *original
+confirmation* email stops resolving and the link in the *decision* email works.
+Every decided author receives a decision letter, so every decided author
+receives a live link. If a support request arrives saying "my old link is dead",
+this is why, and the answer is the decision email — or a **Resend status link**
+from the submission row.
+
+The plaintext token exists in exactly one place: the delivered email. The copy
+of the letter stored on `submission_decisions.letter_markdown` deliberately
+keeps `{{status_link}}` literal, so that column — which is kept for ever and
+appears in every backup — is never a bearer-token store. The author's status
+page substitutes the link from the token already in their own URL, so what they
+see is the whole letter.
+
+**Letters cannot be sent from a conference that is off the public site.** An
+archived conference — or one whose organization has been suspended — makes
+`/s/{token}` a 404, so a letter carrying a fresh link into it would be dead on
+arrival *and* would kill the link the author already has. The send button is
+hidden there and the action refuses per row with a sentence naming the status.
+If an organizer archived a conference with letters still pending, move it back
+to `reviewing` or `decided`, send, then archive again.
+
+### Correcting a decision after the letters have gone
+
+The plain **Decide** action disappears once an author has been written to. Use
+**Change decision and resend**: it appends to the decision history, sets the new
+decision, and puts the abstract back in the send queue so the next
+**Send decision emails** click queues a second letter with the new answer. The
+superseded history row keeps the letter it announced, and both are visible on
+the submission view.
+
+### Marking a conference decided
+
+**Mark decisions final** moves `reviewing -> decided`. It refuses while any
+abstract is still in `submitted` or `under_review` with no decision — those
+authors would be waiting for an email that never arrives. It does **not** refuse
+when letters are still queued; the confirmation says how many.
+
+After `decided`: reviewers can still open and read their reviews but cannot
+write them (`Conference::acceptsReviewWrites()`), and decisions can still be
+corrected with change-and-resend, because a presenter withdrawing in week three
+is a real thing.
+
+### The 500-row budget
+
+Spec section 10 budgets the ranking table at "500 submissions in under 1 s". The
+deterministic guard is
+`tests/Feature/Organizer/ConferenceRankingPerformanceTest.php`'s query-count
+case, which runs in CI and fails if the table ever touches `reviews`.
+
+The wall-clock case is skipped on CI (a shared runner's clock measures the
+runner) and the production image carries no test runner at all — `composer
+install --no-dev`, and `.dockerignore` excludes `tests/`, `phpunit.xml` and
+`phpunit.browser.xml` — so there is nothing there to run it with. Measure the
+query itself on the host instead, once before launch, against a conference that
+already has a few hundred abstracts:
+
+```bash
+C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+sudo docker exec "$C" su-exec app php artisan tinker --execute='
+$c = App\Models\Conference::query()->where("ulid", "<CONFERENCE-ULID>")->firstOrFail();
+for ($i = 0; $i < 5; $i++) {
+    $t = microtime(true);
+    $rows = App\Support\Scoring\RankedSubmissions::query($c)->with("track")->orderByDesc("score")->limit(500)->get();
+    printf("%d rows in %.3fs\n", $rows->count(), microtime(true) - $t);
+}'
+```
+
+That is the same entry point the table itself uses. The first run warms OPcache
+and the buffer pool; take the median of the rest. If it is anywhere near 1 s with
+a few hundred rows, something has started reading `reviews` per row — which is
+exactly what the CI query-count case bounds.
+
+### Exports
+
+The ranking page exports **CSV** and **Excel (XLSX)** of exactly the rows on
+screen. The two are different from Plan 3's submission-list CSV on purpose: this
+one carries scores, spreads, review counts and decisions; that one carries the
+abstract text, affiliations, custom-field answers and file names.
+
+The XLSX writer assembles the workbook in the container's `/tmp` before
+streaming it (openspout builds a zip), so an export needs free space there
+briefly — a few hundred kilobytes at these sizes. `/tmp` is deliberately not on
+the `cass-storage` volume, so a half-written export cannot survive a restart.
+
+Both writers prefix an apostrophe to any cell beginning with `=`, `+`, `-`, `@`,
+a tab or a carriage return (`App\Support\Export\SpreadsheetCell`). In XLSX this
+is not cosmetic: without it openspout writes a real formula cell.
 
 ## Brand assets
 
