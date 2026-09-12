@@ -505,13 +505,22 @@ class Conference extends Model
      * and the conference's own `reviewers_per_submission` target is the only
      * denominator that means something.
      *
+     * **The set is RankedSubmissions, not `submitted`/`under_review`.** Plan 5's
+     * ApplyDecision rewrites `submissions.status` to accepted/rejected/
+     * waitlisted while the conference is still `reviewing`, so a narrower set
+     * would empty this section one decision at a time - and the conference view
+     * prints it directly beside decisionCounts(), where "Submitted 0 / 0" and
+     * "Dr Omar Khan - 0 / 0" next to "40 decided" is a page contradicting
+     * itself. The reviews that were written do not stop existing because the
+     * committee answered. assignmentCoverage() deliberately keeps the narrower
+     * set: it asks who still needs a reviewer, and a decided abstract needs
+     * none.
+     *
      * @return array{expected: int, submitted: int, drafts: int, reviewers: list<array{name: string, submitted: int, expected: int}>}
      */
     public function reviewProgress(): array
     {
-        $reviewableIds = $this->submissions()
-            ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
-            ->pluck('id');
+        $reviewableIds = RankedSubmissions::query($this)->pluck('id');
 
         $assignments = ReviewAssignment::query()->whereIn('submission_id', $reviewableIds)->count();
 

@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\Conferences\MarkDecided;
+use App\Actions\Decisions\ApplyDecision;
 use App\Enums\ConferenceStatus;
 use App\Enums\Decision;
 use App\Enums\SubmissionStatus;
 use App\Exceptions\ConferenceNotPublishable;
 use App\Models\Conference;
+use App\Models\ConferenceReviewer;
+use App\Models\Review;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -98,4 +101,30 @@ it('counts the decisions of a conference, one query, with the empty ones at zero
         ->and($counts['by_decision'][Decision::AcceptedOral->value])->toBe(2)
         ->and($counts['by_decision'][Decision::AcceptedPoster->value])->toBe(0)
         ->and($counts['by_decision'][Decision::Rejected->value])->toBe(1);
+});
+
+it('keeps a decided abstract inside the review progress printed beside the decisions', function () {
+    $this->conference->forceFill(['reviewers_per_submission' => 1])->save();
+
+    $reviewer = ConferenceReviewer::factory()->for($this->conference)->create();
+    User::query()->whereKey($reviewer->user_id)->update(['name' => 'Dr Omar Khan']);
+
+    $submission = Submission::factory()->for($this->conference)->submitted()->create();
+    Review::factory()->for($submission)->submitted()->create(['reviewer_user_id' => $reviewer->user_id]);
+
+    app(ApplyDecision::class)->handle($submission, Decision::Rejected, $this->actor);
+
+    // ApplyDecision rewrites submissions.status while the conference is still
+    // `reviewing`, and review progress is printed on the SAME conference view as
+    // the decision counts: an abstract that fell out of the denominator the
+    // moment it was decided makes that page read "Submitted 0 / 0" and
+    // "Dr Omar Khan - 0 / 0" beside "1 decided". RankedSubmissions is the one
+    // definition of what the committee is looking at, decided rows included.
+    $progress = ($this->conference->fresh() ?? $this->conference)->reviewProgress();
+
+    expect($progress['expected'])->toBe(1)
+        ->and($progress['submitted'])->toBe(1)
+        ->and($progress['reviewers'])->toBe([
+            ['name' => 'Dr Omar Khan', 'submitted' => 1, 'expected' => 1],
+        ]);
 });
