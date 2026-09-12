@@ -63,6 +63,9 @@ class ConferenceRanking extends Page implements HasTable
 
     protected string $view = 'filament.organizer.pages.conference-ranking';
 
+    /** Memoised by maySend(); see that method for why it has to be. */
+    private ?bool $maySend = null;
+
     public function mount(int|string $record): void
     {
         // resolveRecord() runs through ConferenceResource::getEloquentQuery(),
@@ -289,6 +292,12 @@ class ConferenceRanking extends Page implements HasTable
                 // (vendor/filament/support/src/Concerns/EvaluatesClosures.php:35),
                 // so `$this->getFilteredTableQuery()` inside the action still
                 // runs on the page.
+                //
+                // The send sits FIRST, where an organizer looks for it, and it
+                // is a TABLE header action rather than a page one because
+                // callTableAction() and assertTableAction*() resolve only
+                // against Table::$flatActions.
+                DecisionActions::sendDecisionEmails($conference, $this->maySend()),
                 $this->exportAction(
                     'exportCsv',
                     __('decisions.ranking.export_csv'),
@@ -304,7 +313,7 @@ class ConferenceRanking extends Page implements HasTable
                         ->handle($query, $conference, RankingRows::fileName($conference, 'xlsx')),
                 ),
             ])
-            ->recordActions(DecisionActions::rowActions($this->mayDecide()))
+            ->recordActions(DecisionActions::rowActions($conference, $this->mayDecide(), $this->maySend()))
             ->toolbarActions([
                 DecisionActions::decideSelected(),
             ])
@@ -329,6 +338,26 @@ class ConferenceRanking extends Page implements HasTable
         $probe->setRelation('conference', $this->getConference());
 
         return Gate::allows('decide', $probe);
+    }
+
+    /**
+     * The send/resend authorization answer, asked once per request and kept on
+     * the component, for the reason mayDecide() explains and one more: unlike
+     * mayDecide(), which table() calls once, this answer is also read by a
+     * header action whose `visible()` Filament evaluates several times per
+     * render - and ConferencePolicy::canManage() goes through User::roleIn(),
+     * which is a query on every call. Asking the Gate from inside that closure
+     * put the 500-row page at exactly the query ceiling
+     * ConferenceRankingPerformanceTest bounds.
+     *
+     * A private instance property, never a static: Livewire builds a fresh
+     * component per request, so this is a per-request memo, while a static
+     * would answer a later test - or a later tenant - with the first actor's
+     * answer.
+     */
+    protected function maySend(): bool
+    {
+        return $this->maySend ??= Gate::allows('sendDecisions', $this->getConference());
     }
 
     /**

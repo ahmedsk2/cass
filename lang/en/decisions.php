@@ -81,6 +81,31 @@ return [
         'refused' => ':count refused: :rows',
     ],
 
+    'send' => [
+        'action' => 'Send decision emails',
+        'heading' => 'Send the decision letters?',
+        'description' => 'One email goes to the corresponding author of every abstract that has a decision and has not been written to yet. Each letter uses this conference\'s template for that decision. This cannot be undone.',
+        'counts' => 'What will be sent',
+        'link_warning_label' => 'About the links',
+        'link_warning' => 'Each letter carries a fresh private link to the author\'s abstract page, where the letter is also shown. Any older link that author is holding stops working - which is how this application keeps those links secret.',
+        // One word, in one place, so an Arabic file changes both the field
+        // label and the rule that checks it.
+        'confirm_word' => 'SEND',
+        'confirm_label' => 'Type :word to confirm',
+        'confirm_failed' => 'Type :word exactly to send the letters.',
+        'submit' => 'Send the letters',
+        'title' => 'Decision letters',
+        'sent' => 'Queued :count letter(s).',
+        'skipped' => 'Skipped :count: :rows',
+        'remaining' => ':count still to send - click again.',
+        'resend' => 'Resend the letter',
+        'resend_heading' => 'Send this letter again?',
+        'resend_description' => 'The author gets the same decision again, rendered from the template as it stands now, and a fresh private link. Any older link they hold stops working.',
+        'resent' => 'Letter sent again',
+        'resent_body' => 'It is on its way to :email.',
+        'nothing_sent' => 'Nothing sent',
+    ],
+
     'infolist' => [
         'heading' => 'Decision',
         'decision' => 'Decision',
@@ -97,6 +122,11 @@ return [
         'draft' => 'This abstract was never submitted, so there is nothing to decide.',
         'withdrawn' => 'This abstract was withdrawn by its author and cannot be decided.',
         'already_notified' => 'This author has already been sent a decision letter. Use "Change decision and resend" if the decision really has changed.',
+        'not_decided' => 'This abstract has no decision yet, so there is no letter to send.',
+        'no_history' => 'This abstract has a decision with no history behind it. Decide it again before sending a letter.',
+        'no_author_email' => 'This abstract has no corresponding author with a usable email address.',
+        'conference_not_sending' => 'This conference is :status and is off the public site, so the link in the letter would not open. Letters cannot be sent from it.',
+        'already_sending' => 'This letter is already being sent, or the decision changed while the run was under way.',
     ],
 
 ];

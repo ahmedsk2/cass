@@ -6,17 +6,24 @@ namespace App\Filament\Organizer\Resources\Conferences\Tables;
 
 use App\Actions\Decisions\ApplyDecision;
 use App\Actions\Decisions\ApplyDecisions;
+use App\Actions\Decisions\SendDecisionEmails;
+use App\Actions\Decisions\SendOneDecisionEmail;
 use App\Enums\Decision;
 use App\Exceptions\DecisionNotAcceptable;
+use App\Models\Conference;
 use App\Models\Submission;
 use App\Models\User;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\HtmlString;
 
 /**
  * One definition of each decision action, the same pattern Plan 2's
@@ -129,6 +136,175 @@ class DecisionActions
             });
     }
 
+    /**
+     * Spec 5.6's button. A typed confirmation rather than a plain "are you
+     * sure": this queues an email to a named person for every decided abstract
+     * in the conference, it cannot be undone, and it rotates every one of those
+     * authors' status links. The modal shows the count per decision, so the
+     * organizer confirms a number they have read rather than a dialog they have
+     * dismissed.
+     *
+     * `$maySend` is passed IN for the reason decide() explains, and here it is
+     * not merely a nicety: Filament evaluates a header action's `visible()`
+     * several times per render, and ConferencePolicy::canManage() goes through
+     * User::roleIn(), which is a query on every call
+     * (app/Models/User.php:95-100). Asking the Gate inside the closure put the
+     * ranking page's query count at exactly the ceiling
+     * ConferenceRankingPerformanceTest bounds. The page asks once and hands the
+     * answer down.
+     */
+    public static function sendDecisionEmails(Conference $conference, bool $maySend): Action
+    {
+        return Action::make('sendDecisionEmails')
+            ->label(__('decisions.send.action'))
+            ->icon(Heroicon::OutlinedPaperAirplane)
+            ->color('primary')
+            ->modalHeading(__('decisions.send.heading'))
+            ->modalDescription(fn (): string => __('decisions.send.description'))
+            ->modalSubmitActionLabel(__('decisions.send.submit'))
+            ->modalWidth('2xl')
+            // `app(...)` inside the closure rather than a typed closure
+            // parameter: service injection into an ACTION closure is proven in
+            // this repo (SubmissionActions::resendLink takes
+            // SendSubmissionStatusLink that way), but a SCHEMA closure is
+            // evaluated by the schema and is not the same code path. One
+            // resolve, no risk.
+            ->schema(fn (): array => [
+                Placeholder::make('counts')
+                    ->label(__('decisions.send.counts'))
+                    ->content(function () use ($conference): HtmlString {
+                        $counts = app(SendDecisionEmails::class)->counts($conference);
+                        $lines = [];
+
+                        foreach (Decision::inReportOrder() as $decision) {
+                            $lines[] = '<div>'.e($decision->getLabel()).': <strong>'.$counts[$decision->value].'</strong></div>';
+                        }
+
+                        return new HtmlString(implode('', $lines));
+                    }),
+                Placeholder::make('token_warning')
+                    ->label(__('decisions.send.link_warning_label'))
+                    ->content(__('decisions.send.link_warning')),
+                TextInput::make('confirm')
+                    ->label(__('decisions.send.confirm_label', ['word' => __('decisions.send.confirm_word')]))
+                    ->required()
+                    // Wrapped in a closure that RETURNS the rule. Filament
+                    // evaluates a Closure rule as a callback
+                    // (Forms\Components\Concerns\CanBeValidated::getRules()), so
+                    // an unwrapped custom rule is called by the closure
+                    // evaluator and throws BindingResolutionException on its
+                    // `string $attribute` parameter - the idiom
+                    // ConferenceEmailTemplates::editAction() already uses.
+                    ->rule(fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
+                        if (mb_strtoupper(trim((string) $value)) !== mb_strtoupper(__('decisions.send.confirm_word'))) {
+                            $fail(__('decisions.send.confirm_failed', ['word' => __('decisions.send.confirm_word')]));
+                        }
+                    }),
+            ])
+            // Hidden, not merely refused, when the conference is off the public
+            // site: SubmissionStatus::mount() 404s on it, so every {{status_link}}
+            // in the letters would be dead on arrival and the old links would
+            // have been killed to produce them (SendOneDecisionEmail::blockers()
+            // refuses the same case). The ranking page stays visible for an
+            // archived conference on purpose; this button does not.
+            //
+            // `sendDecisions` is asked with the CONFERENCE, which is why it
+            // lives on ConferencePolicy: Laravel resolves the policy from the
+            // first argument's class. The answer arrives as an argument; the
+            // Gate itself is re-asked on the write path below, where it runs
+            // once per click.
+            ->visible(fn (): bool => $conference->isPubliclyVisible() && $maySend)
+            ->action(function (SendDecisionEmails $send) use ($conference): void {
+                Gate::authorize('sendDecisions', $conference);
+
+                /** @var User $actor */
+                $actor = auth()->user();
+
+                $report = $send->handle($conference, $actor);
+
+                $notification = Notification::make()
+                    ->title(__('decisions.send.title'))
+                    ->body(SendDecisionEmails::summarise($report));
+
+                if ($report['skipped'] === []) {
+                    $notification->success();
+                } else {
+                    $notification->warning()->persistent();
+                }
+
+                $notification->send();
+            });
+    }
+
+    /**
+     * One letter again, for the author who says it never arrived. Same path as
+     * the bulk send - SendOneDecisionEmail - so the stored letter and the
+     * delivered letter cannot come apart between the two, and so the audit
+     * entry is the same one.
+     *
+     * `$maySend` is passed in for the reason decide() explains: a Gate call
+     * inside a row action's visible() is one query per rendered row, and the
+     * 500-row query-count ceiling bounds exactly that.
+     *
+     * `$conference` is passed in for the same reason, and it is not a nicety
+     * either. Every row of this table belongs to the one conference the page
+     * already holds, but the ranking query selects `submissions` alone, so
+     * `$record->conference` inside `visible()` is a lazy load per RENDERED row:
+     * measured at 578 queries for 500 notified rows against the page's ceiling
+     * of 30 (tests/Feature/Organizer/ConferenceRankingPerformanceTest.php).
+     * Eager-loading the relation would fix the count and still hand every row a
+     * copy of the object the caller is already standing on.
+     */
+    public static function resendDecision(Conference $conference, bool $maySend): Action
+    {
+        // Read once, out here, rather than per row: the answer is the same for
+        // every row of this table and the only thing it depends on is the
+        // conference the page was opened on.
+        $conferenceMaySend = $conference->isPubliclyVisible() && $maySend;
+
+        return Action::make('resendDecision')
+            ->label(__('decisions.send.resend'))
+            ->icon(Heroicon::OutlinedEnvelope)
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading(__('decisions.send.resend_heading'))
+            ->modalDescription(__('decisions.send.resend_description'))
+            // The same public-visibility condition the bulk send carries, and
+            // for the same reason: a fresh link into a conference whose status
+            // page 404s is worse than no letter.
+            ->visible(fn (Submission $record): bool => $record->decision_notified_at !== null
+                && $conferenceMaySend)
+            ->action(function (Submission $record, SendOneDecisionEmail $send) use ($conference): void {
+                Gate::authorize('sendDecisions', $conference);
+
+                // The actor, resolved here and passed IN, which is how every
+                // action in this file hands an actor to the layer below.
+                /** @var User $actor */
+                $actor = auth()->user();
+
+                try {
+                    $log = $send->handle($record, $actor);
+                } catch (DecisionNotAcceptable $exception) {
+                    Notification::make()
+                        ->danger()
+                        ->title(__('decisions.send.nothing_sent'))
+                        ->body(e($exception->getMessage()))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->success()
+                    ->title(__('decisions.send.resent'))
+                    // An author's address is author-supplied text and Filament
+                    // sanitises rather than escapes a notification body.
+                    ->body(__('decisions.send.resent_body', ['email' => e($log->to_email)]))
+                    ->send();
+            });
+    }
+
     public static function decideSelected(): BulkAction
     {
         return BulkAction::make('decideSelected')
@@ -232,16 +408,22 @@ class DecisionActions
 
     /**
      * The record actions of the ranking table, in the order an organizer meets
-     * them. The two are mutually exclusive by `visible()`, so only one decision
-     * control is ever on a row.
+     * them. The first two are mutually exclusive by `visible()`, so only one
+     * decision control is ever on a row.
      *
-     * The authorization answers are arguments, computed once per page render:
-     * see decide()'s docblock. Task 7 adds a second one for the resend.
+     * Both authorization answers - and the conference itself - are arguments,
+     * computed once per page render rather than once per rendered row: see
+     * decide()'s and resendDecision()'s docblocks and the query-count ceiling
+     * in ConferenceRankingPerformanceTest.
      *
      * @return list<Action>
      */
-    public static function rowActions(bool $mayDecide): array
+    public static function rowActions(Conference $conference, bool $mayDecide, bool $maySend): array
     {
-        return [static::decide($mayDecide), static::changeDecision($mayDecide)];
+        return [
+            static::decide($mayDecide),
+            static::changeDecision($mayDecide),
+            static::resendDecision($conference, $maySend),
+        ];
     }
 }

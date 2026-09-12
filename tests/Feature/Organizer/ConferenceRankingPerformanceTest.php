@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\ConferenceStatus;
+use App\Enums\Decision;
 use App\Enums\OrganizationRole;
 use App\Enums\SubmissionStatus;
 use App\Filament\Organizer\Resources\Conferences\Pages\ConferenceRanking;
@@ -113,6 +114,38 @@ it('renders five hundred abstracts without touching the reviews table', function
     // summary strip's two aggregates, the paginator's count, the page itself
     // and the track filter's options. Not one is per row - which is what the
     // assertion above, not this one, actually proves.
+    expect(count($queries))->toBeLessThan(30);
+});
+
+it('renders five hundred notified abstracts without one conference query per row', function () {
+    // The state the first case cannot reach: every letter has gone, so
+    // resendDecision() is on all 500 rows and its visible() runs 500 times.
+    // The ranking query selects `submissions` alone, so anything that closure
+    // reads off a relation is a lazy load per RENDERED row - which is exactly
+    // the regression the ceiling below exists to catch, and the reason both
+    // authorization answers and the conference are arguments rather than
+    // per-row lookups.
+    DB::table('submissions')
+        ->where('conference_id', $this->conference->id)
+        ->update([
+            'status' => SubmissionStatus::Accepted->value,
+            'decision' => Decision::AcceptedOral->value,
+            'decision_notified_at' => now()->toDateTimeString(),
+        ]);
+
+    /** @var list<string> $queries */
+    $queries = [];
+
+    DB::listen(function (QueryExecuted $event) use (&$queries): void {
+        $queries[] = $event->sql;
+    });
+
+    livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
+        ->set('tableRecordsPerPage', 'all')
+        ->assertCountTableRecords(500);
+
+    // The same ceiling as the undecided render, because sending the letters
+    // must not change the shape of the page's query plan.
     expect(count($queries))->toBeLessThan(30);
 });
 
