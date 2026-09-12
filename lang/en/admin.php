@@ -23,4 +23,45 @@ return [
         'submit' => 'Purge permanently',
         'done' => 'Purged :name — :rows rows and :files files removed.',
     ],
+
+    'submissions' => [
+        'title' => 'Abstracts',
+        'columns' => [
+            'reference' => 'Reference',
+            'title' => 'Title',
+            'conference' => 'Conference',
+            'organization' => 'Organization',
+            'status' => 'Status',
+            'decision' => 'Decision',
+            'reviews' => 'Reviews',
+            'score' => 'Score',
+            'submitted' => 'Submitted',
+            'presenter' => 'Presenter',
+            'file' => 'File',
+            'type' => 'Type',
+            'decided_by' => 'Decided by',
+        ],
+        'filters' => [
+            'organization' => 'Organization',
+            'conference' => 'Conference',
+            'status' => 'Status',
+            'decision' => 'Decision',
+            'conference_status' => 'Conference status',
+        ],
+        'sections' => [
+            'abstract' => 'Abstract',
+            'owner' => 'Where it belongs',
+            'authors' => 'Authors',
+            'files' => 'Files',
+            'decisions' => 'Decisions',
+        ],
+        'not_notified' => 'Not sent',
+        'former_member' => 'A former member',
+    ],
+
+    'search' => [
+        'status' => 'Status',
+        'conferences' => 'Conferences',
+        'organization' => 'Organization',
+    ],
 ];
