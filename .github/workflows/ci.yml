@@ -67,6 +67,23 @@ jobs:
           DB_PASSWORD: root
         run: php artisan test --compact
 
+  # The two host-side backup scripts. They are shell, not PHP, so `php artisan
+  # test` cannot see them - and the bug they exist to prevent (identifying the
+  # Coolify-named containers by a `grep -i cass` over their names, which matched
+  # nothing on the production host and silently skipped every nightly backup) is
+  # exactly the kind only an execution test catches. Deliberately cheap: no PHP,
+  # no node, no services, no docker - backup.test.sh puts a fake `docker` on
+  # PATH. `sh` on ubuntu is dash, so this also proves the scripts are POSIX.
+  scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Shell syntax
+        run: sh -n docker/backup.sh docker/storage-backup.sh docker/entrypoint.sh docker/backup.test.sh
+      - name: Backup container detection
+        run: sh docker/backup.test.sh
+
   # Spec section 12's one end-to-end browser run. Its own job so the `test` job
   # stays fast and so a Playwright flake never hides a real unit failure. No
   # MySQL service: phpunit.browser.xml pins SQLite in memory, and the `test`

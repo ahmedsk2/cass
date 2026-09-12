@@ -53,6 +53,10 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # it out of the running image rather than hunting for the repository, and
 # --chmod so its mode is not an accident of the host filesystem.
 COPY --chmod=755 docker/backup.sh /usr/local/bin/cass-backup.sh
+# Same deal for the weekly archive of the uploads volume: it runs on the host
+# (docker inspect + docker run), and lives in the image only so the operator can
+# `docker cp` it out. Its tests are docker/backup.test.sh, run in CI.
+COPY --chmod=755 docker/storage-backup.sh /usr/local/bin/cass-storage-backup.sh
 # Filament's CSS/JS/fonts and Livewire's script are git-ignored and composer
 # runs with --no-scripts, so publish them into public/ here. Livewire serves
 # /vendor/livewire/livewire.min.js once public/vendor/livewire/manifest.json exists.

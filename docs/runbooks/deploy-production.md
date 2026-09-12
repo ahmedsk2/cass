@@ -5,6 +5,47 @@ Host address, SSH user and key path live in the owner's private ops notes, not i
 Host: OCI `hosting-1`, `<ssh-user>@<origin-ip>` (key `<ssh-key>`), Coolify + Traefik, Cloudflare in front.
 App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, branch `main`.
 
+## Finding the containers
+
+Almost every block below starts by resolving a container name. **Paste this
+helper once per SSH session** (or put it in the host's `~/.bashrc`); the rest of
+this runbook calls it as `cass_container app` or `cass_container mysql`.
+
+```bash
+# Coolify names the containers after its own project identifier -
+# app-vag136azl5q2bv87qqzgblo1-1, mysql-vag136azl5q2bv87qqzgblo1-1 - and sets
+# com.docker.compose.project=vag136azl5q2bv87qqzgblo1 with
+# com.docker.compose.service=app|mysql. NOTHING in either name or any label
+# contains "cass", and the numeric suffix changes whenever Coolify recreates the
+# service. Match on the environment the compose file sets instead.
+cass_container() {
+  local svc="$1" want c
+  case "$svc" in
+    app)   want='APP_NAME=CASS' ;;
+    mysql) want='MYSQL_DATABASE=cass' ;;
+    *)     echo "usage: cass_container app|mysql" >&2; return 2 ;;
+  esac
+  for c in $(sudo docker ps --filter "label=com.docker.compose.service=$svc" --format '{{.Names}}'); do
+    if sudo docker inspect "$c" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -qFx "$want"; then
+      echo "$c"; return 0
+    fi
+  done
+  echo "no running $svc container has $want in its environment" >&2
+  return 1
+}
+```
+
+An earlier version of this runbook piped `--format '{{.Names}}'` into
+`grep -i cass`. That matched nothing on this host, so every block silently set
+an empty `$C` — and the nightly database backup, whose script did the same
+thing, never ran once. `docker/backup.sh` and `docker/storage-backup.sh` now do
+their own label-and-environment lookup; `docker/backup.test.sh` holds it in
+place and runs in CI.
+
+If the helper prints nothing, list the candidates with
+`sudo docker ps --filter label=com.docker.compose.service=app` and check the
+container's environment by hand, or use the Coolify UI terminal for the service.
+
 ## One-time setup
 
 1. DNS (Cloudflare, owner): A record `cass` -> `<origin-ip>`, proxied (orange cloud).
@@ -15,7 +56,7 @@ App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, bra
 6. First migration and admin user (owner runs, never at boot):
    ```bash
    ssh -i <ssh-key> <ssh-user>@<origin-ip>
-   C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+   C=$(cass_container app)
    sudo docker exec -it "$C" su-exec app php artisan migrate --force
    sudo docker exec -it "$C" su-exec app php artisan db:seed --force
    ```
@@ -31,7 +72,7 @@ App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, bra
 3. If the release adds migrations, apply them as soon as Coolify reports the new `app` container healthy. The migration files exist only in the new image, and Coolify's Docker Compose deploys stop the old container before the new one starts (no rolling update), so there is no moment at which the old container could run them — `migrate` there just prints "Nothing to migrate". Turn auto-deploy off for such a release so you are at the terminal when the new container goes live. Run the migration only, **not** step 6's `db:seed`: the seeder resets the platform admin's password back to `CASS_ADMIN_PASSWORD`.
 
    ```bash
-   C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+   C=$(cass_container app)
    sudo docker exec -it "$C" su-exec app php artisan migrate --force
    sudo docker exec -it "$C" su-exec app php artisan migrate:status
    ```
@@ -59,7 +100,7 @@ App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, bra
 5. Time the public conference page after the deploy. Spec section 10 gives it a 300 ms server budget, which is the reason it is plain Blade instead of Livewire.
 
    ```bash
-   C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+   C=$(cass_container app)
    for U in "/c/<org>/<conference>" "/c/<org>/<conference>/submit"; do
      echo "$U"
      for i in 1 2 3 4 5; do
@@ -82,7 +123,7 @@ The poster PDF is rendered by dompdf using three IBM Plex TTFs committed at `res
 If a poster download returns a 500, look for `Failed to open stream: Permission denied` on a path under `/var/www/html/storage/fonts/`. dompdf's font library writes the metrics file first, so the usual line is `fopen(/var/www/html/storage/fonts/ibm_plex_sans_normal_<hash>.ufm): Failed to open stream: Permission denied`; if the directory itself is missing it is `mkdir(): Permission denied`. The directory lives in the container layer, not on a volume (`cass-storage` is mounted at `storage/app` only), so a redeploy recreates it with the right owner. To repair the running container:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec -it "$C" sh -c 'mkdir -p storage/fonts && chown -R app:app storage/fonts'
 ```
 
@@ -123,7 +164,7 @@ one never breaks the other.
 To see how much the volume holds:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec "$C" du -sh storage/app/private
 sudo docker exec "$C" sh -c 'find storage/app/private -type f | wc -l'
 ```
@@ -205,10 +246,20 @@ that failed: `Illuminate\Notifications\Notification` has no per-message failure
 hook, so a transport error on one leaves its row where it was. Check both:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
-sudo docker exec "$C" supervisorctl status
+C=$(cass_container app)
+sudo docker exec "$C" supervisorctl status          # four programs, all RUNNING
 sudo docker exec "$C" su-exec app php artisan queue:failed
+sudo docker exec "$C" supervisorctl restart queue   # only if the worker is not RUNNING
 ```
+
+`supervisorctl` works because `docker/supervisord.conf` carries
+`[unix_http_server]`, `[rpcinterface:supervisor]` and `[supervisorctl]`
+sections. Without them it exits with *".ini file does not include supervisorctl
+section"* and there is no way to restart a wedged worker short of redeploying
+the container — so do not delete them. The socket is `/run/supervisor.sock`,
+mode 0700 and root-owned, and every program in that file runs as `app`: the
+control channel is reachable from `docker exec` and from nothing inside the
+application.
 
 Every delivered message carries an `X-CASS-Log` header holding the `ulid` of its
 `email_logs` row: `App\Mail\TemplatedMail` sets its own, and
@@ -402,7 +453,7 @@ submission's mean, spread and count.
 ### `cass:rescore`
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec -it "$C" su-exec app php artisan cass:rescore <CONFERENCE-ULID>
 ```
 
@@ -421,7 +472,7 @@ makes a stored score wrong. Run it in exactly four situations:
    runs. Rescore every conference that already has reviews:
 
    ```bash
-   C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+   C=$(cass_container app)
    sudo docker exec "$C" su-exec app php artisan tinker --execute='
    App\Models\Conference::query()->whereHas("submissions.reviews")->pluck("ulid")->each(fn ($u) => print($u . PHP_EOL));'
    # then, one command per ULID printed:
@@ -455,7 +506,7 @@ worker count. Watch it in the admin panel's **Email log**
 (`/admin/email-logs`), filtered by template key, or:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec "$C" su-exec app php artisan tinker --execute="echo App\Models\EmailLog::query()->where('template_key','like','decision_%')->selectRaw('status, count(*) c')->groupBy('status')->pluck('c','status');"
 ```
 
@@ -471,7 +522,7 @@ delivers exactly the letter that was stored, changes no token and rewrites no
 history:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec "$C" su-exec app php artisan queue:failed
 sudo docker exec "$C" su-exec app php artisan queue:retry all
 ```
@@ -566,7 +617,7 @@ query itself on the host instead, once before launch, against a conference that
 already has a few hundred abstracts:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec "$C" su-exec app php artisan tinker --execute='
 $c = App\Models\Conference::query()->where("ulid", "<CONFERENCE-ULID>")->firstOrFail();
 for ($i = 0; $i < 5; $i++) {
@@ -612,7 +663,7 @@ the domain RFC 2606 reserves so that sample data cannot reach a real mailbox.
 ### Seeding
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec -it "$C" su-exec app php artisan cass:demo-seed --stage=reviewing
 ```
 
@@ -663,7 +714,7 @@ letters — all use the real mailer and all appear in `email_logs` as usual.
 ### Resetting
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec -it "$C" su-exec app php artisan cass:demo-reset --confirm
 ```
 
@@ -732,7 +783,7 @@ resumed by running it again.
    be left on the host afterwards.
 
    ```bash
-   C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+   C=$(cass_container app)
    sudo docker cp ./dbg1vzqja6lgef.sql "$C":/tmp/legacy.sql
    sudo docker cp ./uploads "$C":/tmp/legacy-uploads
    sudo docker exec "$C" chown -R app:app /tmp/legacy.sql /tmp/legacy-uploads
@@ -987,10 +1038,18 @@ backups.
 ### Installing it
 
 ```bash
-sudo docker cp <app-container>:/usr/local/bin/cass-backup.sh /usr/local/bin/cass-backup
+APP=$(cass_container app)
+sudo docker cp "$APP":/usr/local/bin/cass-backup.sh /usr/local/bin/cass-backup
 sudo chmod 755 /usr/local/bin/cass-backup
 sudo mkdir -p /srv/backups/cass
 sudo /usr/local/bin/cass-backup            # once, by hand, and read the output
+```
+
+The first line of its output names the container it chose — check it is the
+mysql one, not some other stack's:
+
+```
+[cass-backup] mysql container: mysql-vag136azl5q2bv87qqzgblo1-1
 ```
 
 Then the cron line (`sudo crontab -e`):
@@ -1006,6 +1065,30 @@ a dump under 4 KB rather than rotating a good backup away for a broken one, and
 writes through a `.partial` name so an interrupted run never leaves a truncated
 file that looks whole.
 
+**It finds the container the same way `cass_container` does** — a running
+container with `com.docker.compose.service=mysql` whose own environment holds
+`MYSQL_DATABASE=cass` — and never by name. If it prints
+
+```
+[cass-backup] no running container has both com.docker.compose.service=mysql and MYSQL_DATABASE=cass in its environment
+```
+
+then either the stack is down or its environment changed. Two overrides, both
+settable on the cron line:
+
+| Variable | Effect |
+|---|---|
+| `CASS_MYSQL_CONTAINER` | Name the container outright. Used when it is running; if it is not (Coolify recreated it under a new suffix), the script **warns and falls back to the detection** rather than skipping a night's backup. |
+| `CASS_MYSQL_DATABASE` | The database name the detection looks for. Default `cass`. |
+| `CASS_BACKUP_KEEP_DAYS` | Rotation window in days. Default 14. |
+
+```cron
+17 3 * * * CASS_MYSQL_CONTAINER=mysql-vag136azl5q2bv87qqzgblo1-1 /usr/local/bin/cass-backup >> /var/log/cass-backup.log 2>&1
+```
+
+Prefer no override: the suffix changes on every recreate, and the detection does
+not.
+
 ### Verifying one — monthly, and not optional
 
 **A backup nobody has restored is not a backup.** There is no
@@ -1015,7 +1098,7 @@ there.
 
 ```bash
 NEWEST=$(ls -1t /srv/backups/cass/cass-*.sql.gz | head -1)
-C=$(sudo docker ps --filter label=com.docker.compose.service=mysql --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container mysql)
 
 sudo docker exec "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE IF EXISTS cass_restore_check; CREATE DATABASE cass_restore_check;"'
 gunzip -c "$NEWEST" | sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass_restore_check'
@@ -1037,29 +1120,46 @@ PDF and every organization logo. The database backup restores rows that point
 at objects that are gone. The NAS sync must include it, or restore is half a
 restore.
 
-**Resolve the volume by inspecting the running container, never by name.**
-Compose prefixes named volumes with the project name and Coolify adds its own
-identifier, so a bare `-v cass-storage:/data` silently creates a new, empty
-volume and archives nothing — producing a forty-five-byte `.tar.gz` that looks
-like a backup of every uploaded abstract:
+That archive has its own committed script, `docker/storage-backup.sh`, shipped
+in the image beside the database one. Install it the same way:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
-VOL=$(sudo docker inspect "$C" --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/storage/app"}}{{.Name}}{{end}}{{end}}')
-test -n "$VOL" || { echo "no storage volume found on $C"; exit 1; }
-
-sudo docker run --rm -v "$VOL":/data:ro -v /srv/backups/cass:/out alpine \
-  tar czf "/out/cass-storage-$(date +%F).tar.gz" -C /data .
-
-# An archive of an empty (i.e. wrong) volume is a few dozen bytes.
-test "$(stat -c %s "/srv/backups/cass/cass-storage-$(date +%F).tar.gz")" -gt 10240
-find /srv/backups/cass -name 'cass-storage-*.tar.gz' -mtime +56 -delete
+APP=$(cass_container app)
+sudo docker cp "$APP":/usr/local/bin/cass-storage-backup.sh /usr/local/bin/cass-storage-backup
+sudo chmod 755 /usr/local/bin/cass-storage-backup
+sudo /usr/local/bin/cass-storage-backup    # once, by hand, and read the output
 ```
+
+It prints the container and the volume it resolved, and both are worth reading
+the first time:
+
+```
+[cass-storage-backup] app container: app-vag136azl5q2bv87qqzgblo1-1, volume: vag136azl5q2bv87qqzgblo1_cass-storage
+```
+
+**It resolves the volume by inspecting the running container, never by name.**
+Compose prefixes named volumes with the project name and Coolify adds its own
+identifier, so a bare `-v cass-storage:/data` does not fail — it silently
+creates a new, empty volume and archives nothing, producing a forty-five-byte
+`.tar.gz` that looks like a backup of every uploaded abstract. The container
+itself is found by `com.docker.compose.service=app` plus `APP_NAME=CASS` in its
+environment, falling back to "an app service with a mount at
+`/var/www/html/storage/app`"; `CASS_APP_CONTAINER` overrides it with the same
+warn-and-fall-back behaviour as `CASS_MYSQL_CONTAINER`, and
+`CASS_STORAGE_BACKUP_KEEP_DAYS` (default 56) sets the rotation window.
+
+**The guard is an entry count, not a byte size.** An earlier version of this
+block asserted the archive was over 10 KB; that fired on production against a
+*correct* archive, because a store holding a handful of small files compresses
+to less than that. An archive of the wrong volume is about forty-five bytes, so
+bytes cannot tell the two apart — entries can. The script refuses anything
+listing fewer than three (`./`, `./private/`, `./public/` is the floor for a real
+store; an empty volume lists only `./`), deletes the `.partial`, and exits
+non-zero so cron mails you rather than rotating a good archive away.
 
 Weekly is enough — the objects are content-addressed and immutable, so a
 week-old archive plus the newest database dump loses only files uploaded in
-between. Put the block above in `/usr/local/bin/cass-storage-backup` and add
-the cron line beside the nightly one:
+between. Add the cron line beside the nightly one:
 
 ```cron
 # CASS uploaded files, Sundays at 03:47 - after the nightly database dump.
@@ -1137,7 +1237,7 @@ job goes through Cloudflare.
 answer the things that fail silently:
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec "$C" su-exec app php artisan cass:health
 ```
 
@@ -1164,7 +1264,7 @@ this is the manual part. `activity_log.properties` carries invitee email
 addresses, decision notes and member roles, and `causer_id` names the actor.
 
 ```bash
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 
 # 1. What is there. Read it before deleting any of it.
 sudo docker exec "$C" su-exec app php artisan tinker --execute='
@@ -1192,7 +1292,7 @@ The arithmetic worth knowing before you start. `docker-compose.production.yml` l
 
 ```bash
 # 1. What a worker actually uses, under the heaviest thing this app does.
-C=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
+C=$(cass_container app)
 sudo docker exec "$C" su-exec app php artisan tinker --execute='
 $before = memory_get_usage(true);
 $conference = App\Models\Conference::query()->whereNotNull("published_at")->firstOrFail();
@@ -1203,8 +1303,8 @@ printf("poster: %.1f MiB peak\n", memory_get_peak_usage(true) / 1048576);'
 #    neither compose file sets container_name and Coolify generates them - so
 #    resolve both the way the rest of this runbook does. ($C from measurement 1
 #    is the same container as $APP if the block runs in one shell.)
-APP=$(sudo docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)
-DB=$(sudo docker ps --filter label=com.docker.compose.service=mysql --format '{{.Names}}' | grep -i cass | head -1)
+APP=$(cass_container app)
+DB=$(cass_container mysql)
 sudo docker stats --no-stream "$APP" "$DB"
 ```
 

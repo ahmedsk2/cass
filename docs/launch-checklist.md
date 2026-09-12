@@ -144,11 +144,25 @@ Each line is a command and the answer it must give.
       Pending.
 - [ ] `docker exec <app> su-exec app php artisan about` → `APP_ENV=production`,
       `APP_DEBUG=false`, config **cached**, routes **cached**, events cached.
-- [ ] `docker exec <app> supervisorctl status` → four programs RUNNING.
-- [ ] Run `docker/backup.sh` by hand once. A `.sql.gz` appears and the printed
-      size is plausible for the live database — not the 20-byte gzip of an
-      empty stream; then `gunzip -c` it and confirm the last line is
-      `-- Dump completed`.
+- [ ] `docker exec <app> supervisorctl status` → four programs (`nginx`,
+      `php-fpm`, `queue`, `scheduler`) all RUNNING. If this errors with *".ini
+      file does not include supervisorctl section"* the image predates the
+      `[unix_http_server]`/`[rpcinterface:supervisor]`/`[supervisorctl]` sections
+      in `docker/supervisord.conf`; redeploy, or fall back to
+      `docker exec <app> sh -c 'ps -o pid,user,args' | grep -E 'nginx: master|php-fpm: master|queue:work|schedule:work'`
+      → four lines.
+- [ ] Run `/usr/local/bin/cass-backup` by hand once. Its first line names the
+      mysql container it detected — check it is this stack's. A `.sql.gz`
+      appears and the printed size is plausible for the live database — not the
+      20-byte gzip of an empty stream; then `gunzip -c` it and confirm the last
+      line is `-- Dump completed`.
+- [ ] Run `/usr/local/bin/cass-storage-backup` by hand once. It names the app
+      container **and the resolved volume** — the volume must be Coolify's
+      prefixed `..._cass-storage`, never a bare `cass-storage`, which would be a
+      brand-new empty one. Then `tar tzf` the archive and see the uploaded files.
+- [ ] Neither script is installed by name matching. Confirm the fallbacks are
+      documented and unused: nothing in production sets `CASS_MYSQL_CONTAINER`
+      or `CASS_APP_CONTAINER` in the crontab.
 - [ ] `ls -ld /srv/backups/cass` → `drwx------`, and `ls -l` shows every dump
       `-rw-------`. The script sets both every run; a dump readable by any
       local account is a copy of every author's address and every password
@@ -156,12 +170,15 @@ Each line is a command and the answer it must give.
 - [ ] Restore that dump into a scratch database and count rows against
       production (the procedure is in the runbook under **Backups**). **A
       backup nobody has restored is not a backup.**
-- [ ] `APP=$(docker ps --filter label=com.docker.compose.service=app --format '{{.Names}}' | grep -i cass | head -1)`,
-      `DB=$(docker ps --filter label=com.docker.compose.service=mysql --format '{{.Names}}' | grep -i cass | head -1)`,
+- [ ] `APP=$(cass_container app)`,
+      `DB=$(cass_container mysql)`,
       then `docker stats --no-stream "$APP" "$DB"` → the app container's steady
       state well under 768 MiB and MySQL's under 512 MiB. Record both in the
-      runbook. (The names are Coolify's, not `cass-app`/`cass-mysql`; neither
-      compose file sets `container_name`.)
+      runbook. (`cass_container` is the helper at the top of
+      `docs/runbooks/deploy-production.md` — paste it into the session first.
+      The names are Coolify's, not `cass-app`/`cass-mysql`; neither compose file
+      sets `container_name`, and neither the names nor the labels contain
+      "cass", which is why the lookup goes through the container's environment.)
 - [ ] Time the public conference page and the submit page five times each
       (the loop is in the runbook's "Every release" step 5) → a 0.300 s median.
 - [ ] Time `RankedSubmissions::query()` once against a conference with a few
