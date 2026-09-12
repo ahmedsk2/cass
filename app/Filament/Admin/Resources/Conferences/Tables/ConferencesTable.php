@@ -12,6 +12,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class ConferencesTable
 {
@@ -29,6 +30,25 @@ class ConferencesTable
                     ->label('Abstracts')
                     ->badge()
                     ->color('gray')
+                    ->sortable(),
+                // Read-only, like everything else on this screen. `counts()`
+                // reaches the query as `$query->withCount(Arr::wrap(...))`
+                // (vendor/filament/tables/src/Columns/Concerns/InteractsWithTableQuery.php:24-25),
+                // and Arr::wrap leaves an associative array alone - so Laravel's
+                // `['relation as alias' => Closure]` form works and both counts
+                // ride along on the list's own query rather than costing a
+                // query per row.
+                TextColumn::make('decided_count')
+                    ->counts(['submissions as decided_count' => fn (Builder $query): Builder => $query->whereNotNull('decision')])
+                    ->label('Decided')
+                    ->badge()
+                    ->color('success')
+                    ->sortable(),
+                TextColumn::make('notified_count')
+                    ->counts(['submissions as notified_count' => fn (Builder $query): Builder => $query->whereNotNull('decision_notified_at')])
+                    ->label('Letters sent')
+                    ->badge()
+                    ->color('info')
                     ->sortable(),
                 TextColumn::make('submission_deadline')->label('Deadline')->dateTime('j M Y, H:i')
                     ->timezone(fn (Conference $record): string => $record->timezone)

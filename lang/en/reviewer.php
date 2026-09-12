@@ -179,6 +179,7 @@ return [
         'deadline' => 'Reviews are due by :date (:timezone).',
         'no_deadline' => 'The organizers have not set a review deadline yet.',
         'not_started' => 'Reviewing has not started for this conference yet. Check back after the submission deadline; we email reminders as the review deadline approaches.',
+        'decided' => 'The organizers have made their decisions for this conference, so reviews are now read-only. You can still open your reviews and read what you wrote.',
         'open_queue' => 'Open the abstracts',
     ],
 

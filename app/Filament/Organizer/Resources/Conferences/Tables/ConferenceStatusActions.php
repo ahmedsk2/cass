@@ -6,6 +6,7 @@ namespace App\Filament\Organizer\Resources\Conferences\Tables;
 
 use App\Actions\Conferences\ArchiveConference;
 use App\Actions\Conferences\CloseSubmissions;
+use App\Actions\Conferences\MarkDecided;
 use App\Actions\Conferences\PublishConference;
 use App\Actions\Conferences\StartReviewing;
 use App\Actions\Reviews\SendReviewerReminders;
@@ -262,12 +263,58 @@ class ConferenceStatusActions
             });
     }
 
+    public static function markDecided(): Action
+    {
+        return Action::make('markDecided')
+            ->label(__('decisions.mark.action'))
+            ->icon(Heroicon::OutlinedFlag)
+            ->color('primary')
+            ->requiresConfirmation()
+            ->modalHeading(__('decisions.mark.heading'))
+            ->modalDescription(function (Conference $record, MarkDecided $mark): string {
+                $unsent = $mark->unsentLetters($record);
+
+                // The warning that is deliberately not a blocker: say the
+                // number, then let the organizer decide.
+                return $unsent > 0
+                    ? __('decisions.mark.description').' '.__('decisions.mark.unsent_warning', ['count' => $unsent])
+                    : __('decisions.mark.description');
+            })
+            ->visible(fn (Conference $record): bool => $record->status === ConferenceStatus::Reviewing
+                && Gate::allows('publish', $record))
+            ->action(function (Conference $record, MarkDecided $mark): void {
+                Gate::authorize('publish', $record);
+
+                $blockers = $mark->blockers($record);
+
+                if ($blockers !== []) {
+                    // The same shape publish() and startReviewing() use:
+                    // report, do not throw, and name every missing piece at
+                    // once.
+                    Notification::make()
+                        ->danger()
+                        ->title(__('decisions.mark.not_ready'))
+                        ->body(implode(' ', array_map('e', $blockers)))
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                /** @var User $actor */
+                $actor = auth()->user();
+                $mark->handle($record, $actor);
+
+                Notification::make()->success()->title(__('decisions.mark.done'))->send();
+            });
+    }
+
     /** @return list<Action> */
     public static function all(): array
     {
         return [
             static::share(), static::emails(), static::ranking(), static::reviewers(), static::assignments(),
-            static::remindReviewers(), static::publish(), static::startReviewing(),
+            static::remindReviewers(), static::publish(), static::startReviewing(), static::markDecided(),
             static::close(), static::archive(),
         ];
     }

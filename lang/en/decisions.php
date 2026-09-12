@@ -129,4 +129,28 @@ return [
         'already_sending' => 'This letter is already being sent, or the decision changed while the run was under way.',
     ],
 
+    'mark' => [
+        'action' => 'Mark decisions final',
+        'heading' => 'Mark this conference decided?',
+        'description' => 'The conference moves to "Decisions sent". Reviewers can still read their reviews but can no longer write them, and you can still correct a decision and send a new letter.',
+        'unsent_warning' => ':count decision letter(s) have not been sent yet. You can send them from the ranking page before or after this.',
+        'not_ready' => 'This conference is not ready to be marked decided',
+        'done' => 'Decisions are final',
+        'errors' => [
+            'wrong_status' => 'Only a conference that is under review can be marked decided; this one is :status.',
+            'nothing_to_decide' => 'This conference has no abstracts under consideration.',
+            'undecided' => ':count abstract(s) still have no decision. Decide them, or the authors are waiting for an email that will never arrive.',
+        ],
+    ],
+
+    'conference' => [
+        'heading' => 'Decisions',
+        'open' => 'Ranking and decisions',
+        'decided' => 'Decided',
+        'notified' => 'Letters sent',
+        'undecided' => 'Still open',
+        'breakdown' => 'By decision',
+        'none' => 'No decisions yet',
+    ],
+
 ];

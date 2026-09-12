@@ -413,6 +413,45 @@ class Conference extends Model
     }
 
     /**
+     * The decision numbers the conference view and the admin list print. One
+     * grouped query plus two aggregates, and a zero for every decision with no
+     * rows - a count that disappears when it is zero makes a panel change shape
+     * as data arrives.
+     *
+     * Deliberately separate from rankingSummary(), which also carries the score
+     * aggregates the ranking page needs: the conference view wants four numbers
+     * and should not pay for an avg() over every abstract to get them.
+     *
+     * @return array{decided: int, undecided: int, notified: int, by_decision: array<string, int>}
+     */
+    public function decisionCounts(): array
+    {
+        $base = RankedSubmissions::query($this);
+
+        /** @var array<string, int> $byDecision */
+        $byDecision = (clone $base)
+            ->selectRaw('decision, count(*) as aggregate')
+            ->groupBy('decision')
+            ->pluck('aggregate', 'decision')
+            ->all();
+
+        $counts = [];
+        $decided = 0;
+
+        foreach (Decision::inReportOrder() as $decision) {
+            $counts[$decision->value] = (int) ($byDecision[$decision->value] ?? 0);
+            $decided += $counts[$decision->value];
+        }
+
+        return [
+            'decided' => $decided,
+            'undecided' => (clone $base)->whereNull('decision')->count(),
+            'notified' => (clone $base)->whereNotNull('decision_notified_at')->count(),
+            'by_decision' => $counts,
+        ];
+    }
+
+    /**
      * Spec 5.5: "a coverage summary (submissions with fewer than N reviewers)".
      *
      * One grouped query plus one count, rather than a loop over submissions:
@@ -466,13 +505,22 @@ class Conference extends Model
      * and the conference's own `reviewers_per_submission` target is the only
      * denominator that means something.
      *
+     * **The set is RankedSubmissions, not `submitted`/`under_review`.** Plan 5's
+     * ApplyDecision rewrites `submissions.status` to accepted/rejected/
+     * waitlisted while the conference is still `reviewing`, so a narrower set
+     * would empty this section one decision at a time - and the conference view
+     * prints it directly beside decisionCounts(), where "Submitted 0 / 0" and
+     * "Dr Omar Khan - 0 / 0" next to "40 decided" is a page contradicting
+     * itself. The reviews that were written do not stop existing because the
+     * committee answered. assignmentCoverage() deliberately keeps the narrower
+     * set: it asks who still needs a reviewer, and a decided abstract needs
+     * none.
+     *
      * @return array{expected: int, submitted: int, drafts: int, reviewers: list<array{name: string, submitted: int, expected: int}>}
      */
     public function reviewProgress(): array
     {
-        $reviewableIds = $this->submissions()
-            ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
-            ->pluck('id');
+        $reviewableIds = RankedSubmissions::query($this)->pluck('id');
 
         $assignments = ReviewAssignment::query()->whereIn('submission_id', $reviewableIds)->count();
 

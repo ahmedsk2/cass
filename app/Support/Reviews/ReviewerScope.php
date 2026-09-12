@@ -27,7 +27,9 @@ use Illuminate\Database\Eloquent\Builder;
  * The rule:
  *   1. the conference is `reviewing` or `decided`;
  *   2. the reviewer has an *active* conference_reviewers row for it;
- *   3. the submission is `submitted` or `under_review`;
+ *   3. the submission is `submitted` or `under_review` - or it has been decided
+ *      (`accepted`, `rejected`, `waitlisted`) and THIS reviewer has a review of
+ *      it, so a reviewer can still read back what they wrote;
  *   4. and either the conference is open_pool, or a review_assignments row
  *      names this reviewer.
  *
@@ -44,7 +46,29 @@ final class ReviewerScope
     public static function constrain(Builder $query, User $reviewer, ?Conference $conference = null): Builder
     {
         $query
-            ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
+            ->where(function (Builder $status) use ($reviewer): void {
+                $status
+                    ->whereIn('status', [SubmissionStatus::Submitted->value, SubmissionStatus::UnderReview->value])
+                    // Plan 5 writes accepted/rejected/waitlisted onto a decided
+                    // abstract, while the conference is still `reviewing`.
+                    // Without this arm the abstract - and the reviewer's own
+                    // submitted review of it - leaves every read path the moment
+                    // the committee decides, and by the time MarkDecided can
+                    // succeed EVERY abstract has a decision, so the reviewer's
+                    // queue is empty and every review page a 404 on the very
+                    // screen that says otherwise. Scoped to the reviewer's OWN
+                    // reviews, so a decided abstract nobody reviewed stays out
+                    // of the pool. Writes are still refused by
+                    // Conference::acceptsReviewWrites().
+                    ->orWhere(fn (Builder $decided): Builder => $decided
+                        ->whereIn('status', [
+                            SubmissionStatus::Accepted->value,
+                            SubmissionStatus::Rejected->value,
+                            SubmissionStatus::Waitlisted->value,
+                        ])
+                        ->whereHas('reviews', fn (Builder $reviews): Builder => $reviews
+                            ->where('reviewer_user_id', $reviewer->getKey())));
+            })
             ->whereHas('conference', function (Builder $conferenceQuery) use ($reviewer): void {
                 $conferenceQuery
                     ->whereIn('status', [ConferenceStatus::Reviewing->value, ConferenceStatus::Decided->value])
