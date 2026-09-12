@@ -6,6 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $conference->name }} · {{ $organization->name }}</title>
     <meta name="description" content="{{ Str::limit((string) $conference->short_description, 155) }}">
+    {{-- The canonical URL is the organization's own domain when they have one
+         (spec 5.8), so a conference that is reachable on two hosts tells a
+         search engine which one is the page. --}}
+    <link rel="canonical" href="{{ $conference->publicUrl() }}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ $conference->publicUrl() }}">
+    <meta property="og:title" content="{{ $conference->name }}">
+    <meta property="og:description" content="{{ Str::limit((string) $conference->short_description, 155) }}">
+    <meta property="og:site_name" content="{{ $organization->name }}">
+    @if ($organization->logo_path)
+        {{-- The organization's logo, because it is the one image on this page
+             that is theirs. The QR poster would be a better share card and is
+             a render behind an authenticated route; the backlog keeps it. --}}
+        <meta property="og:image" content="{{ Storage::disk('branding')->url($organization->logo_path) }}">
+    @endif
+    <meta name="twitter:card" content="summary">
     @if ($noindex)
         <meta name="robots" content="noindex, nofollow">
     @endif

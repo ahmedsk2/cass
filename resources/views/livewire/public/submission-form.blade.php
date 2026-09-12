@@ -40,7 +40,7 @@
             @unless ($showForm)
                 {{-- Offered only as a dead end. Above a form the author is still
                      typing into, a link away from the page is a trap. --}}
-                <a href="{{ route('conference.show', [$organization, $conference]) }}"
+                <a href="{{ $conference->publicUrl() }}"
                    class="mt-4 inline-block text-sm font-medium text-[var(--org-primary)] hover:underline">
                     {{ __('submission.window.back') }}
                 </a>

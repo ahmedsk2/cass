@@ -1,15 +1,17 @@
 {{--
-    The four submission-window states. Plan 3 replaces exactly one thing in
-    this file: the `href="#"` on the Open branch becomes
-    route('conference.submit', [$conference->organization, $conference]).
-    Nothing else here changes.
+    The four submission-window states. Plan 3 turned the Open branch's
+    `href="#"` into a real link to the submission form; Plan 6 Task 3 replaced
+    that named-route call with $conference->publicSubmitUrl(), so the link
+    stays on the organization's verified custom domain when it has one. The
+    grep in Task 3 Step 7 is what keeps it that way, so this comment does not
+    spell the route name it replaced.
 --}}
 @php use App\Enums\SubmissionWindow; @endphp
 
 <div class="mt-8">
     @switch($conference->submissionWindow())
         @case(SubmissionWindow::Open)
-            <a href="{{ route('conference.submit', [$conference->organization, $conference]) }}"
+            <a href="{{ $conference->publicSubmitUrl() }}"
                class="inline-flex items-center rounded-lg bg-[var(--org-primary)] px-6 py-3 text-base font-semibold text-[var(--org-on-primary)] shadow-sm hover:opacity-90">
                 Submit abstract
             </a>

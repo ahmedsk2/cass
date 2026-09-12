@@ -649,9 +649,39 @@ class Conference extends Model
         return $this->submission_opens_at?->copy()->setTimezone($this->timezone);
     }
 
+    /**
+     * Where the public conference page lives. The organization's verified
+     * custom domain when it has one (spec 5.8: "serves the conference without
+     * the /c/{org} prefix"), the platform URL otherwise.
+     *
+     * Not route('custom-domain.conference.show'): that route has no host
+     * constraint and route() would build it on APP_URL's host, which is the
+     * one host this branch exists to avoid.
+     */
     public function publicUrl(): string
     {
+        $base = $this->organization->customDomainUrl();
+
+        if ($base !== null) {
+            return $base.'/'.$this->slug;
+        }
+
         return route('conference.show', [
+            'organization' => $this->organization,
+            'conference' => $this,
+        ]);
+    }
+
+    /** The submission form, on the same host publicUrl() chose. */
+    public function publicSubmitUrl(): string
+    {
+        $base = $this->organization->customDomainUrl();
+
+        if ($base !== null) {
+            return $base.'/'.$this->slug.'/submit';
+        }
+
+        return route('conference.submit', [
             'organization' => $this->organization,
             'conference' => $this,
         ]);
