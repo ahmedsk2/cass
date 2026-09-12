@@ -142,6 +142,16 @@ return [
         'verify_rate_limit' => (int) env('CASS_DOMAIN_VERIFY_LIMIT', 10),
     ],
 
+    'legacy' => [
+        // Where cass:import-legacy writes its manual-review report. On the
+        // `local` disk, whose root is storage/app/private - and storage/app is
+        // the ONLY part of storage/ on the cass-storage volume
+        // (docker-compose.production.yml:52). storage/logs and
+        // storage/framework live in the container layer and vanish on the next
+        // deploy, which is not where a file somebody has to read belongs.
+        'report_directory' => env('CASS_LEGACY_REPORT_DIR', 'legacy'),
+    ],
+
     'countries' => [
         'SA' => 'Saudi Arabia', 'AE' => 'United Arab Emirates', 'BH' => 'Bahrain', 'KW' => 'Kuwait',
         'OM' => 'Oman', 'QA' => 'Qatar', 'EG' => 'Egypt', 'JO' => 'Jordan', 'LB' => 'Lebanon',
