@@ -76,5 +76,11 @@ return [
         'lookup_failed' => 'We could not reach the DNS servers for that domain just now. Try again in a few minutes.',
         'already_verified' => 'That domain is already verified.',
         'not_approved' => 'Your organization has to be approved before you can use a custom domain.',
+        // Task 2's Verify button is metered per actor. The plan reached for
+        // `reviewer.errors.throttled`, but no lang file in this application
+        // defines a throttle key at all - `grep -rn "throttl" lang/en/` is
+        // empty - so the sentence lives in this namespace rather than in
+        // another file's. The wording follows submission.errors.too_many.
+        'throttled' => 'Too many checks in a row. Please try again in :seconds seconds.',
     ],
 ];
