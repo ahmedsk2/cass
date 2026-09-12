@@ -51,7 +51,15 @@ $probe = <<<'JS'
         inlineRan: window.__cspInlineRan === true,
         hasLivewire: typeof window.Livewire !== 'undefined',
         hasAlpine: typeof window.Alpine !== 'undefined',
-        hasDarkMode: typeof window.loadDarkMode === 'function',
+        // A BARE identifier, not window.loadDarkMode. Filament declares it as
+        // `const loadDarkMode = () => {...}` at the top level of a classic
+        // script, and a top-level const is a binding in the global LEXICAL
+        // environment rather than a property of window - so window.loadDarkMode
+        // is undefined even on a page where that script ran perfectly.
+        // `typeof` on an unresolvable identifier is the one reference that does
+        // not throw, so this reads 'undefined' rather than exploding when the
+        // CSP really did block the script, which is the case being probed.
+        hasDarkMode: typeof loadDarkMode === 'function',
         bodyBackground: getComputedStyle(document.body).backgroundColor,
     };
 })()
@@ -88,11 +96,13 @@ it('runs livewire and alpine on the submission form under the policy', function 
 it('renders a panel login with filament own inline scripts intact', function () use ($probe) {
     $result = visit('/org/login')->assertSee('CASS')->script($probe);
 
-    // loadDarkMode() is defined by the inline <script> at
-    // vendor/filament/filament/resources/views/components/layout/base.blade.php:108-125.
-    // If the published copy forgot its nonce, the CSP blocks that script and
-    // this is undefined - which is the exact failure the drift test exists to
-    // make loud.
+    // loadDarkMode is defined by the inline <script> in the published copy of
+    // filament-panels::components.layout.base (the `@else` branch of the
+    // dark-mode block, which is the one that renders: Filament's own default is
+    // dark mode on and not forced, and no panel provider overrides it).
+    // If that copy forgot its nonce, the CSP blocks the script and this is
+    // undefined - which is the exact failure the drift test exists to make
+    // loud.
     expect($result['hasDarkMode'])->toBeTrue()
         ->and($result['hasLivewire'])->toBeTrue()
         ->and($result['inlineRan'])->toBeFalse();
