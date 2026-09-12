@@ -334,7 +334,8 @@ class ConferenceEmailTemplates extends Page implements HasTable
             EmailTemplateKey::DecisionWaitlisted => 'To the corresponding author of a waitlisted abstract, when you send decision emails.',
             EmailTemplateKey::DecisionRejected => 'To the corresponding author of an abstract that was not accepted, when you send decision emails.',
             EmailTemplateKey::OrganizationApproved,
-            EmailTemplateKey::OrganizationRejected => 'Sent by the platform when an organization is approved or rejected. Not editable per conference.',
+            EmailTemplateKey::OrganizationRejected,
+            EmailTemplateKey::OrganizationSuspended => 'Sent by the platform when an organization is approved, rejected or suspended. Not editable per conference.',
         };
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+use App\Filament\Auth\Login;
 use App\Filament\Reviewer\Pages\Dashboard;
 use App\Support\Panels\InitialsAvatarProvider;
 use App\Support\Panels\PanelSwitch;
@@ -43,7 +44,7 @@ class ReviewerPanelProvider extends PanelProvider
         return $panel
             ->id('reviewer')
             ->path('review')
-            ->login()
+            ->login(Login::class)
             ->passwordReset()
             ->emailVerification()
             ->profile()

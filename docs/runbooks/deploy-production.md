@@ -862,6 +862,8 @@ Nightly `mysqldump` from a host cron (owner installs):
 
 Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and the encrypted two-factor secrets; announce a re-login and re-enrolment.
 
+Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`ShouldBeEncrypted`), and a job written under the old key cannot be run under the new one. `php artisan queue:size` should read 0, and `queue:failed` should be empty or retried, before the redeploy.
+
 ## Trusted proxies
 
 `TRUSTED_PROXIES` is fixed in the compose file to the private Docker ranges where Traefik lives. The app takes the client IP from Cloudflare's `CF-Connecting-IP` header for rate limiting; the OCI security list only admits Cloudflare on 80/443, so that header cannot be spoofed from outside.

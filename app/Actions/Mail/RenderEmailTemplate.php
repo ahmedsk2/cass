@@ -6,6 +6,7 @@ namespace App\Actions\Mail;
 
 use App\Enums\EmailTemplateKey;
 use App\Models\Conference;
+use App\Models\Organization;
 use App\Support\Mail\DefaultTemplates;
 use App\Support\Mail\RenderedTemplate;
 
@@ -38,11 +39,23 @@ class RenderEmailTemplate
     private const VALUE_ESCAPES = ['[' => '\[', '<' => '&lt;', '>' => '&gt;'];
 
     /**
+     * The context is a union rather than a `?Conference` because the three
+     * platform-wide keys are sent to an organization owner at a moment when no
+     * conference need exist. It **widens** and keeps the `null`: a platform
+     * default can be rendered with no context at all (the editor's preview, and
+     * tests/Unit/RenderEmailTemplateTest.php), and narrowing the parameter
+     * would be a TypeError in a green test rather than a compile error here.
+     *
+     * An Organization and a null both fall straight through to the platform
+     * default in lang/en/mail.php: only a Conference can carry an override, and
+     * EmailTemplateKey::isConferenceScoped() already says the organization keys
+     * have none.
+     *
      * @param  array<string, string|null>  $values
      */
-    public function handle(EmailTemplateKey $key, ?Conference $conference, array $values): RenderedTemplate
+    public function handle(EmailTemplateKey $key, Conference|Organization|null $context, array $values): RenderedTemplate
     {
-        $template = $this->template($key, $conference);
+        $template = $this->template($key, $context instanceof Conference ? $context : null);
 
         return new RenderedTemplate(
             subject: $this->renderSubject($template->subject, $values),

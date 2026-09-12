@@ -23,6 +23,13 @@ return [
     // Visit rows older than this are deleted nightly by `model:prune`. The
     // sharing page reports 30 days, so nothing inside the window is lost.
     'short_link_visit_retention_days' => (int) env('CASS_SHORT_LINK_VISIT_RETENTION_DAYS', 90),
+
+    /*
+     * Days an email_logs row is kept. Longer than a short-link visit's ninety
+     * because this table answers support questions months after a conference.
+     * Pruned nightly by model:prune (routes/console.php).
+     */
+    'email_log_retention_days' => (int) env('CASS_EMAIL_LOG_RETENTION_DAYS', 365),
     'qr' => [
         // The PNG is rendered at whole-module scale, so the real width is the
         // smallest multiple of the module count that reaches this size.
@@ -123,6 +130,18 @@ return [
         'decide_chunk' => (int) env('CASS_DECISION_DECIDE_CHUNK', 250),
     ],
 
+    'security' => [
+        // The wide, per-IP login bucket. The per-email+IP key in
+        // App\Filament\Auth\Login is what spec section 9 asks for; on its own
+        // it makes spraying unmetered, because a fresh address is a fresh
+        // budget.
+        'login_ip_limit' => (int) env('CASS_LOGIN_IP_LIMIT', 20),
+        // True sends Content-Security-Policy-Report-Only instead, so the first
+        // production week can run with a human watching the browser console
+        // before the header becomes a gate. There is no report endpoint.
+        'csp_report_only' => filter_var(env('CASS_CSP_REPORT_ONLY', false), FILTER_VALIDATE_BOOL),
+    ],
+
     /*
      * Custom domains (spec 5.8). The three columns have existed since Plan 1;
      * Plan 6 is what reads them.
@@ -140,13 +159,6 @@ return [
         // Verification is one outbound DNS lookup per click, from the php-fpm
         // worker that is also serving public pages. Metered per actor.
         'verify_rate_limit' => (int) env('CASS_DOMAIN_VERIFY_LIMIT', 10),
-    ],
-
-    'security' => [
-        // True sends Content-Security-Policy-Report-Only instead, so the first
-        // production week can run with a human watching the browser console
-        // before the header becomes a gate. There is no report endpoint.
-        'csp_report_only' => filter_var(env('CASS_CSP_REPORT_ONLY', false), FILTER_VALIDATE_BOOL),
     ],
 
     'legacy' => [
