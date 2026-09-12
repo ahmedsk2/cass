@@ -25,6 +25,14 @@ set -eu
 umask 0077
 
 DEST="${1:-/srv/backups/cass}"
+# $DEST becomes the source of a `docker run -v` below, and docker reads a
+# RELATIVE source as a named volume rather than a path - so `cass-storage-backup
+# backups/` would write the archive into a new docker volume called "backups"
+# instead of ./backups. Make it absolute before it can be misread.
+case "$DEST" in
+    /*) ;;
+    *)  DEST="$(pwd)/$DEST" ;;
+esac
 KEEP_DAYS="${CASS_STORAGE_BACKUP_KEEP_DAYS:-56}"
 TAR_IMAGE="${CASS_BACKUP_TAR_IMAGE:-alpine:3}"
 STAMP="$(date +%F)"
