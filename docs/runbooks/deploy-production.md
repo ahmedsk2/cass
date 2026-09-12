@@ -1066,7 +1066,9 @@ run. Check with `ls -ld /srv/backups/cass` and `ls -l /srv/backups/cass | head`.
 
 Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and the encrypted two-factor secrets; announce a re-login and re-enrolment.
 
-Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail implements ShouldBeEncrypted`), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database` should report `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
+Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail implements ShouldBeEncrypted`), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database:default` should print `[database] default` with `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
+
+The `connection:queue` form is not optional here. `MonitorCommand::parseQueues()` splits each argument on `:` and, when there is no colon, reads the whole word as a **queue name** on the default connection — so `queue:monitor database` monitors a queue *called* `database`, which this application never dispatches to, and prints `[0] OK` over a full backlog. Every job in CASS goes to the `default` queue of the `database` connection (`config/queue.php:44`, `DB_QUEUE`), so `database:default` is the pair to ask about.
 
 Rotating it also **moves Livewire's endpoint prefix**, which is
 `substr(hash('sha256', config('app.key').'livewire-endpoint'), 0, 8)`. Any page
