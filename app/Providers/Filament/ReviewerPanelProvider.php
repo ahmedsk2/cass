@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Filament;
 
 use App\Filament\Reviewer\Pages\Dashboard;
+use App\Support\Panels\InitialsAvatarProvider;
 use App\Support\Panels\PanelSwitch;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
@@ -53,6 +54,10 @@ class ReviewerPanelProvider extends PanelProvider
             ->brandLogo(fn () => view('brand.logo'))
             ->brandLogoHeight('2.25rem')
             ->favicon(asset('favicon.ico'))
+            // Initials as a data: URI, not a fetch to ui-avatars.com - which
+            // img-src does not allow and which would send every panel user's
+            // name to a third party on every page load.
+            ->defaultAvatarProvider(InitialsAvatarProvider::class)
             ->colors([
                 'primary' => Color::hex('#176BB8'),
             ])

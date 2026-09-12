@@ -224,5 +224,25 @@ jobs:
             App\Support\Pdf\PosterFonts::register($pdf->getDomPDF());
             exit(str_starts_with($pdf->output(), "%PDF-") ? 0 : 1);'
           docker exec cass test -s storage/fonts/installed-fonts.json
+          # The CSP inside the built image, under route:cache + config:cache +
+          # opcache validate_timestamps=0. The header is built in PHP, so this
+          # is also the check that CASS_CSP_REPORT_ONLY defaults to enforcing.
+          curl -sD /tmp/csp -o /dev/null -H 'Host: localhost' http://127.0.0.1:8080/
+          grep -qi '^content-security-policy:' /tmp/csp
+          grep -qi 'nonce-' /tmp/csp
+          ! grep -qi '^content-security-policy-report-only:' /tmp/csp
+          grep -qi '^cross-origin-opener-policy: same-origin' /tmp/csp
+          # The panel login, which is the page the published Filament views
+          # serve: a Blade error in either of them is a 500 here. Headers AND
+          # body from ONE request - the nonce is minted per request, so taking
+          # it from a separate `curl -I` compares two different nonces and can
+          # only ever fail.
+          curl -sf -D /tmp/login-h -o /tmp/login -H 'Host: localhost' http://127.0.0.1:8080/org/login
+          grep -q 'window.filamentData' /tmp/login
+          NONCE=$(grep -oiE "nonce-[A-Za-z0-9]{40}" /tmp/login-h | head -1 | cut -d'-' -f2)
+          test -n "$NONCE"
+          # Every inline script and style in that page carries the same nonce
+          # the header does - a mismatch is a panel with no JavaScript at all.
+          grep -q "nonce=\"$NONCE\"" /tmp/login
       - if: always()
         run: docker logs cass | tail -50

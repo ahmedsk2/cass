@@ -47,6 +47,10 @@ services:
       CASS_ADMIN_PASSWORD: ${CASS_ADMIN_PASSWORD}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # Send Content-Security-Policy-Report-Only instead of the enforcing
+      # header. Deploy with this 'true', walk docs/launch-checklist.md section 4
+      # with the browser console open, then set it 'false' and redeploy.
+      CASS_CSP_REPORT_ONLY: ${CASS_CSP_REPORT_ONLY:-false}
       TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     volumes:
       - cass-storage:/var/www/html/storage/app
