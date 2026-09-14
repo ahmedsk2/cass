@@ -12,7 +12,7 @@
 # .github/dependabot.yml raises a weekly pull request when any of these moves.
 # Do not "unpin to get the security fix" - let Dependabot open the PR, so the
 # change is reviewed and the digest stays recorded.
-FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS assets
+FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS assets
 WORKDIR /build
 COPY package*.json vite.config.js ./
 RUN npm ci
@@ -27,7 +27,7 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-progress \
     --ignore-platform-req=ext-intl --ignore-platform-req=ext-gd
 
-FROM php:8.4-fpm-alpine@sha256:49734670eccf414af884c2a0c2e558401e228615f8028f1c9fca30a0d4fb1bc2 AS runtime
+FROM php:8.5-fpm-alpine@sha256:22a4c414bb8e91ac7aefe9b1d80e832caa67252aca58b6af7eeb3bc92188fc5b AS runtime
 RUN apk add --no-cache nginx supervisor su-exec icu-libs libpng libjpeg-turbo freetype libzip mysql-client tzdata \
  && apk add --no-cache --virtual .build icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
  && docker-php-ext-configure gd --with-freetype --with-jpeg \
