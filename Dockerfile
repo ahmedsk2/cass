@@ -12,7 +12,7 @@
 # .github/dependabot.yml raises a weekly pull request when any of these moves.
 # Do not "unpin to get the security fix" - let Dependabot open the PR, so the
 # change is reviewed and the digest stays recorded.
-FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS assets
+FROM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS assets
 WORKDIR /build
 COPY package*.json vite.config.js ./
 RUN npm ci
