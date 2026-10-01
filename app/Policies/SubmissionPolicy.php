@@ -14,7 +14,8 @@ use Filament\Facades\Filament;
  * Spec section 4: every organization member can view submissions and files;
  * nobody in a panel creates or edits an abstract, because the author owns the
  * text and reaches it with a token. `withdraw` and `resendLink` are the two
- * custom abilities the organizer does have, and both are logged.
+ * custom abilities the organizer does have - an owner or admin, not a plain
+ * member - and both are logged.
  */
 class SubmissionPolicy
 {
@@ -124,14 +125,23 @@ class SubmissionPolicy
         return false;
     }
 
+    /**
+     * Owner decision (launch checklist section 1): owner and admin only. Spec
+     * section 4 gives withdrawal to the author alone; the organizer does it on
+     * the author's behalf, it cannot be undone, and a resent link kills the one
+     * the author is holding - so a plain member does neither.
+     *
+     * Not view(), for decide()'s reason: view() also admits an active reviewer
+     * through ReviewerScope, and reading an abstract is not acting on it.
+     */
     public function withdraw(User $user, Submission $submission): bool
     {
-        return $this->view($user, $submission);
+        return $this->canManage($user, $submission);
     }
 
     public function resendLink(User $user, Submission $submission): bool
     {
-        return $this->view($user, $submission);
+        return $this->canManage($user, $submission);
     }
 
     /**
@@ -164,5 +174,14 @@ class SubmissionPolicy
     public function export(User $user): bool
     {
         return $this->viewAny($user);
+    }
+
+    /** The nullable walk is view()'s, for view()'s two reasons. */
+    private function canManage(User $user, Submission $submission): bool
+    {
+        $organization = $submission->conference?->organization;
+
+        return $organization !== null
+            && ($user->roleIn($organization)?->canManageOrganization() ?? false);
     }
 }

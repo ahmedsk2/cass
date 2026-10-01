@@ -378,6 +378,39 @@ it('lets a plain member read submissions but never edit or delete one', function
         ->and($policy->restoreAny($member))->toBeFalse();
 });
 
+it('keeps withdraw and resend-link to owners and admins, never a plain member or a reviewer', function () {
+    // Owner decision, launch checklist section 1: spec section 4 gives
+    // withdrawal to the author alone, a withdrawal cannot be undone, and a
+    // resent link kills the one the author is holding - so of the organization
+    // only an owner or admin may do either on the author's behalf.
+    $admin = User::factory()->create();
+    $this->organization->addMember($admin, OrganizationRole::Admin);
+    $member = User::factory()->create();
+    $this->organization->addMember($member, OrganizationRole::Member);
+
+    // A reviewer may READ this abstract - view() admits them through
+    // ReviewerScope once reviewing starts - and must still not act on it.
+    $reviewer = User::factory()->create();
+    ConferenceReviewer::factory()->for($this->conference)->create(['user_id' => $reviewer->getKey()]);
+    $this->conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+    $policy = app(SubmissionPolicy::class);
+
+    expect($policy->withdraw($admin, $this->submission))->toBeTrue()
+        ->and($policy->resendLink($admin, $this->submission))->toBeTrue()
+        ->and($policy->withdraw($member, $this->submission))->toBeFalse()
+        ->and($policy->resendLink($member, $this->submission))->toBeFalse()
+        ->and($policy->view($reviewer, $this->submission))->toBeTrue()
+        ->and($policy->withdraw($reviewer, $this->submission))->toBeFalse()
+        ->and($policy->resendLink($reviewer, $this->submission))->toBeFalse();
+
+    actingAs($member);
+
+    livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
+        ->assertActionHidden('withdraw')
+        ->assertActionHidden('resendLink');
+});
+
 // --- Counts on the conference page --------------------------------------
 
 it('shows the four submission counts and a link on the conference view', function () {
