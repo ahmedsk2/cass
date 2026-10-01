@@ -16,7 +16,8 @@ Eight questions Plans 3, 4 and 5 recorded and deliberately did not answer.
 Each has a one-line change either way. Leaving one unanswered ships whichever
 answer a plan author happened to choose.
 
-- [ ] **Turnstile fails open when Cloudflare is unreachable.** A connection
+- [x] **Turnstile fails open when Cloudflare is unreachable.**
+      **Decided (owner, 2026-10-01): keep failing open.** A connection
       error is logged at `warning` and the submission is allowed; an explicit
       `success: false` or a 5xx is still a refusal. The reasoning: an outage
       would otherwise refuse every abstract in the last hour before a deadline,
@@ -25,27 +26,32 @@ answer a plan author happened to choose.
       **To flip it:** `return false;` in place of the `return true;` in the
       `catch (ConnectionException …)` branch of `App\Support\Turnstile::verify()`,
       and invert one case in `tests/Unit/TurnstileTest.php`.
-- [ ] **Any organization member can withdraw an abstract and resend its status
-      link.** Spec section 4 gives "submit / edit / withdraw" to the author
+- [x] **Any organization member can withdraw an abstract and resend its status
+      link.**
+      **Decided (owner, 2026-10-01): narrowed to owner/admin** — done, with a test.
+      Spec section 4 gives "submit / edit / withdraw" to the author
       alone, but `SubmissionPolicy::withdraw()` and `resendLink()` mirror
       `view()`, which is every member down to a plain `member`. A withdrawal is
       irreversible and a resent link kills the one the author is holding. Both
       are logged with the actor.
       **To narrow:** both policy methods to `canManageOrganization()`.
-- [ ] **Any organization member can remove a reviewer and invite anyone.**
+- [x] **Any organization member can remove a reviewer and invite anyone.**
+      **Decided (owner, 2026-10-01): keep, as the spec says.**
       `ReviewerInvitationPolicy` and `ConferenceReviewerPolicy` mirror spec
       section 4's "invite reviewers, assign, decide" row, which is every
       member. Bounded by `CASS_INVITATION_SEND_LIMIT` (200/hour/org) and
       `ReviewerList::MAX_ENTRIES` (100) per paste.
       **To narrow:** both to `canManageOrganization()`.
-- [ ] **A submitted review freezes at the review deadline, but a draft can
-      still be finished.** The strict reading freezes everything — but
+- [x] **A submitted review freezes at the review deadline, but a draft can
+      still be finished.**
+      **Decided (owner, 2026-10-01): keep.** The strict reading freezes everything — but
       `reviewer_overdue`, a template this platform ships, tells a reviewer
       after the deadline to "complete them as soon as you can", which the
       strict reading makes impossible.
       **To make it strict:** one clause in `SubmitReview::blockers()`, and
       invert one case in `tests/Unit/SubmitReviewTest.php`.
-- [ ] **Sending decision letters rotates every notified author's status link.**
+- [x] **Sending decision letters rotates every notified author's status link.**
+      **Decided (owner, 2026-10-01): accepted.**
       The token is stored hashed and the plaintext exists only in an emailed
       link, so a working `{{status_link}}` in a second email means a new token,
       which kills the first. Every decided author gets a letter, so every
@@ -53,8 +59,10 @@ answer a plan author happened to choose.
       **If unacceptable:** a second longer-lived column on `submissions`, or a
       `submission_tokens` table (which is also what "share this with my
       co-author" would want).
-- [ ] **An organizer can unassign a reviewer who has already submitted a
-      review.** Spec 5.5 says assignments can be changed "until the review is
+- [x] **An organizer can unassign a reviewer who has already submitted a
+      review.**
+      **Decided (owner, 2026-10-01): made strict, as spec 5.5 says** — done, with a test.
+      Spec 5.5 says assignments can be changed "until the review is
       submitted"; Plan 4 allows it after. The submitted review survives — only
       the assignment row goes, and the ranking averages `reviews`, not
       `review_assignments` — but the coverage summary then describes a reviewer
@@ -62,13 +70,15 @@ answer a plan author happened to choose.
       **To make it strict:** one clause in `AssignReviewers::blockers()`
       refusing a removal whose reviewer has a submitted review, plus a case in
       `tests/Feature/Organizer/ConferenceAssignmentsTest.php`.
-- [ ] **Only an owner or admin may send decision letters, which narrows spec
+- [x] **Only an owner or admin may send decision letters, which narrows spec
       section 4's "invite reviewers, assign, decide" row.**
+      **Decided (owner, 2026-10-01): keep the narrowing.**
       `SubmissionPolicy::decide()` follows the spec (every member);
       `ConferencePolicy::sendDecisions()` deliberately does not, because one
       click emails every author and cannot be un-sent.
       **To widen:** make `sendDecisions()` mirror `decide()`.
-- [ ] **Resending the same decision overwrites the stored letter.** A changed
+- [x] **Resending the same decision overwrites the stored letter.**
+      **Decided (owner, 2026-10-01): accepted.** A changed
       decision appends a new `submission_decisions` row; a plain resend
       re-renders over `letter_subject`, `letter_markdown` and `notified_at`, so
       the superseded text is lost (the per-send history survives in
@@ -93,6 +103,10 @@ answer a plan author happened to choose.
       Note `.env.example:56` still ships `MAIL_FROM_ADDRESS="cass@towardpicu.com"`
       while `CASS_CONTACT_EMAIL` is `cass@towardpcc.com` — **decide which
       domain sends**, and make SPF and DKIM match it.
+      **Decided (owner, 2026-10-01): `towardpicu.com` sends**, through the
+      owner's towardpicu.com SMTP, so SPF and DKIM are checked on that domain.
+      `CASS_CONTACT_EMAIL` is the contact form's inbox, not a sender: confirm
+      `cass@towardpcc.com` actually receives mail.
 - [ ] **Cloudflare: Always Use HTTPS = on.** Spec section 9 gives HSTS to
       Cloudflare and the application deliberately sends no
       `Strict-Transport-Security` of its own.
@@ -249,7 +263,7 @@ break when they follow each other.
 ## 6. Sign-off
 
 - [ ] Every box above is ticked or has a written reason beside it.
-- [ ] The eight owner decisions in section 1 are answered in
+- [x] The eight owner decisions in section 1 are answered in
       `docs/superpowers/plans/backlog.md`, not only in somebody's head.
 - [ ] `CASS_CSP_REPORT_ONLY=false` and the site has been walked once with it
       that way.
