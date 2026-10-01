@@ -239,6 +239,7 @@ return [
             'open_pool' => 'This conference is in open pool mode, where every reviewer already sees every abstract. Switch it to assigned review first.',
             'not_reviewable' => 'Only a submitted abstract can be assigned.',
             'not_a_reviewer' => 'One of those people is not an active reviewer of this conference.',
+            'already_reviewed' => 'A reviewer who has already submitted a review of this abstract stays assigned to it.',
         ],
     ],
 

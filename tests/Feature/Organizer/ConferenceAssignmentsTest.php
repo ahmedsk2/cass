@@ -155,6 +155,32 @@ it('unassigns, keeps a draft review and keeps a submitted one', function () {
         ->and(Review::query()->whereKey($submitted->getKey())->exists())->toBeTrue();
 });
 
+it('refuses to unassign a reviewer who has already submitted a review of the abstract', function () {
+    // Owner decision, launch checklist section 1: spec 5.5 lets assignments
+    // change "until the review is submitted". Unassigning after that would not
+    // take the review out of the score - the ranking reads `reviews` - so all
+    // it could do is leave the coverage summary describing the wrong people.
+    app(AssignReviewers::class)->handle($this->submission, [$this->omar->id, $this->sara->id], $this->owner);
+    Review::factory()->for($this->submission)->submitted()->create(['reviewer_user_id' => $this->sara->id]);
+
+    // A submitted review of a DIFFERENT abstract blocks nothing here.
+    $other = Submission::factory()->for($this->conference)->submitted()->create();
+    Review::factory()->for($other)->submitted()->create(['reviewer_user_id' => $this->omar->id]);
+
+    expect(app(AssignReviewers::class)->blockers($this->submission, [$this->omar->id]))
+        ->toBe([__('reviewer.assign.errors.already_reviewed')])
+        ->and(app(AssignReviewers::class)->blockers($this->submission, [$this->sara->id]))->toBe([])
+        ->and(fn () => app(AssignReviewers::class)->handle($this->submission, [$this->omar->id], $this->owner))
+        ->toThrow(ReviewNotAcceptable::class);
+
+    assignmentsPage($this->conference)
+        ->callTableAction('assign', $this->submission, data: ['reviewers' => [$this->omar->id]])
+        ->assertNotified(__('reviewer.notices.refused'));
+
+    expect($this->submission->reviewAssignments()->pluck('reviewer_user_id')->sort()->values()->all())
+        ->toBe([$this->omar->id, $this->sara->id]);
+});
+
 it('counts coverage against reviewers_per_submission', function () {
     $second = Submission::factory()->for($this->conference)->submitted()->create();
 
