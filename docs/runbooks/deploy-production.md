@@ -378,8 +378,10 @@ never recovered.
   in CASS that grants verification that way, and it is why accepting while
   signed in as a *different* account is refused outright.
 - **The queued job payload carrying a token is encrypted.** `TemplatedMail`,
-  `ContactMessage` and `MemberInvitation` all implement `ShouldBeEncrypted`, so
-  the `command` blob in `jobs.payload` — and in `failed_jobs.payload`, which
+  `ContactMessage` and `MemberInvitation` all implement `ShouldBeEncrypted`, and
+  so does `SendQueuedNotificationsWithLog`, the job every queued notification
+  travels in (Filament's password reset, whose token is in its URL, included),
+  so the `command` blob in `jobs.payload` — and in `failed_jobs.payload`, which
   `queue:prune-failed --hours=720` keeps for 30 days, longer than the 14-day
   invitation expiry — is ciphertext under `APP_KEY` rather than a readable
   serialization. `tests/Feature/Security/QueuedMailPayloadTest.php` is what
@@ -1198,7 +1200,7 @@ run. Check with `ls -ld /srv/backups/cass` and `ls -l /srv/backups/cass | head`.
 
 Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and the encrypted two-factor secrets; announce a re-login and re-enrolment.
 
-Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail implements ShouldBeEncrypted`), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database:default` should print `[database] default` with `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
+Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail` and `SendQueuedNotificationsWithLog` implement `ShouldBeEncrypted`, so that is every templated email and every notification), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database:default` should print `[database] default` with `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
 
 The `connection:queue` form is not optional here. `MonitorCommand::parseQueues()` splits each argument on `:` and, when there is no colon, reads the whole word as a **queue name** on the default connection — so `queue:monitor database` monitors a queue *called* `database`, which this application never dispatches to, and prints `[0] OK` over a full backlog. Every job in CASS goes to the `default` queue of the `database` connection (`config/queue.php:44`, `DB_QUEUE`), so `database:default` is the pair to ask about.
 

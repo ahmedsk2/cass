@@ -4,18 +4,24 @@ declare(strict_types=1);
 
 use App\Actions\Mail\SendTemplatedEmail;
 use App\Actions\Organizations\InviteMember;
+use App\Enums\EmailLogStatus;
 use App\Enums\EmailTemplateKey;
 use App\Enums\OrganizationRole;
 use App\Mail\ContactMessage;
 use App\Mail\TemplatedMail;
 use App\Models\Conference;
+use App\Models\EmailLog;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
 use App\Notifications\MemberInvitation;
+use App\Notifications\SendQueuedNotificationsWithLog;
+use Filament\Auth\Notifications\ResetPassword;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Mail\SendQueuedMailable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 
 it('declares every queued token carrier encrypted', function (string $class) {
     // SendQueuedMailable::__construct() sets shouldBeEncrypted from the
@@ -24,7 +30,7 @@ it('declares every queued token carrier encrypted', function (string $class) {
     // property (:293-300) - so the interface on the message is what encrypts
     // the job.
     expect(is_subclass_of($class, ShouldBeEncrypted::class))->toBeTrue($class);
-})->with([TemplatedMail::class, ContactMessage::class, MemberInvitation::class]);
+})->with([TemplatedMail::class, ContactMessage::class, MemberInvitation::class, SendQueuedNotificationsWithLog::class]);
 
 it('encrypts the queued invitation, so an Owner membership cannot be lifted out of the jobs table', function () {
     config()->set('queue.default', 'database');
@@ -87,4 +93,44 @@ it('encrypts the queued payload, so a token cannot be read out of the jobs table
         ->and($decoded['data']['commandName'])->toBe(SendQueuedMailable::class)
         ->and($decoded['data']['command'])->not->toStartWith('O:')
         ->and(base64_decode($decoded['data']['command'], true))->not->toBeFalse();
+});
+
+it('encrypts every queued notification, so a password-reset token cannot be read out of the jobs table either', function () {
+    config()->set('queue.default', 'database');
+
+    $user = User::factory()->create(['email' => 'forgot@example.org']);
+    $token = str_repeat('r', 64);
+
+    // Exactly what Filament's RequestPasswordReset does. ResetPassword is
+    // Filament's class, queued, with the plaintext token in a public property
+    // and in the URL - and it does not implement ShouldBeEncrypted, so
+    // without the job doing it the token sat in jobs.payload and, after a
+    // final failure, in failed_jobs.payload for 720 hours.
+    $notification = app(ResetPassword::class, ['token' => $token]);
+    $notification->url = url('/org/password-reset/reset?token='.$token);
+
+    $user->notify($notification);
+
+    $payload = (string) DB::table('jobs')->value('payload');
+    $decoded = json_decode($payload, true);
+
+    expect($payload)->not->toBe('')
+        ->and($payload)->not->toContain($token)
+        ->and($decoded['data']['commandName'])->toBe(SendQueuedNotificationsWithLog::class)
+        ->and($decoded['data']['command'])->not->toStartWith('O:');
+
+    // And the worker still decrypts it and delivers the link.
+    expect(Artisan::call('queue:work', [
+        '--stop-when-empty' => true,
+        '--sleep' => 0,
+        '--timeout' => 0,
+        '--memory' => 2048,
+    ]))->toBe(0);
+
+    $delivered = Mail::mailer('array')->getSymfonyTransport()->messages();
+
+    expect($delivered)->toHaveCount(1)
+        ->and((string) $delivered->first()?->getOriginalMessage()->getTextBody())->toContain($token)
+        ->and(EmailLog::query()->sole()->status)->toBe(EmailLogStatus::Sent)
+        ->and(DB::table('jobs')->count())->toBe(0);
 });

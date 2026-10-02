@@ -6,6 +6,7 @@ namespace App\Notifications;
 
 use App\Enums\EmailLogStatus;
 use App\Models\EmailLog;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Str;
 use Throwable;
@@ -31,9 +32,10 @@ use Throwable;
  * still being retried.
  *
  * Do not rename or move this class without draining the queue first: a job
- * already in `jobs` or `failed_jobs` names it in its payload.
+ * already in `jobs` or `failed_jobs` names it in its payload. Rotating APP_KEY
+ * needs the same drain, now for notifications as well as templated mail.
  */
-class SendQueuedNotificationsWithLog extends SendQueuedNotifications
+class SendQueuedNotificationsWithLog extends SendQueuedNotifications implements ShouldBeEncrypted
 {
     /**
      * @param  Throwable|null  $e
