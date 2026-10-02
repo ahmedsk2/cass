@@ -634,6 +634,9 @@ $plan7Sources = [
     'app/Filament/Admin/Resources/Organizations/Pages/EditOrganization.php',
     'app/Filament/Admin/Resources/Organizations/RelationManagers/MembersRelationManager.php',
     'app/Filament/Admin/Resources/Organizations/RelationManagers/InvitationsRelationManager.php',
+    // Task 6: the reviewer's own affiliation.
+    'app/Actions/Reviewers/UpdateReviewerAffiliation.php',
+    'app/Filament/Reviewer/Pages/EditProfile.php',
 ];
 
 /**

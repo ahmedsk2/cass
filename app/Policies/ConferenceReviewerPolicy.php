@@ -57,6 +57,19 @@ class ConferenceReviewerPolicy
         return $organization !== null && $user->roleIn($organization) !== null;
     }
 
+    /**
+     * The reviewer's own affiliation for this conference - the one input to
+     * spec 5.5's affiliation conflict rule. Deliberately NOT update() above:
+     * that is "remove reviewer" and admits every member of the organization,
+     * while this is a reviewer's statement about themselves. Only while they
+     * are active: a removed reviewer is assigned nothing, so the value decides
+     * nothing until a re-invitation, which carries an affiliation of its own.
+     */
+    public function updateAffiliation(User $user, ConferenceReviewer $reviewer): bool
+    {
+        return $reviewer->user_id === $user->getKey() && $reviewer->isActive();
+    }
+
     public function delete(User $user, ConferenceReviewer $reviewer): bool
     {
         return false;
