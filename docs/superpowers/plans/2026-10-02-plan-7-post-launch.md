@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status: DRAFT, 2026-10-02.** Written task by task, with every task prototyped in a throwaway worktree off `main` (`45d2d8e`) and its full suite run green there. It has **not** been through the adversarial review yet (CLAUDE.md, "Pipeline per plan"). Do not implement it until that review has run and its editor's changes are in.
+> **Status: DRAFT, reviewed 2026-10-02.** Written task by task, with every task prototyped in a throwaway worktree off `main` (`45d2d8e`) and its full suite run green there. The adversarial review (CLAUDE.md, "Pipeline per plan") ran on 2026-10-02, including an executor that ran the tasks in order on SQLite and MySQL 8.4, and its editor's changes are applied in this text. The critic's verdict was **ready**: no blocker or major finding remains, and its six minor gaps are applied too. One thing waits on the owner before Task 1 runs: the one-line change to CLAUDE.md's test command (Task 1, Step 8).
 
 **Goal:** CASS is live, and this plan closes the post-launch half of `docs/superpowers/plans/backlog.md` that needs no decision from the owner. When it is done, the three Filament panels share one Vite-built theme, so a utility class in a panel view finally does something, and the production image compiles byte-for-byte the CSS a checkout does. The platform admin can do the two things spec section 4 gives them and no screen offered: edit an organization's profile, branding and custom domain, and manage its members (change a role, remove a member, withdraw an invitation). A notification email that fails for good is marked `failed` in the email log instead of sitting at `queued`, every queued notification's payload is encrypted, abandoned Livewire uploads are swept every hour, and a hard purge takes the organization's logo with it. A reviewer can correct their own affiliation, the one input to spec 5.5's conflict rule. And every string the backlog's language entry names (enum labels, both export heading rows, three admin tables, the publishing blockers) lives in `lang/en`, with tests that prove the English did not change by a byte.
 
@@ -22,16 +22,16 @@
 
 **Read this before you trust a single symbol below.**
 
-1. **A hotfix lands on `main` before this plan starts.** Task 5's writer found that `QueuedVerifyEmail` had signed a route this application never defined, so every registration's verification email had thrown `RouteNotFoundException` in the worker since Plan 1. It shipped on its own as `fe7f949` ("fix(auth): link the registration verification email to the organizer panel"), which adds `tests/Feature/Mail/VerificationMailTest.php` (2 tests). Task 5's Part B is a note saying so. If that commit has not merged when you start, merge it first. The baseline Task 1 Step 1 records will then be **1216 passed, 1 skipped**, not the 1214 the worktrees measured. Every count below is "baseline + k", so nothing else changes.
+1. **A hotfix lands on `main` before this plan starts.** Task 5's writer found that `QueuedVerifyEmail` had signed a route this application never defined, so every registration's verification email had thrown `RouteNotFoundException` in the worker since Plan 1. It shipped on its own as `fe7f949` ("fix(auth): link the registration verification email to the organizer panel"), which adds `tests/Feature/Mail/VerificationMailTest.php` (2 tests). Task 5 carries a note saying so, between its Parts A and B. If that commit has not merged when you start, merge it first. The baseline Task 1 Step 1 records will then be **1216 passed, 1 skipped**, not the 1214 the worktrees measured. Every count below is "baseline + k", so nothing else changes.
 2. **Dependabot's framework-group pull request is due Monday 2026-10-05** (Laravel 13.34, Filament 5.9, Livewire 4.4.7). PR #21 unblocked it, and it fails by design until the three nonce-published Filament views are re-published (backlog, "Dependencies"). **Implement this plan on the versions it was written against, then take that upgrade.** If the upgrade has merged first, re-verify every fact that cites a line in `vendor/filament` or `vendor/livewire` before you trust it. Those are Task 1's theme stub and `viteTheme()` facts, Task 3's form and `FileUpload` facts, Task 5's `SendQueuedNotifications` and `FileUploadConfiguration` facts, and Task 6's `EditProfile` drift pin.
-3. **Each task's facts are numbered `N.k` and live at the top of that task.** They were read in a Linux container at `45d2d8e` (PHP 8.4.26, Node 22, Composer 2.10.3), where each task was implemented in its own worktree exactly as written and its whole suite run green. The worktrees started from the same commit, so **no task was prototyped on top of the previous one**. The order-dependent seams (shared lines in `lang/en/admin.php`, `$plan7Sources`, the three panel providers) are written as anchored edits for that reason. If an anchor is not where a step says it is, read the file and adjust the anchor. Never edit the code to match this document.
+3. **Each task's facts are numbered `N.k` and live at the top of that task.** They were read in a Linux container at `45d2d8e` (PHP 8.4.26, Node 22, Composer 2.10.3), where each task was implemented in its own worktree exactly as written and its whole suite run green. The worktrees started from the same commit, so **no task was prototyped on top of the previous one** — with one exception: Task 4's prototype figures start from Task 3's (1235), so it was measured on top of Task 3's worktree. The order-dependent seams (shared lines in `lang/en/admin.php`, `$plan7Sources`, the three panel providers) are written as anchored edits for that reason. If an anchor is not where a step says it is, read the file and adjust the anchor. Never edit the code to match this document.
 
 **Environment facts for every command below**
 
 - Repo root: `C:\Users\ahmed\Documents\CASS` (Git Bash path `/c/Users/ahmed/Documents/CASS`). All commands are Git Bash.
 - Composer: `php /c/Users/ahmed/AppData/Local/composer-bin/composer.phar <args>`. Do **not** use the `composer.bat` wrapper: it passes through cmd.exe and silently strips `^` from version constraints. **This plan installs nothing.**
 - `ext-sockets` must be on (CLAUDE.md), or `composer install` fails the platform check.
-- Node 24 and npm, as CI uses. **From Task 1 on, run `npm run build` before `php artisan test`.** Every panel page asks Vite for the theme, and a manifest without it is a 500. CI already builds before it tests.
+- Node 24 and npm, as CI uses. **From Task 1 on, run `npm run build` before `php artisan test`.** Every panel page asks Vite for the theme, and a manifest without it is a 500. CI already builds before it tests. **Stop `npm run dev` (which `composer run dev` starts) before `php artisan test`:** with `public/hot` present the panels link the dev server, not `public/build`, and `PanelThemeTest` says so.
 - **Baseline:** branch `plan-7-post-launch`, created from `main` in Task 1 Step 1. "Baseline" means the passing count `php artisan test` reports on the fresh branch, written down in that step and never hardcoded.
 - **Verify by exit code**, never by piped output: `php artisan test --compact --filter='…' > /tmp/t-task-N.log 2>&1; echo "rc=$?"; tail -5 /tmp/t-task-N.log`. A per-task log name means a stale log cannot pass for a fresh one.
 - Test counts in "Expected" lines were counted while writing. **`rc=0` is the gate.** A count off by a few is not a failure; a count off by dozens means a file did not run.
@@ -43,7 +43,7 @@
 
 - **The Filament 5.9 upgrade** and the sweep of deprecated table-testing helpers (backlog, "Reviewing"). Both belong to the Dependabot pull request that moves Filament (read-me note 2).
 - **The rest of the application's English.** Task 2 converts exactly what the backlog names and measures what is left: about 340 visible literals in about 40 PHP files, 46 of them on pages visitors and authors see. Its replacement backlog entry says which to do first. `Decision::getLabel()` stays English on purpose and moves with spec section 14's bilingual templates.
-- **Removing `style-src-attr 'unsafe-inline'`.** The backlog promised the theme would tighten it "for free". It does not, and cannot: Filament writes a `style` attribute on every panel page. Task 1 rewrites that backlog clause, and records the 69 inline styles still in panel views as a new entry to convert when a task next touches each view.
+- **Removing `style-src-attr 'unsafe-inline'`.** The backlog promised the theme would tighten it "for free". It does not, and cannot: Filament writes a `style` attribute on every panel page. Task 7 rewrites that backlog clause and records the 69 inline styles still in panel views as a new entry to convert when a task next touches each view.
 - **Anything that needs the owner** (next list) or a spec section 14 feature: reviewer bidding and declared conflicts, certificates, expertise matching, per-abstract QR codes, per-track quotas, Arabic.
 - **The items whose triggers have not fired:** memoising `roleIn()`/`canAccessTenant()`, the grouped SQL for `dailyVisitCounts()`, the pagination views in the Tailwind `@source` list, a streamed XLSX export, a dedicated performance runner for the ranking's wall clock.
 
@@ -54,6 +54,7 @@
 3. **Should an organization's owners be emailed when a platform admin edits their organization or its members?** Nothing is sent today. Every change is in the activity log, with the admin as causer.
 4. **When a reviewer's new affiliation creates a conflict on an abstract already assigned to them, should the organizer be told, or the assignment flagged?** Task 6 unassigns nothing, and its modal tells the reviewer to tell the organizers.
 5. **Should organizers, not only the reviewer, be able to edit an active reviewer's affiliation?** Task 6 keeps it own-row only.
+6. **Should `cass:health` warn before the private volume fills, and at what free-space threshold?** Task 5 keeps `cass:health` as it is: it checks only that the volume can be written. The new hourly `cass:sweep-uploads` removes day-old temporary uploads, which is the largest avoidable growth, but nothing measures free space.
 
 ---
 
@@ -64,6 +65,8 @@ Every path this plan creates, modifies or deletes, from the task sections. Where
 ```
 .github/workflows/ci.yml
     modified, Task 1: smoke job: theme linked under the nonce, served by nginx, contains .dark\:bg-amber-950
+CLAUDE.md
+    modified, Task 1: the Tests command: `npm run build` first, `npm run dev` stopped
 Dockerfile
     modified, Task 1: vendor stage moved above assets; assets copies app/Filament, app/Livewire and --from=vendor vendor/filament...
 app/Actions/Conferences/GenerateConferencePoster.php
@@ -73,7 +76,7 @@ app/Actions/Conferences/PublishConference.php
 app/Actions/Organizations/ChangeMemberRole.php
     modified, Task 4: blockers() asks $actor->authorityIn() (one line + comment)
 app/Actions/Organizations/DeleteOrganizationLogo.php
-    created, Task 3: deletes a logo from the branding disk only once no organization row (trashed included) points at it; shared...
+    created, Task 3: deletes a logo from the branding disk only when its path is one Filament writes (isCanonical()) and no organization row (trashed included) points at it; shared...
 app/Actions/Organizations/PurgeOrganization.php
     modified, Task 3: DeleteOrganizationLogo injected; handle() reads logo_path before the transaction and releases it after the...
 app/Actions/Organizations/RemoveMember.php
@@ -123,7 +126,7 @@ app/Enums/ReviewerStatus.php
 app/Enums/SubmissionStatus.php
     modified, Task 2: getLabel() arms -> __('enums.submission_status.*')
 app/Filament/Admin/Resources/Conferences/Tables/ConferencesTable.php
-    modified, Task 2: every column/filter label and the placeholder -> admin.conferences.*; purgeAction/recordActions untouched
+    modified, Tasks 2, 3: every column/filter label and the placeholder -> admin.conferences.* (Task 2); the conference name escaped in the purge notification (Task 3)
 app/Filament/Admin/Resources/EmailLogs/Tables/EmailLogsTable.php
     modified, Task 2: every column/filter label, placeholder, empty state -> admin.email_log.*
 app/Filament/Admin/Resources/Organizations/OrganizationResource.php
@@ -137,7 +140,7 @@ app/Filament/Admin/Resources/Organizations/RelationManagers/InvitationsRelationM
 app/Filament/Admin/Resources/Organizations/RelationManagers/MembersRelationManager.php
     modified, Task 4: changeRole + remove record actions (authorize on OrganizationResource::canAccess()), refuse() notification,...
 app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php
-    modified, Tasks 2, 3: every column/filter label + approve/reject action strings -> admin.organizations.*; recordActions/purgeActi...
+    modified, Tasks 2, 3: every column/filter label + approve/reject action strings -> admin.organizations.*, the name escaped with e() in all three notifications; recordActions/purgeActi...
 app/Filament/Organizer/Pages/Members.php
     modified, Task 4: canAccess() docblock only (the admin cell now has a screen)
 app/Filament/Organizer/Pages/Tenancy/EditOrganizationProfile.php
@@ -167,7 +170,9 @@ app/Providers/Filament/ReviewerPanelProvider.php
 app/Support/Scoring/RankingRows.php
     modified, Task 2: headers() -> __('export.headings.*')
 docs/runbooks/deploy-production.md
-    modified, Task 5: Email triage (failed row + two paragraphs); Invitations and their tokens (encrypted-payload bullet names th...
+    modified, Tasks 1, 5: Every release step 4 names the theme, not app.css (Task 1); Email triage (failed row + two paragraphs); Rollback (notifications queued under Plan 7); Invitations and their tokens (encrypted-payload bullet names th...
+docs/superpowers/plans/backlog.md
+    modified, Task 7: the thirteen entries Tasks 1-6 close deleted, both language entries replaced by one, the CSP clause rewritten, a sentence appended to both pagination entries and to the Filament-bump entry, the inline-styles entry, and the Plan 7 open-questions section
 lang/en/admin.php
     modified, Tasks 2, 3, 4: three groups (conferences, organizations, email_log) inserted before 'submissions'; no existing line changes
 lang/en/enums.php
@@ -199,13 +204,13 @@ tests/Browser/CspTest.php
 tests/Feature/Admin/AdminReadOnlyTest.php
     modified, Task 4: the "no write" dataset case names each manager's writes (changeRole, remove; revoke)
 tests/Feature/Admin/AdminTableLanguageTest.php
-    created, Task 2: keyless-locale check of all 10 admin tables, English pins of the 3 converted ones + approve/reject, organiz...
+    created, Task 2: keyless-locale check of all 10 admin tables, English pins of the 3 converted ones + approve/reject, the escaped name in the approve notification, organiz...
 tests/Feature/Admin/EditOrganizationTest.php
-    created, Task 3: 13 cases (edit, activity causer, contrast, logo replace/clear/fail/outer rollback, 16 MP boundary, cross-te...
+    created, Task 3: 14 cases (edit, activity causer, contrast, logo replace/clear/fail/outer rollback, 16 MP boundary, another spelling of another organization's path, cross-te...
 tests/Feature/Admin/MembersManagementTest.php
     created, Task 4: 9 cases (change role, ownership hand-over, remove, last-owner refusal as notification, guards for a platfor...
 tests/Feature/Admin/PurgeLogoTest.php
-    created, Task 3: 6 cases (modal + delete + cross-tenant, run/preview parity, rollback keeps then retry deletes, shared path...
+    created, Task 3: 8 cases (modal + delete + cross-tenant, run/preview parity, rollback keeps then retry deletes, shared path, another spelling of a path, a path that climbs out of the disk...
 tests/Feature/Console/SweepTemporaryUploadsTest.php
     created, Task 5: 3 tests: age cutoff incl. .json sidecar, nothing outside livewire-tmp, hourly schedule
 tests/Feature/ExtractedEnglishTest.php
@@ -264,7 +269,7 @@ The Content-Security-Policy entry in "Security and platform" also makes a promis
 
 Decision 6 says what the theme actually does to that directive: nothing. The header is byte-for-byte the same after this task, and the sentence is rewritten in Task 7 rather than left standing.
 
-No migration, no action, no language key, no package. One new stylesheet, one changed stylesheet, three provider lines, one Dockerfile stage order, one view restyled, two comments corrected, five smoke-job lines.
+No migration, no action, no language key, no package. One new stylesheet, one changed stylesheet, three provider lines, one Dockerfile stage order, one view restyled, two comments corrected, five smoke-job lines, and two documents the theme makes stale: one sentence of the runbook's "Every release" and CLAUDE.md's test command.
 
 **Facts this task relies on.** Read on `main` at `45d2d8e`, against `vendor/` as `composer.lock` installs it, on 2026-10-02.
 
@@ -318,7 +323,7 @@ No migration, no action, no language key, no package. One new stylesheet, one ch
 
 **7. Restyle one view: the organizer dashboard. Correct two comments. Leave the rest.** The Plan 1 banners need no edit at all — their classes start working — and the welcome card's two inline styles become `font-semibold` and `mt-1 text-sm`. The brand lock-up keeps its inline styles: it is rendered by *both* stylesheets, and they disagree about `dark:` (the panel theme's is Filament's `.dark` class, fact 1.4; the public one's is the operating system's preference), so its comment is rewritten to say that instead of something no longer true. The short-link sparkline keeps its inline styles because its bar heights are data; its comment is rewritten too. The other 69 panel style attributes — the ranking summary, the custom-domain records, the reviewer views, the assignments and purge previews — are converted when a task next touches those views, not in a task about the build; Task 7 records that in the backlog.
 
-**8. From this commit on, `php artisan test` needs `npm run build` to have run after it.** Every panel page asks Vite for the theme, and a manifest without it is a 500 (fact 1.7). CI already builds first. Every later task in this plan starts from a tree where Step 10 below has been run; anyone who pulls this branch onto a stale `public/build` sees `Unable to locate file in Vite manifest: resources/css/filament/theme.css.` and runs `npm run build` once. `PanelThemeTest`'s manifest case fails with that instruction in its message rather than a stack trace.
+**8. From this commit on, `php artisan test` needs `npm run build` to have run after it.** Every panel page asks Vite for the theme, and a manifest without it is a 500 (fact 1.7). CI already builds first. Every later task in this plan starts from a tree where Step 10 below has been run; anyone who pulls this branch onto a stale `public/build` sees `Unable to locate file in Vite manifest: resources/css/filament/theme.css.` and runs `npm run build` once. `PanelThemeTest`'s manifest case fails with that instruction in its message rather than a stack trace. **Stop `npm run dev` before `php artisan test`; with `public/hot` present the panels link the dev server** (`vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:389-395`, `:1235`), and `PanelThemeTest`'s link case says so in its first line rather than as a bare regex mismatch. Because this is now a standing rule for every session, Step 8 writes both halves into CLAUDE.md's test command, where `composer run dev` (which starts `npm run dev`) is documented.
 
 **Files:**
 - Create: `resources/css/filament/theme.css`
@@ -326,6 +331,7 @@ No migration, no action, no language key, no package. One new stylesheet, one ch
 - Modify: `app/Providers/Filament/AdminPanelProvider.php`, `OrganizerPanelProvider.php`, `ReviewerPanelProvider.php` (one `->viteTheme()` line each)
 - Modify: `Dockerfile` (stage order and three `COPY` lines), `.github/workflows/ci.yml` (five smoke-job lines)
 - Modify: `resources/views/filament/organizer/pages/dashboard.blade.php`; comments only in `resources/views/brand/logo.blade.php` and `resources/views/filament/organizer/resources/conferences/pages/short-link.blade.php`
+- Modify: `docs/runbooks/deploy-production.md` (one sentence of "Every release" step 4), `CLAUDE.md` (the Tests command)
 - Unchanged, on purpose: `.dockerignore` (decision 4), every view under `resources/views/vendor/` (decision 6)
 - Test: `tests/Feature/PanelThemeTest.php`, `tests/Unit/DockerAssetsStageTest.php`, and one case appended to `tests/Browser/CspTest.php`
 
@@ -378,6 +384,8 @@ check 'no custom theme (`->viteTheme()`)'              resources/views/filament/
 check 'the panels compile their CSS from Filament'     resources/views/brand/logo.blade.php
 check "badge.className = 'ml-2"                        resources/js/countdown.js
 check 'grep -q "nonce=\\"$NONCE\\"" /tmp/login'        .github/workflows/ci.yml
+check '/css/filament/filament/app.css` and `/vendor/livewire/livewire.min.js` should both return 200' docs/runbooks/deploy-production.md
+check '^- Tests: `php artisan test` (SQLite in-memory)'  CLAUDE.md
 # --- Task 1: vendor (Filament 5.8.1, Livewire 4.4.4)
 check "@import 'tailwindcss' source(none);"            vendor/filament/filament/resources/css/theme.css
 check '@source '"'"'../../../../app/Filament/'          vendor/filament/filament/stubs/ThemeCss.stub
@@ -408,6 +416,7 @@ check 'class SendQueuedNotifications'                  vendor/laravel/framework/
 check 'class FileUploadConfiguration'                  vendor/livewire/livewire/src/Features/SupportFileUploads/FileUploadConfiguration.php
 check 'Schedule::'                                     routes/console.php
 check '<svg'                                           public/images/icons/badge.svg
+check 'redeploy the previous successful build'         docs/runbooks/deploy-production.md
 # --- Task 6: reviewer affiliation
 check '->profile()'                                    app/Providers/Filament/ReviewerPanelProvider.php
 check 'class ConferenceReviewerPolicy'                 app/Policies/ConferenceReviewerPolicy.php
@@ -452,6 +461,8 @@ it('gives all three panels the one vite-built theme', function (string $panel) {
 })->with(['admin', 'organizer', 'reviewer']);
 
 it('links the compiled theme under the request nonce instead of the precompiled stylesheet', function (string $url) {
+    expect(is_file(public_path('hot')))->toBeFalse('public/hot exists: stop `npm run dev` (composer run dev) before running the suite - the panels then link the dev server, not public/build.');
+
     $response = get($url)->assertOk();
 
     preg_match("/'nonce-([A-Za-z0-9]{40})'/", (string) $response->headers->get('Content-Security-Policy'), $matches);
@@ -747,10 +758,14 @@ it('scans only the sources a stylesheet names, so a checkout and the image build
         preg_match_all("/@import\s+['\"](\.[^'\"]+\.css)['\"]/", $css, $imports);
 
         foreach ($imports[1] as $import) {
-            $css .= (string) file_get_contents(base_path(repositoryPath(dirname($stylesheet).'/'.$import)));
+            // "\n" first: a stylesheet saved without a final newline must not
+            // glue the import's first line onto its own last one.
+            $css .= "\n".(string) file_get_contents(base_path(repositoryPath(dirname($stylesheet).'/'.$import)));
         }
 
-        if (! preg_match("/@import\s+['\"]tailwindcss['\"]\s+source\(none\)/", $css)) {
+        // ^ with /m: a line that starts with @import, never the docblock's
+        // ` * ... @import 'tailwindcss' source(none)` prose.
+        if (! preg_match("/^@import\s+['\"]tailwindcss['\"]\s+source\(none\)/m", $css)) {
             $automatic[] = $stylesheet;
         }
     }
@@ -827,7 +842,7 @@ Create `resources/css/filament/theme.css` (decisions 1 and 2):
  * `npm install tailwindcss@latest @tailwindcss/vite --save-dev` and would move
  * package.json in a commit about a stylesheet.
  *
- * Filament's theme.css opens with `@import 'tailwindcss' source(none)`, so
+ * Filament's theme.css imports Tailwind with source(none), so
  * nothing is scanned automatically: the two @source lines are the whole of
  * where a panel utility class can come from. A class written anywhere else -
  * resources/views/brand, a public view, app/Livewire - is not in this file.
@@ -1005,7 +1020,7 @@ RUN npm run build
 
 The digest-pinning comment at `:6-14` stays where it is, above the first `FROM`, which is now `vendor`. The `runtime` stage does not change: it still copies `/build/vendor` and `/build/public/build` (`:45-46` before this edit), and still runs `php artisan filament:assets`, which publishes Filament's JavaScript and fonts as well as the default `app.css` the smoke job curls (fact 1.17). `.dockerignore` does not change (decision 4).
 
-- [ ] **Step 8: The dashboard, and the two comments the theme makes stale**
+- [ ] **Step 8: The dashboard, and the two comments and two documents the theme makes stale**
 
 `resources/views/filament/organizer/pages/dashboard.blade.php:16-26` — the banners above it are untouched, because their classes now work (decision 7):
 
@@ -1087,6 +1102,36 @@ becomes
 ```
 
 All three are Blade comments, which `Blade::compileString()` removes, so `LanguageCoverageTest`'s Plan 6 cases (the dashboard and the short-link page are both in `$plan6Sources`) see no new text.
+
+`docs/runbooks/deploy-production.md`, "Every release" step 4 — the standing check still names the stylesheet the panels stop loading (`PanelThemeTest` asserts it is absent), so an operator chasing an unstyled panel would see it return 200 and move on. In that step's paragraph, replace:
+
+```markdown
+so `/css/filament/filament/app.css` and `/vendor/livewire/livewire.min.js` should both return 200.
+```
+
+with:
+
+```markdown
+so `/vendor/livewire/livewire.min.js` should return 200, and so must the `/build/assets/theme-<hash>.css` that the page source links: since Plan 7 that is the panels' only stylesheet. `/css/filament/filament/app.css` is still published, but no panel loads it.
+```
+
+The rest of the step, the Cloudflare purge list included, stays as it is.
+
+**CLAUDE.md is the owner's session guide: the orchestrator confirms this one-line change with the owner before Task 1 runs.** If the owner has not confirmed it, skip the CLAUDE.md block below, drop `CLAUDE.md` from this task's `git add` list, and leave the rule in decision 8 and the pull-request body.
+
+`CLAUDE.md`, under **Commands** — the test command, because decision 8's rule now holds for every session, not only this plan's. Replace the line:
+
+```markdown
+- Tests: `php artisan test` (SQLite in-memory). MySQL suite: `docker compose -f docker-compose.dev.yml up -d` then `DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=cass DB_USERNAME=cass DB_PASSWORD=cass php artisan test`.
+```
+
+with:
+
+```markdown
+- Tests: `npm run build` first, then `php artisan test` (SQLite in-memory). Public pages render `@vite`, and since Plan 7 every panel page asks the manifest for `resources/css/filament/theme.css`, so a missing or stale `public/build` fails with "Unable to locate file in Vite manifest". Stop `npm run dev` first: with `public/hot` present the panels link the dev server instead. MySQL suite: `docker compose -f docker-compose.dev.yml up -d` then `DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=cass DB_USERNAME=cass DB_PASSWORD=cass php artisan test`.
+```
+
+Nothing else in either file changes.
 
 - [ ] **Step 9: Five lines in the smoke job**
 
@@ -1170,7 +1215,12 @@ Expected: `pint rc=0`, `stan rc=0`, `all rc=0`, **baseline + 13** (1229 passed, 
 
 ```bash
 cd /c/Users/ahmed/Documents/CASS && php artisan test > /tmp/all-task-1.log 2>&1 && echo "all rc=0 - the suite gates this commit" && \
-git add -A && git commit -q -F - <<'EOF' && git log --oneline -1
+git add resources/css/filament/theme.css resources/css/app.css vite.config.js \
+  app/Providers/Filament/AdminPanelProvider.php app/Providers/Filament/OrganizerPanelProvider.php app/Providers/Filament/ReviewerPanelProvider.php \
+  Dockerfile .github/workflows/ci.yml resources/views/filament/organizer/pages/dashboard.blade.php resources/views/brand/logo.blade.php \
+  resources/views/filament/organizer/resources/conferences/pages/short-link.blade.php docs/runbooks/deploy-production.md CLAUDE.md \
+  tests/Feature/PanelThemeTest.php tests/Unit/DockerAssetsStageTest.php tests/Browser/CspTest.php && \
+git commit -q -F - <<'EOF' && git log --oneline -1 && git status --short --untracked-files=no
 feat(panels): one Vite-built theme for all three panels, and an assets stage that sees what it builds
 
 Tailwind utilities now work in panel views: admin, organizer and reviewer
@@ -1180,12 +1230,14 @@ The Dockerfile builds the vendor stage first so the assets stage can copy
 vendor/filament, and copies app/Filament and app/Livewire beside it. The
 public stylesheet now scans only the sources it names, so a checkout and
 the image compile byte-identical CSS. The CSP header does not change.
+CLAUDE.md's test command now builds first, and the runbook's release
+check names the theme instead of Filament's precompiled app.css.
 
 <the session's Co-Authored-By trailer>
 EOF
 ```
 
-Replace the last line of the message with the session's Co-Authored-By trailer before running it. Expected: `all rc=0 - the suite gates this commit` and one log line.
+Replace the last line of the message with the session's Co-Authored-By trailer before running it. Expected: `all rc=0 - the suite gates this commit`, one log line, and nothing from `git status --short --untracked-files=no`. The paths are named rather than `-A`, so an untracked file on the machine (`.claude/settings.local.json`, a per-task plan split) cannot ride along; if `git status` lists a tracked file, this task changed something its **Files** list does not name — stop and find out why.
 
 ---
 
@@ -1258,19 +1310,19 @@ This task closes both, **except `Decision::getLabel()`**, which stays English, i
 
 5. **The publishing blockers go in a new `lang/en/organizer.php`, under `publish.errors`, with the `:status` placeholder the newer actions already use.** `lang/en/conference.php` is the *public* conference page by its own header, and `reviewer.php` / `decisions.php` are other features; the conference lifecycle Plan 2 wrote has no file, and the rest of Plan 2's organizer screens (fact 2.16) belong in the same one when they are swept. The eighth sentence becomes `__('organizer.publish.errors.wrong_status', ['status' => mb_strtolower(...)])` — the exact shape of `reviewer.start.errors.wrong_status` (fact 2.7). `mb_strtolower()` replaces `strtolower()`: every English label is ASCII, so the output is identical, and a translation with a non-ASCII capital is lower-cased correctly. "A conference that is decisions sent cannot be opened…" is today's awkward output and is kept, and pinned: this task moves words, it does not improve them.
 
-6. **I convert three of the ten admin tables — the three that were never converted — as whole files.** The backlog's "four" is a miscount (fact 2.8): seven tables already use keys, and the runtime case in Step 1 proves it for all ten. `ConferencesTable`, `EmailLogsTable` and `OrganizationsTable` get an explicit `->label(__(...))` on every column and filter, including the eight columns and three filters that had none — Filament's made-up "Name", "Status", "Type", "Country", "Subject" become keys holding the same word. `OrganizationsTable`'s approve and reject actions convert too: the sweep reads files, not methods, and they are the busiest English on that screen. The keys go in three new groups — `admin.conferences`, `admin.organizations`, `admin.email_log` — inserted before `submissions` so no line another task anchors on moves. `admin.organization` (singular, Task 3's edit screen) and `admin.members` (Task 4) are not touched. The organization's name reaches the notification through `:name`, unescaped, exactly as the interpolation did (fact 2.17): escaping it is a behaviour change for any name containing `&` or `<`, and it is recorded in the backlog rather than slipped into a translation commit.
+6. **I convert three of the ten admin tables — the three that were never converted — as whole files.** The backlog's "four" is a miscount (fact 2.8): seven tables already use keys, and the runtime case in Step 1 proves it for all ten. `ConferencesTable`, `EmailLogsTable` and `OrganizationsTable` get an explicit `->label(__(...))` on every column and filter, including the eight columns and three filters that had none — Filament's made-up "Name", "Status", "Type", "Country", "Subject" become keys holding the same word. `OrganizationsTable`'s approve and reject actions convert too: the sweep reads files, not methods, and they are the busiest English on that screen. The keys go in three new groups — `admin.conferences`, `admin.organizations`, `admin.email_log` — inserted before `submissions` so no line another task anchors on moves. `admin.organization` (singular, Task 3's edit screen) and `admin.members` (Task 4) are not touched. The organization's name reaches the notification through `:name`, escaped with e() (fact 2.17). That changes nothing visible for `&` — `A & B` and `e('A & B')` both sanitise to `A &amp; B` — and stops `<…>` from rendering as markup: an anonymous registrant chooses the name (`app/Livewire/Public/RegisterOrganization.php:52`), and `sanitizeHtml()` keeps `style` and `class`, so a name can be a full-viewport link on the platform admin's screen. A test written against the old code and shown failing first pins it (Step 1). Task 3 escapes the same name in the purge notification.
 
 7. **`$plan7Sources` gets the two cases Plan 6's list has — and the visible-English one reads PHP by its tokens, because key resolution alone proves nothing here.** The app-wide case already resolves every key in `app/` (fact 2.2), so a key-only case over these files would add nothing — and it would have passed on `main` with every enum still spelled out: before this task, the twenty-two PHP files hold 16 keys, all of them Plan 6's purge action. The case that proves the sweep is the one that looks for English *outside* `__()`. `Blade::compileString()` has nothing to say about a class, so the PHP branch reads `token_get_all()` string tokens — comments and docblocks are never string tokens — and calls a literal English when it is a capitalised word on its own (`'Draft'`, `'Platform-wide'`), when it has a space and a capitalised word or a whole word between spaces (`'Letters sent'`, `'A4 poster (210 x 297 mm)'`), or, for a fragment of an interpolated string, when a word touches a space (`"{$record->name} approved"`). An identifier passes even with capitals in it — `'reviewAssignments'`, `'Content-Type'`, `'X-CASS-Log'`, `'Y-m-d-His'`, `'App\Filament\Admin'`, `'j M Y, H:i'`, `'text/csv; charset=UTF-8'` — and two sentence-shaped identifiers are skipped by position: an array key and a subscript (`$counts['private files']`). Run over all of `app/`, those rules flag English and almost nothing else — the exceptions are SQL fragments, one `rel` value, one inline SVG and some PDF bytes (fact 2.16), none of them in a file anybody would list here. The eight sample values of fact 2.13 are excused **by exact text** in `$plan7NotProse`, and an excuse whose text has left the file fails the case too, so the list cannot rot. Before this task the case lists **125 offenders**; after it, none. A Blade file appended by a later task gets Plan 6's sweep unchanged, at Plan 6's one-word threshold.
 
 8. **The static sweep's blind spots are closed by running the code under a keyless locale.** The token rules cannot see a single lower-case word (`'yes'`), a label Filament makes up from a column name (fact 2.9), or the two `ucfirst()` enums — none of those is a literal. So three runtime cases set the locale and the fallback to `xx`, which has no `lang/` directory (fact 2.10), and check that what comes back is a key: every case of every `HasLabel` enum except `Decision`, discovered from `app/Enums/*.php` so an enum a later task adds is swept the day it is written; both export heading rows and the yes/no inside a streamed CSV cell; and every column label, placeholder, filter label, heading and empty state of **all ten** admin tables, mounted as Livewire components. Filament's own words come back as `filament-tables::…` keys and pass — Filament ships its own translations.
 
-9. **"Byte for byte unchanged" is proven by pins written against the old code, which pass on both sides of the change.** `tests/Feature/ExtractedEnglishTest.php` pins every one of the 67 enum labels, both heading rows (the submission list read off the real streamed file, BOM included) and the eighth blocker for the three statuses that reach it; `AdminTableLanguageTest.php` pins every column, placeholder and filter word of the three converted tables and the approve and reject actions' label, modal text and notification. Their literals are copied from the code as it was, never from `lang/en` — a pin that read its expectation from the language file would pass whatever the file said. **These pins are the one deliberate exception to "a new test is shown failing first"**: a test that had to fail before the change could not also prove the change altered nothing. Step 2 runs them green on the old code, which is the proof they captured it; the seven coverage cases are the failing-first gate.
+9. **"Byte for byte unchanged" is proven by pins written against the old code, which pass on both sides of the change.** `tests/Feature/ExtractedEnglishTest.php` pins every one of the 67 enum labels, both heading rows (the submission list read off the real streamed file, BOM included) and the eighth blocker for the three statuses that reach it; `AdminTableLanguageTest.php` pins every column, placeholder and filter word of the three converted tables and the approve and reject actions' label, modal text and notification. Their literals are copied from the code as it was, never from `lang/en` — a pin that read its expectation from the language file would pass whatever the file said. **These pins, and the guard cases that pin behaviour which already exists, are the deliberate exceptions to "a new test is shown failing first"**: a test that had to fail before the change could not also prove the change altered nothing, and a guard has no code that makes it pass. The guard cases are `AdminTableLanguageTest`'s five `still forbids an organizer` rows, the seven rows of `looks every heading of every admin table up` for the tables Plan 6 already keyed (fact 2.8), `PanelThemeTest`'s cross-tenant case (Task 1), and `ReviewerAffiliationTest`'s `content()` drift pin and 403 case (Task 6); each is named again at its own failing-first step. Step 2 runs them green on the old code, which is the proof they captured it; the seven coverage cases and the escaping case (decision 6) are the failing-first gate.
 
 10. **The admin purge modal joins the list, so the Blade branch runs from day one.** `filament/admin/partials/purge-counts.blade.php` is rendered by two of the three tables and its own words have been keys since Plan 6; listing it means the Blade half of the visible-English case reads a real file in this task rather than first running on a later task's view. What it prints that is *not* a literal — raw table names (fact 2.16) — is beyond any literal sweep and goes to the backlog.
 
 11. **The residue of fact 2.16 is recorded, not converted.** About 340 literals in about 40 files is a plan-sized extraction, most of it in the organizer panel's Plan 2 forms, and the brief for this task is the backlog's list. Task 7's backlog step replaces the two entries quoted above with this one, which this task's numbers support:
 
-    > **The language sweep now covers every file the backlog named; it does not cover the application.** Plan 7 converted every enum label but `Decision`'s, both export headings, the publishing blockers and the three admin tables Plans 1-2 wrote, and `LanguageCoverageTest` now reads PHP for English as well as Blade (`$plan7PhpProse`). Run over all of `app/`, that sweep still finds: the organizer panel's Plan 2-3 classes (222 literals in 16 files under `app/Filament/Organizer/`); **what a visitor or author reads** — `SubmitAbstract`, `UpdateSubmission`, `WithdrawSubmission`, `SaveSubmissionDraft`, `SendSubmissionStatusLink`, `SubmissionFileRejected`, and the titles and throttle messages of `ContactForm`, `RegisterOrganization` and `AcceptInvitation` (46 literals in 9 files, reaching the public form through `SubmissionForm` and `SubmissionStatus`); the admin infolists, `EmailLogResource`'s navigation label, the panel brand names and the purge modal's raw table names (37); five organizer refusals and `CreateDefaultReviewForm`'s nine default questions (15); and the two notifications not on the template system, `NewSubmissionNotice` and `OrganizationRegistered` (16). Do the visitor-facing nine first — they are on the public site, where Arabic is promised. `Decision::getLabel()` still moves with the bilingual templates of spec section 14, and `LanguageCoverageTest` pins it until then. Separately: the approve, reject and purge notifications in the admin tables pass an organization's name unescaped into a title Filament renders through `sanitizeHtml()`; `ConferenceStatusActions` escapes the equivalent conference name.
+    > **The language sweep now covers every file the backlog named; it does not cover the application.** Plan 7 converted every enum label but `Decision`'s, both export headings, the publishing blockers and the three admin tables Plans 1-2 wrote, and `LanguageCoverageTest` now reads PHP for English as well as Blade (`$plan7PhpProse`). Run over all of `app/`, that sweep still finds: the organizer panel's Plan 2-3 classes (210 literals in 15 files under `app/Filament/Organizer/`; Plan 7 Task 3 converted `EditOrganizationProfile`); **what a visitor or author reads** — `SubmitAbstract`, `UpdateSubmission`, `WithdrawSubmission`, `SaveSubmissionDraft`, `SendSubmissionStatusLink`, `SubmissionFileRejected`, and the titles and throttle messages of `ContactForm`, `RegisterOrganization` and `AcceptInvitation` (46 literals in 9 files, reaching the public form through `SubmissionForm` and `SubmissionStatus`); the admin infolists, `EmailLogResource`'s navigation label, the panel brand names and the purge modal's raw table names (37); five organizer refusals and `CreateDefaultReviewForm`'s nine default questions (15); and the two notifications not on the template system, `NewSubmissionNotice` and `OrganizationRegistered` (16). Do the visitor-facing nine first — they are on the public site, where Arabic is promised. `Decision::getLabel()` still moves with the bilingual templates of spec section 14, and `LanguageCoverageTest` pins it until then.
 
 **Files:**
 - Create: `lang/en/enums.php`, `lang/en/export.php`, `lang/en/organizer.php`
@@ -1635,8 +1687,10 @@ it('looks both export heading rows up, and the yes and no inside a cell', functi
     app()->setLocale('xx');
     app('translator')->setFallback('xx');
 
+    // Keys in MySQL's order: a json column hands an object back shorter key
+    // first, where SQLite keeps the order written, and the cell follows it.
     $submission = Submission::factory()->submitted()->create([
-        'custom_field_values' => ['needs_projector' => true, 'first_time' => false],
+        'custom_field_values' => ['first_time' => false, 'needs_projector' => true],
     ]);
 
     $response = app(ExportSubmissionsCsv::class)
@@ -1658,7 +1712,7 @@ it('looks both export heading rows up, and the yes and no inside a cell', functi
 
     expect($spelled(RankingRows::headers()))->toBe([])
         ->and($spelled($rows[0]))->toBe([])
-        ->and($rows[1][13])->toBe('needs_projector: export.answers.yes; first_time: export.answers.no');
+        ->and($rows[1][13])->toBe('first_time: export.answers.no; needs_projector: export.answers.yes');
 });
 ```
 
@@ -1877,6 +1931,20 @@ it('says the same english when an organization is approved or rejected', functio
         ->assertNotified('Coastal Paediatric Society rejected');
 });
 
+it('escapes an organization name in the approve notification', function () {
+    // Not a pin: this one fails on the old code, which interpolated the name
+    // raw. An anonymous registrant chooses the name, and Filament renders a
+    // notification title through sanitizeHtml(), which keeps style and class.
+    // ConferenceStatusActions escapes a conference name the same way.
+    Mail::fake();
+
+    $organization = Organization::factory()->create(['name' => 'A <b style="x">B</b>']);
+
+    livewire(ListOrganizations::class)
+        ->callTableAction('approve', $organization)
+        ->assertNotified('A &lt;b style=&quot;x&quot;&gt;B&lt;/b&gt; approved');
+});
+
 it('still forbids an organizer every admin list', function (string $component) {
     // The negative case every panel test carries. The admin panel has no
     // tenant to cross, so the boundary is the platform-admin flag: an
@@ -2065,10 +2133,12 @@ it('writes the ranking export headings in the same english as before the sweep',
 it('writes the submission list export in the same english as before the sweep', function () {
     // The streamed file itself, not a constant: the heading row is what an
     // organizer's spreadsheet shows, and the yes/no of a checkbox answer is
-    // the one lower-case English word inside a data cell.
+    // the one lower-case English word inside a data cell. Keys in MySQL's
+    // order: a json column hands an object back shorter key first, where
+    // SQLite keeps the order written, and the cell follows it.
     $conference = Conference::factory()->create();
     $submission = Submission::factory()->for($conference)->submitted()->create([
-        'custom_field_values' => ['needs_projector' => true, 'first_time' => false],
+        'custom_field_values' => ['first_time' => false, 'needs_projector' => true],
     ]);
 
     $response = app(ExportSubmissionsCsv::class)
@@ -2089,7 +2159,7 @@ it('writes the submission list export in the same english as before the sweep', 
             'Corresponding author', 'Corresponding email', 'All authors', 'Affiliations',
             'Contact phone', 'Word count', 'Files', 'Extra answers', 'Submitted at', 'Last edited at',
         ])
-        ->and($rows[1][13])->toBe('needs_projector: yes; first_time: no');
+        ->and($rows[1][13])->toBe('first_time: no; needs_projector: yes');
 });
 
 it('says why a conference cannot be opened in the same english as before the sweep', function (ConferenceStatus $status, string $sentence) {
@@ -2117,13 +2187,14 @@ it('says why a conference cannot be opened in the same english as before the swe
 cd /c/Users/ahmed/Documents/CASS && php artisan test --compact tests/Feature/LanguageCoverageTest.php tests/Feature/ExtractedEnglishTest.php tests/Feature/Admin/AdminTableLanguageTest.php > /tmp/t-task-2.log 2>&1; echo "rc=$?"; tail -5 /tmp/t-task-2.log
 ```
 
-Expected: **`rc=1`, `7 failed, 52 passed`.** The seven, and why each fails:
+Expected: **`rc=1`, `8 failed, 52 passed`.** The eight, and why each fails:
 
 - `resolves every translation key plan 7 uses` — `Failed asserting that 20 is equal to 163 or is greater than 163`: the listed files hold twenty keys today, all of them Plan 6's purge action and modal.
 - `leaves no visible english in the files plan 7 swept` — **125 offenders**, from `app/Enums/ConferenceStatus.php:22: Draft` to `app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php:83:  rejected`. **Read the list: it is the work order for Steps 3 to 6**, and nothing in it may be an identifier — if one is, the scanner is wrong, not the file.
 - `looks every enum label up rather than spelling it, except the decision` — 67 lines of `App\Enums\X::Case is 'English', not enums.x.case`.
 - `looks both export heading rows up, and the yes and no inside a cell` — the fourteen ranking headings come back as English.
 - `looks every heading of every admin table up in a language file` — three of its ten rows: `conferences`, `organizations`, `email log`. **The other seven rows pass**, which is fact 2.8 proven: Plan 6's tables were already keyed.
+- `escapes an organization name in the approve notification` — `A notification was not sent`: no notification has the escaped title, because today's is the raw `A <b style="x">B</b> approved` (Step 6).
 
 The 52 that pass include all 21 cases of `ExtractedEnglishTest`, the three table pins, the approve/reject pin and the five forbidden cases. **They pass on purpose** (decision 9): green here is the proof that the pins captured the English as it is, before a word of it moves. If any of them fails at this step, its expected literal was mistyped — fix the test, never the code.
 
@@ -3034,11 +3105,11 @@ New:
             ->modalDescription(__('admin.organizations.approve.description'))
 ```
 
-and `                Notification::make()->success()->title("{$record->name} approved")->send();` becomes `                Notification::make()->success()->title(__('admin.organizations.approve.done', ['name' => $record->name]))->send();`
+and `                Notification::make()->success()->title("{$record->name} approved")->send();` becomes `                Notification::make()->success()->title(__('admin.organizations.approve.done', ['name' => e((string) $record->name)]))->send();`
 
-The reject action (`:72`, `:77`, `:83`): `            ->label('Reject')` becomes `            ->label(__('admin.organizations.reject.action'))`; in the `Textarea::make('reason')` line, `->label('Reason sent to the owner')` becomes `->label(__('admin.organizations.reject.reason'))` and the rest of the line is unchanged; and `                Notification::make()->warning()->title("{$record->name} rejected")->send();` becomes `                Notification::make()->warning()->title(__('admin.organizations.reject.done', ['name' => $record->name]))->send();`
+The reject action (`:72`, `:77`, `:83`): `            ->label('Reject')` becomes `            ->label(__('admin.organizations.reject.action'))`; in the `Textarea::make('reason')` line, `->label('Reason sent to the owner')` becomes `->label(__('admin.organizations.reject.reason'))` and the rest of the line is unchanged; and `                Notification::make()->warning()->title("{$record->name} rejected")->send();` becomes `                Notification::make()->warning()->title(__('admin.organizations.reject.done', ['name' => e((string) $record->name)]))->send();`
 
-The name goes in unescaped, exactly as the interpolation put it (decision 6, fact 2.17).
+The name is escaped with e(), as `ConferenceStatusActions` escapes a conference name: Filament renders the title through `sanitizeHtml()`, which keeps `style` and `class` (decision 6, fact 2.17). Every pinned English name passes through e() unchanged.
 
 - [ ] **Step 7: Run the tests, then every suite that pins the old English**
 
@@ -3046,7 +3117,7 @@ The name goes in unescaped, exactly as the interpolation put it (decision 6, fac
 cd /c/Users/ahmed/Documents/CASS && php artisan test --compact tests/Feature/LanguageCoverageTest.php tests/Feature/ExtractedEnglishTest.php tests/Feature/Admin/AdminTableLanguageTest.php > /tmp/t-task-2.log 2>&1; echo "rc=$?"; tail -5 /tmp/t-task-2.log
 ```
 
-Expected: `rc=0`, **59 passed** — the 52 from Step 2 still green and the seven that failed now passing. If `leaves no visible english…` still lists a line, that literal was missed in Steps 4-6; if `prints the same english headings…` or `ExtractedEnglishTest` fails, a key's English differs from the literal it replaced by a character — fix the language file, never the pin.
+Expected: `rc=0`, **60 passed** — the 52 from Step 2 still green and the eight that failed now passing. If `leaves no visible english…` still lists a line, that literal was missed in Steps 4-6; if `prints the same english headings…` or `ExtractedEnglishTest` fails, a key's English differs from the literal it replaced by a character — fix the language file, never the pin.
 
 ```bash
 cd /c/Users/ahmed/Documents/CASS && php artisan test --compact tests/Unit/PublishConferenceTest.php tests/Feature/Organizer/ConferenceTransitionsTest.php tests/Feature/Organizer/ConferenceRankingExportTest.php tests/Feature/Organizer/SubmissionResourceTest.php tests/Feature/Admin/ > /tmp/t-task-2b.log 2>&1; echo "rc=$?"; tail -5 /tmp/t-task-2b.log
@@ -3069,7 +3140,7 @@ Expected: both `rc=0`. Larastan types `__('…')` as a *benevolent* `array|strin
 cd /c/Users/ahmed/Documents/CASS && php artisan test > /tmp/all-task-2.log 2>&1; echo "all rc=$?"; tail -4 /tmp/all-task-2.log
 ```
 
-Expected: `rc=0`, **Task 1's count + 44**, that is **baseline + 57**, passed, 1 skipped (4 new cases in `LanguageCoverageTest`, 21 in `ExtractedEnglishTest`, 19 in `AdminTableLanguageTest`). The prototype ran on bare `45d2d8e`, without Task 1, and went from 1214 to 1258.
+Expected: `rc=0`, **Task 1's count + 45**, that is **baseline + 58**, passed, 1 skipped (4 new cases in `LanguageCoverageTest`, 21 in `ExtractedEnglishTest`, 20 in `AdminTableLanguageTest`). The prototype ran on bare `45d2d8e`, without Task 1 and before the review added the escaping case, and went from 1214 to 1258.
 
 - [ ] **Step 10: Commit**
 
@@ -3093,13 +3164,15 @@ and is pinned - it is {{decision}} in every letter and moves with spec section
 14's bilingual templates.
 
 The English is byte for byte what it was: ExtractedEnglishTest and the table
-pins were written against the old code and pass on both sides.
+pins were written against the old code and pass on both sides. The approve
+and reject notifications now escape the organization's name, which an
+anonymous registrant chooses, as ConferenceStatusActions already does.
 
 <the session's Co-Authored-By trailer>
 MSG
 ```
 
-Expected: `all rc=0` and one new commit. The message's last line is a placeholder: put the session's Co-Authored-By trailer there before running the command. `git add` names its files rather than `-A`, so a stray file from another task cannot ride along — `git status` afterwards must be clean.
+Expected: `all rc=0` and one new commit. The message's last line is a placeholder: put the session's Co-Authored-By trailer there before running the command. `git add` names its files rather than `-A`, so a stray file from another task cannot ride along — `git status --short --untracked-files=no` afterwards must print nothing.
 
 ---
 
@@ -3160,6 +3233,8 @@ It also closes a gap that no backlog entry names, found while writing it: the ha
 
 3.20. **The preview and the run must report the same keys, and the admin action reads them by name.** `tests/Unit/PurgeConferenceTest.php:285-310` asserts that every key `PurgeOrganization::handle()` returns is in `preview()` with the same number. `OrganizationsTable::purgeAction()` shows `preview()` in its modal and, after the run, takes `'private files'` out of the result as the file count and sums everything else as rows (`app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php:131-139`); the modal prints `'private files'` as `admin.purge.files` and any other key as a table name (`resources/views/filament/admin/partials/purge-counts.blade.php:9`). A new key that neither knows would print as a raw name and be counted as a row. Task 2 changes no line of `purgeAction()` (its file list says so), and no other task touches the modal view.
 
+3.21. **The `branding` disk deletes the normalised path, and a path that climbs out of the disk throws.** `League\Flysystem\Filesystem::delete()` hands the adapter `normalizePath($location)` (`vendor/league/flysystem/src/Filesystem.php:84-87`), and `WhitespacePathNormalizer::normalizePath()` (`vendor/league/flysystem/src/WhitespacePathNormalizer.php:22`) folds `logos/./beta.png`, `logos//beta.png`, `./logos/beta.png` and `logos/x/../beta.png` to `logos/beta.png` and throws `PathTraversalDetected` for `logos/../../x` (`:41`). `Illuminate\Filesystem\FilesystemAdapter::delete()` catches only `UnableToDeleteFile` (`vendor/laravel/framework/src/Illuminate/Filesystem/FilesystemAdapter.php:600-621`). Measured with a local adapter: `delete('logos/./beta.png')` returned `true` and removed `logos/beta.png`; `delete('logos/../../x')` threw. Filament itself only ever stores `logos/` + `Str::ulid()` + `.` + the client's extension (`BaseFileUpload.php:136-138`, and `->directory('logos')` at `EditOrganizationProfile.php:68`). Before this task nothing guarded the field (fact 3.10), so a row written by a hand-edited request can hold any string.
+
 **Decisions this task makes.**
 
 1. **One form and one write for both panels: `App\Filament\Schemas\OrganizationProfileForm` and `App\Actions\Organizations\UpdateOrganizationProfile`.** The organizer page writes the row with Filament's `$record->update($data)` (fact 3.3), so reusing "the action" first means there has to be one. A second form on the admin page would be three hundred copied lines — the contrast rule, the domain checks, the claim/verify/release wiring and its error-bag workaround — that drift the first time one copy is fixed. The form moves verbatim except for where it reads the organization (decision 2), the two new logo rules (decisions 5 and 6) and its strings (decision 8), and `OrganizationProfileTest` and `CustomDomainTest` pass **unedited**: that is the proof the move changed nothing. `app/Filament/Schemas/` is new; `app/Filament/Auth/Login.php` is the precedent for a cross-panel class outside any one panel's folder.
@@ -3168,9 +3243,9 @@ It also closes a gap that no backlog entry names, found while writing it: the ha
 
 3. **The admin page is an `EditRecord` on the existing `OrganizationResource`, opened from the view page's header.** It is behind the two walls Filament already has (fact 3.7): `canAccess()` (platform admin) on every mount and hydrate, then `canEdit()` (`OrganizationPolicy::update()`). The second alone admits the organization's own owner, and the test mounts the page as that owner to prove the first holds. No new policy method: `update()` already says what spec section 4 says. The list's row actions are not touched — that table is the approval queue, filtered to pending by default, and Task 2 rewrites its column lines. **The slug stays read-only on both pages**: it is the `{organization}` in every public `/c/{organization}/{conference}` URL (`routes/web.php:57`) and in every such link already shared, and whether a platform admin may rename it is the owner's question (report).
 
-4. **A replaced or cleared logo is deleted by `UpdateOrganizationProfile`, after the commit, and only once no row points at it.** Not `deleteUploadedFileUsing`: Filament runs it when the file is removed in the picker, before Save and whether or not Save happens (fact 3.9) — cancel the edit and the row points at a deleted file on every public page and in every email. Not a cleanup job: nothing else knows which file was replaced, and a sweep of "files no row references" is a second deletion path to keep correct. **`DB::afterCommit()`** rather than `DeleteSubmissionFile`'s line after `DB::transaction()`, because both callers are Filament `save()` methods that put the whole write inside a transaction of their own the day a panel turns on `->databaseTransactions()` (fact 3.8): the delete then waits for *that* commit and a rollback discards it; today it runs as the action's own commit returns. The existence check reads the database, so a save that failed keeps its file, and so does a path that another organization's row also holds (decision 5). A test drives each case. The rule — delete only once no row, trashed or not, points at the file — is one small class, `DeleteOrganizationLogo`, because the purge needs it too (decision 9).
+4. **A replaced or cleared logo is deleted by `UpdateOrganizationProfile`, after the commit, and only once no row points at it.** Not `deleteUploadedFileUsing`: Filament runs it when the file is removed in the picker, before Save and whether or not Save happens (fact 3.9) — cancel the edit and the row points at a deleted file on every public page and in every email. Not a cleanup job: nothing else knows which file was replaced, and a sweep of "files no row references" is a second deletion path to keep correct. **`DB::afterCommit()`** rather than `DeleteSubmissionFile`'s line after `DB::transaction()`, because both callers are Filament `save()` methods that put the whole write inside a transaction of their own the day a panel turns on `->databaseTransactions()` (fact 3.8): the delete then waits for *that* commit and a rollback discards it; today it runs as the action's own commit returns. The existence check reads the database, so a save that failed keeps its file, and so does a path that another organization's row also holds; a path in any spelling Filament does not write is never deleted at all (decision 5). A test drives each case. The rule — delete only once no row, trashed or not, points at the file — is one small class, `DeleteOrganizationLogo`, because the purge needs it too (decision 9).
 
-5. **`->preventFilePathTampering()` goes on the logo field.** Filament leaves it off (fact 3.10). Before this task a hand-edited Livewire payload that set `logo_path` to another organization's file — whose name is in the `<img>` on that organization's public pages — only borrowed a logo. With decision 4 the *next* replacement would delete it. The form now refuses any stored path that is not the record's own; decision 4's database check is the second wall, for rows written before this release.
+5. **`->preventFilePathTampering()` goes on the logo field.** Filament leaves it off (fact 3.10). Before this task a hand-edited Livewire payload that set `logo_path` to another organization's file — whose name is in the `<img>` on that organization's public pages — only borrowed a logo. With decision 4 the *next* replacement would delete it. The form now refuses any stored path that is not the record's own. For rows written before this release, decision 4's database check catches an exact copy, `DeleteOrganizationLogo::isCanonical()` refuses any other spelling — the disk normalises `logos/./x.png` to `logos/x.png` before it deletes, and throws on a path that climbs out of it (fact 3.21) — and a pre-deploy audit in the pull request proves neither kind exists in production. `isCanonical()` is `logos/` + letters and digits + an optional extension: every path Filament writes, and fail-closed, so an unusual client extension only leaves bytes behind.
 
 6. **Above 16 MP is refused at validation, on the shared field, against one constant: `GenerateConferencePoster::MAX_LOGO_PIXELS`.** The poster's literal (fact 3.12) becomes the constant and the form's rule reads it, so the two cannot disagree; both compare with `>`, and the tests pin both sides of the line — 4000 × 4000 is accepted, 4001 × 4000 refused with a message that names the image's size and the limit. **Refused, not downscaled**: downscaling means decoding the image with GD inside a php-fpm worker — the cost the poster's guard exists to avoid — and an organizer told "this is 6000 × 3500, the limit is 16 megapixels" can fix it in any image editor. The rule reads the header only (`TemporaryUploadedFile::dimensions()`, fact 3.11). The poster keeps its own check for logos stored before this release, and its docblock says so. The help text now states the limit too.
 
@@ -3187,10 +3262,10 @@ It also closes a gap that no backlog entry names, found while writing it: the ha
 - Modify: `app/Filament/Organizer/Pages/Tenancy/EditOrganizationProfile.php` (the form moves out; the page delegates)
 - Modify: `app/Filament/Admin/Resources/Organizations/OrganizationResource.php` (`form()`, the `edit` page), `app/Filament/Admin/Resources/Organizations/Pages/ViewOrganization.php` (an Edit header action)
 - Modify: `app/Actions/Conferences/GenerateConferencePoster.php` (`MAX_LOGO_PIXELS`)
-- Modify: `app/Actions/Organizations/PurgeOrganization.php` (the logo in `handle()` and `preview()`), `app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php` (two lines of `purgeAction()`, nothing else), `resources/views/filament/admin/partials/purge-counts.blade.php` (the `<li>` line)
+- Modify: `app/Actions/Organizations/PurgeOrganization.php` (the logo in `handle()` and `preview()`), `app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php` (three lines of `purgeAction()`: the file count and the escaped name; nothing else), `app/Filament/Admin/Resources/Conferences/Tables/ConferencesTable.php` (one line of `purgeAction()`: the escaped conference name), `resources/views/filament/admin/partials/purge-counts.blade.php` (the `<li>` line)
 - Modify: `lang/en/admin.php` (an `organization` group; `purge.logo`)
 - Modify: `tests/Pest.php` (`blankPng()`), `tests/Feature/LanguageCoverageTest.php` (three paths on `$plan7Sources`)
-- Test: `tests/Feature/Admin/EditOrganizationTest.php` (new, 13 cases), `tests/Feature/Organizer/OrganizationProfileTest.php` (2 cases appended), `tests/Feature/Admin/PurgeLogoTest.php` (new, 6 cases)
+- Test: `tests/Feature/Admin/EditOrganizationTest.php` (new, 14 cases), `tests/Feature/Organizer/OrganizationProfileTest.php` (2 cases appended), `tests/Feature/Admin/PurgeLogoTest.php` (new, 8 cases)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3493,6 +3568,23 @@ it('never deletes a logo file another organization still points at', function ()
     Storage::disk('branding')->assertExists('logos/shared.png');
 });
 
+it('never deletes another organization\'s logo through another spelling of its path', function () {
+    // The disk normalises a path before it deletes, so 'logos/./beta.png'
+    // would remove 'logos/beta.png' - a file the exact-string row check above
+    // never matches. Only a row written before this release can hold such a
+    // spelling; DeleteOrganizationLogo::isCanonical() refuses every path
+    // Filament would not have written.
+    Storage::disk('branding')->put('logos/beta.png', 'beta bytes');
+    $other = Organization::factory()->approved()->create();
+    $other->forceFill(['logo_path' => 'logos/beta.png'])->save();
+    $this->organization->forceFill(['logo_path' => 'logos/./beta.png'])->save();
+
+    app(UpdateOrganizationProfile::class)->handle($this->organization, ['logo_path' => null], $this->admin);
+
+    expect($this->organization->fresh()?->logo_path)->toBeNull();
+    Storage::disk('branding')->assertExists('logos/beta.png');
+});
+
 it('claims, verifies and releases a custom domain for the organization, naming the admin in the log', function () {
     livewire(EditOrganization::class, ['record' => $this->organization->getRouteKey()])
         ->callAction(adminDomainAction('claimCustomDomain'), ['domain' => 'abstracts.example.org'])
@@ -3632,7 +3724,7 @@ it('refuses a logo above 16 megapixels at upload, with the reason', function () 
 cd /c/Users/ahmed/Documents/CASS && php artisan test --compact --filter='EditOrganizationTest|OrganizationProfileTest' > /tmp/t-task-3.log 2>&1; echo "rc=$?"; tail -5 /tmp/t-task-3.log
 ```
 
-Expected: `rc=2`, **15 failed, 6 passed** (the six passing are `OrganizationProfileTest`'s existing cases). The admin cases fail with `ComponentNotFoundException: Unable to find component: [App\Filament\Admin\Resources\Organizations\Pages\EditOrganization]`, `RouteNotFoundException: Route [filament.admin.resources.organizations.edit] not defined`, `BindingResolutionException: Target class [App\Actions\Organizations\UpdateOrganizationProfile] does not exist` and, for the first case, the `getPages()` keys. The two organizer cases fail on behaviour, not on a missing class: `Found unexpected file or directory at path [logos/old.png]` and `Component has no errors` — today's page keeps the old file and accepts the 16 MP logo.
+Expected: `rc=2`, **16 failed, 6 passed** (the six passing are `OrganizationProfileTest`'s existing cases). The admin cases fail with `ComponentNotFoundException: Unable to find component: [App\Filament\Admin\Resources\Organizations\Pages\EditOrganization]`, `RouteNotFoundException: Route [filament.admin.resources.organizations.edit] not defined`, `BindingResolutionException: Target class [App\Actions\Organizations\UpdateOrganizationProfile] does not exist` and, for the first case, the `getPages()` keys. The two organizer cases fail on behaviour, not on a missing class: `Found unexpected file or directory at path [logos/old.png]` and `Component has no errors` — today's page keeps the old file and accepts the 16 MP logo.
 
 - [ ] **Step 3: One constant for the 16 MP line**
 
@@ -3726,16 +3818,22 @@ use Illuminate\Support\Facades\Storage;
  *
  * "No row points at it" is read from the database, trashed rows included,
  * rather than trusted from the caller: that one query is what keeps a file
- * another organization's row also holds (a path copied in by a hand-edited
- * request before the profile form refused them), and what keeps the file when
- * the write that should have released it never committed.
+ * another organization's row also holds (an exact copy of another
+ * organization's path, written by a hand-edited request before the profile
+ * form refused them; any other spelling of a path is refused by isCanonical(),
+ * because the disk normalises `logos/./x.png` to `logos/x.png` before it
+ * deletes), and what keeps the file when the write that should have released
+ * it never committed.
  */
 class DeleteOrganizationLogo
 {
-    /** True when the file was deleted; false when a row still points at it. */
+    /**
+     * True when the file was deleted; false when a row still points at it, or
+     * when the path is not one Filament writes and is left alone.
+     */
     public function handle(string $path): bool
     {
-        if ($this->stillUsed($path)) {
+        if (! self::isCanonical($path) || $this->stillUsed($path)) {
             return false;
         }
 
@@ -3745,6 +3843,20 @@ class DeleteOrganizationLogo
         Storage::disk('branding')->delete($path);
 
         return true;
+    }
+
+    /**
+     * Whether the path is spelled exactly as the profile form's FileUpload
+     * stores one: 'logos/' + a ULID + '.' + the client's extension. The
+     * branding disk normalises a path before it deletes - 'logos/./beta.png'
+     * is 'logos/beta.png' to it - and throws on one that climbs out of the
+     * disk, so a row holding any other spelling could reach a file the
+     * exact-string row check never matches. Fail-closed: a path this refuses
+     * only leaves bytes behind.
+     */
+    public static function isCanonical(string $path): bool
+    {
+        return preg_match('#^logos/[A-Za-z0-9]+(\.[A-Za-z0-9]*)?\z#', $path) === 1;
     }
 
     /**
@@ -4534,6 +4646,7 @@ Create `tests/Feature/Admin/PurgeLogoTest.php`. `tests/Feature/Console/DemoReset
 declare(strict_types=1);
 
 use App\Actions\Conferences\PurgeConference;
+use App\Actions\Organizations\DeleteOrganizationLogo;
 use App\Actions\Organizations\PurgeOrganization;
 use App\Filament\Admin\Resources\Organizations\Pages\ListOrganizations;
 use App\Models\Conference;
@@ -4638,6 +4751,41 @@ it('keeps a logo file another organization still points at, and previews it as k
     Storage::disk('branding')->assertExists('logos/alpha.png');
 });
 
+it('keeps another organization\'s logo when the purged row spells its path another way', function () {
+    // The disk would delete 'logos/./beta.png' as 'logos/beta.png', which the
+    // exact-string row check never matches. DeleteOrganizationLogo refuses
+    // any spelling Filament does not write (Task 3 decision 5).
+    Storage::disk('branding')->put('logos/beta.png', 'beta bytes');
+    $other = Organization::factory()->approved()->create();
+    $other->forceFill(['logo_path' => 'logos/beta.png'])->save();
+    $this->organization->forceFill(['logo_path' => 'logos/./beta.png'])->save();
+
+    expect(app(PurgeOrganization::class)->preview($this->organization)['branding files'])->toBe(0);
+
+    $counts = app(PurgeOrganization::class)->handle($this->organization, $this->admin);
+
+    expect($counts['branding files'])->toBe(0);
+    Storage::disk('branding')->assertExists('logos/beta.png');
+});
+
+it('reports nothing and throws nothing for a logo path that climbs out of the disk', function () {
+    // The disk throws PathTraversalDetected for this path, after the purge's
+    // commit, and nothing catches it. DeleteOrganizationLogo never hands it to
+    // the disk, and the preview predicts the same zero.
+    $this->organization->forceFill(['logo_path' => 'logos/../../x'])->save();
+
+    // \z, not $: PCRE's $ also matches before a final newline, and the disk
+    // throws CorruptedPathDetected on a control character.
+    expect(DeleteOrganizationLogo::isCanonical("logos/x.png\n"))->toBeFalse();
+
+    expect(app(PurgeOrganization::class)->preview($this->organization)['branding files'])->toBe(0);
+
+    $counts = app(PurgeOrganization::class)->handle($this->organization, $this->admin);
+
+    expect($counts['branding files'])->toBe(0)
+        ->and(Organization::withTrashed()->whereKey($this->organization->getKey())->exists())->toBeFalse();
+});
+
 it('leaves the logo alone when one conference is purged, and takes it with the organization', function () {
     // PurgeConference is the other purge, and the organization outlives it.
     $conference = Conference::factory()->for($this->organization)->create();
@@ -4675,7 +4823,7 @@ it('deletes the demo organization logo on cass:demo-reset', function () {
 cd /c/Users/ahmed/Documents/CASS && php artisan test --compact --filter='PurgeLogoTest' > /tmp/t-task-3.log 2>&1; echo "rc=$?"; tail -5 /tmp/t-task-3.log
 ```
 
-Expected: `rc=2`, **6 failed**. Two on `Undefined array key "branding files"`; the modal case on its `<strong>1</strong> admin.purge.logo` line (neither the key nor the string exists yet); the demo case on `Output does not contain "branding files"`; and the rollback and conference cases on their second half — `Found unexpected file or directory at path [logos/alpha.png]` once the organization itself is purged. Their first halves (the logo survives a rolled-back purge, and a conference purge) already pass on today's code; the second halves are what make them fail first.
+Expected: `rc=2`, **8 failed**. Four on `Undefined array key "branding files"` (the parity case, the shared-path case and the two path-spelling cases); the modal case on its `<strong>1</strong> admin.purge.logo` line (neither the key nor the string exists yet); the demo case on `Output does not contain "branding files"`; and the rollback and conference cases on their second half — `Found unexpected file or directory at path [logos/alpha.png]` once the organization itself is purged. Their first halves (the logo survives a rolled-back purge, and a conference purge) already pass on today's code; the second halves are what make them fail first.
 
 - [ ] **Step 11: The purge releases the logo**
 
@@ -4755,8 +4903,9 @@ with:
         $result['private files'] = count($paths);
 
         // The same pass, the same side of the commit. DeleteOrganizationLogo
-        // keeps a file another organization's row still points at, so the
-        // count is what was actually released - and what preview() predicts.
+        // keeps a file another organization's row still points at, and never
+        // hands the disk a path Filament would not have written, so the count
+        // is what was actually released - and what preview() predicts.
         $result['branding files'] = is_string($logo) && $this->logos->handle($logo) ? 1 : 0;
 ```
 
@@ -4775,10 +4924,11 @@ with:
 ```php
         $counts['private files'] = $files;
 
-        // What handle() will release: a logo no other organization's row
-        // points at. Read from the row, as handle() reads it.
+        // What handle() will release: a logo spelled as Filament writes one,
+        // which no other organization's row points at. Read from the row, as
+        // handle() reads it.
         $logo = Organization::withTrashed()->whereKey($organizationId)->value('logo_path');
-        $counts['branding files'] = is_string($logo) && ! $this->logos->stillUsed($logo, except: $organization) ? 1 : 0;
+        $counts['branding files'] = is_string($logo) && DeleteOrganizationLogo::isCanonical($logo) && ! $this->logos->stillUsed($logo, except: $organization) ? 1 : 0;
 
         return $counts;
 ```
@@ -4805,13 +4955,16 @@ with:
             } }}</li>
 ```
 
-`app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php` — two lines inside `purgeAction()`'s `->action()` closure, which Task 2 does not touch:
+`app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php` — three lines inside `purgeAction()`'s `->action()` closure, which Task 2 does not touch: the file count, and the organization's name, escaped as Task 2 escapes it in the approve and reject notifications (Task 2, decision 6). `PurgeLogoTest`'s modal case pins the title with `Alpha Society`, which e() leaves as it is.
 
 Replace:
 
 ```php
                 $files = $counts['private files'] ?? 0;
                 unset($counts['private files']);
+
+                Notification::make()->success()->title(__('admin.purge.done', [
+                    'name' => $name,
 ```
 
 with:
@@ -4821,6 +4974,23 @@ with:
                 // the abstracts and the logo on the public branding disk.
                 $files = ($counts['private files'] ?? 0) + ($counts['branding files'] ?? 0);
                 unset($counts['private files'], $counts['branding files']);
+
+                // Escaped: an anonymous registrant chooses the name, and the
+                // title is rendered through sanitizeHtml(), which keeps style.
+                Notification::make()->success()->title(__('admin.purge.done', [
+                    'name' => e($name),
+```
+
+`app/Filament/Admin/Resources/Conferences/Tables/ConferencesTable.php` — one line inside `purgeAction()`'s `->action()` closure, which Task 2 does not touch. The conference name an organizer typed goes into the same `sanitizeHtml()`-rendered title, so it is escaped the same way:
+
+```php
+                    'name' => $name,
+```
+
+becomes:
+
+```php
+                    'name' => e($name),
 ```
 
 `lang/en/admin.php` — one key in the existing `purge` group, after `files` (a line no other task changes):
@@ -4861,14 +5031,23 @@ Expected: `pint rc=0`, `stan rc=0`. If Pint fails, run `./vendor/bin/pint` and r
 cd /c/Users/ahmed/Documents/CASS && php artisan test > /tmp/all-task-3.log 2>&1; echo "all rc=$?"; tail -4 /tmp/all-task-3.log
 ```
 
-Expected: `all rc=0`, and **21 more passing tests than Task 2's final run** (the prototype on `45d2d8e`: 1214 → 1235 passed, 1 skipped, plus the two `$plan7Sources` cases it had to stand in for Task 2).
+Expected: `all rc=0`, and **24 more passing tests than Task 2's final run** (the prototype on `45d2d8e`, before the review added the three path-spelling cases: 1214 → 1235 passed, 1 skipped, plus the two `$plan7Sources` cases it had to stand in for Task 2).
 
 - [ ] **Step 16: Commit**
 
-Commit with the session's Co-Authored-By trailer appended to this message:
+The suite gates the commit in the same command, and the paths are named rather than `-A` (Task 2, Step 10). The message's last line is a placeholder: put the session's Co-Authored-By trailer there before running it.
 
 ```bash
-cd /c/Users/ahmed/Documents/CASS && git add -A && git commit -q -F - <<'EOF' && git log --oneline -1
+cd /c/Users/ahmed/Documents/CASS && php artisan test > /tmp/all-task-3.log 2>&1 && echo "all rc=0 - the suite gates this commit" && \
+git add app/Actions/Organizations/UpdateOrganizationProfile.php app/Actions/Organizations/DeleteOrganizationLogo.php \
+  app/Filament/Schemas/OrganizationProfileForm.php app/Filament/Admin/Resources/Organizations/Pages/EditOrganization.php \
+  app/Filament/Organizer/Pages/Tenancy/EditOrganizationProfile.php app/Filament/Admin/Resources/Organizations/OrganizationResource.php \
+  app/Filament/Admin/Resources/Organizations/Pages/ViewOrganization.php app/Actions/Conferences/GenerateConferencePoster.php \
+  app/Actions/Organizations/PurgeOrganization.php app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php \
+  app/Filament/Admin/Resources/Conferences/Tables/ConferencesTable.php \
+  resources/views/filament/admin/partials/purge-counts.blade.php lang/en/admin.php tests/Pest.php tests/Feature/LanguageCoverageTest.php \
+  tests/Feature/Admin/EditOrganizationTest.php tests/Feature/Organizer/OrganizationProfileTest.php tests/Feature/Admin/PurgeLogoTest.php && \
+git commit -q -F - <<'EOF' && git log --oneline -1 && git status --short --untracked-files=no
 feat(admin): the platform admin edits an organization's profile, branding and domain
 
 One form for both panels (App\Filament\Schemas\OrganizationProfileForm) and
@@ -4884,9 +5063,15 @@ The hard purge now releases the organization's logo from the public
 branding disk too, through the same rule and after its own commit, and
 reports it as "branding files" in the run, the preview and the modal;
 cass:demo-reset inherits it. A purge used to leave the logo reachable at its
-/storage/branding URL for ever.
+/storage/branding URL for ever. Neither path deletes a logo whose stored
+path is not spelled as Filament writes one, and the purge notification
+escapes the organization's name.
+
+<the session's Co-Authored-By trailer>
 EOF
 ```
+
+Expected: `all rc=0 - the suite gates this commit`, one log line, and nothing from `git status --short --untracked-files=no`.
 
 ---
 
@@ -5701,14 +5886,20 @@ Expected: `pint rc=0`, `stan rc=0`.
 cd /c/Users/ahmed/Documents/CASS && php artisan test > /tmp/all-task-4.log 2>&1; echo "all rc=$?"; tail -4 /tmp/all-task-4.log
 ```
 
-Expected: `all rc=0`, and **9 more passing tests than Step 15 of Task 3** (the prototype: 1235 → 1244 on top of `45d2d8e`, plus the two stand-in `$plan7Sources` cases).
+Expected: `all rc=0`, and **9 more passing tests than Step 15 of Task 3** (the prototype, built on Task 3's prototype rather than bare `45d2d8e`: 1235 → 1244, plus the two stand-in `$plan7Sources` cases).
 
 - [ ] **Step 11: Commit**
 
-Commit with the session's Co-Authored-By trailer appended to this message:
+The suite gates the commit in the same command, and the paths are named rather than `-A` (Task 2, Step 10). The message's last line is a placeholder: put the session's Co-Authored-By trailer there before running it.
 
 ```bash
-cd /c/Users/ahmed/Documents/CASS && git add -A && git commit -q -F - <<'EOF' && git log --oneline -1
+cd /c/Users/ahmed/Documents/CASS && php artisan test > /tmp/all-task-4.log 2>&1 && echo "all rc=0 - the suite gates this commit" && \
+git add app/Models/User.php app/Actions/Organizations/ChangeMemberRole.php app/Actions/Organizations/RemoveMember.php \
+  app/Filament/Admin/Resources/Organizations/RelationManagers/MembersRelationManager.php \
+  app/Filament/Admin/Resources/Organizations/RelationManagers/InvitationsRelationManager.php \
+  app/Filament/Admin/Resources/Organizations/OrganizationResource.php app/Filament/Organizer/Pages/Members.php lang/en/admin.php \
+  tests/Feature/Admin/AdminReadOnlyTest.php tests/Feature/LanguageCoverageTest.php tests/Feature/Admin/MembersManagementTest.php && \
+git commit -q -F - <<'EOF' && git log --oneline -1 && git status --short --untracked-files=no
 feat(admin): the platform admin changes a role, removes a member, withdraws an invitation
 
 Spec section 4 gives the platform admin the owner's tick on "Manage
@@ -5721,8 +5912,12 @@ admin actions authorize on is_platform_admin, because the membership
 policy says yes to an organization's own owners. Invite and Resend are not
 offered: AcceptInvitation refuses an invitation whose inviter holds no role
 in the organization, so an admin-minted link would be dead on arrival.
+
+<the session's Co-Authored-By trailer>
 EOF
 ```
+
+Expected: `all rc=0 - the suite gates this commit`, one log line, and nothing from `git status --short --untracked-files=no`.
 
 
 ### Task 5: Failed notifications are marked failed and encrypted, abandoned uploads are swept, and the orphan icon goes
@@ -5832,7 +6027,7 @@ Four commits, in this order: failed notifications (Steps 1-8), encrypted notific
 - Create: `app/Actions/Submissions/SweepTemporaryUploads.php`
 - Create: `app/Console/Commands/SweepTemporaryUploadsCommand.php`
 - Modify: `routes/console.php` (one schedule entry)
-- Modify: `docs/runbooks/deploy-production.md` ("Author uploads and private storage", "Email triage", "Invitations and their tokens", the `private disk` row of "Health", "Secret rotation")
+- Modify: `docs/runbooks/deploy-production.md` ("Author uploads and private storage", "Email triage", "Rollback", "Invitations and their tokens", the `private disk` row of "Health", "Secret rotation")
 - Delete: `public/images/icons/badge.svg`
 - Test: `tests/Feature/Mail/FailedNotificationLogTest.php`, `tests/Feature/Console/SweepTemporaryUploadsTest.php`, `tests/Feature/PublicImagesTest.php` (new); `tests/Feature/Security/QueuedMailPayloadTest.php` (one dataset row, one new case)
 - Not here: `app/Notifications/QueuedVerifyEmail.php` and `tests/Feature/Mail/VerificationMailTest.php` — the pre-Plan-7 hotfix (fact 5.12).
@@ -6348,7 +6543,7 @@ with:
             ...$this->context($event->message),
 ```
 
-- [ ] **Step 6: The runbook — the triage table**
+- [ ] **Step 6: The runbook — the triage table, and what a rollback strands**
 
 `docs/runbooks/deploy-production.md`, **Email triage**: replace the `failed` row of the status table and the paragraph under the table —
 
@@ -6367,21 +6562,43 @@ hook, so a transport error on one leaves its row where it was. Check both:
 | `failed` | The queued job threw on its last try (the worker makes three), and `error` holds the exception message. Templated mail is marked by `TemplatedMail::failed()`; every queued notification — Filament's password-reset and verification mail included — by `App\Notifications\SendQueuedNotificationsWithLog::failed()`. |
 | `queued` | The row was written and the job has not reported back. A few seconds is normal. Hours is not. |
 
-One email is one row, however many tries it takes. A notification's row is
-keyed by the notification itself, so its second and third tries — and a later
-`queue:retry` — find the row the first try wrote: a message that went through
-on its second try reads `sent`, not `queued` beside a `sent`. A row that has
-gone `failed` keeps reading `failed` after a `queue:retry` delivers it, exactly
-as a retried templated email does (see "Sending decision emails"); judge a
-retry by the worker and the mailbox.
+One templated email or notification is one row, however many tries it takes.
+A notification's row is keyed by the notification itself, so its second and
+third tries — and a later `queue:retry` — find the row the first try wrote: a
+message that went through on its second try reads `sent`, not `queued` beside
+a `sent`. A row that has gone `failed` keeps reading `failed` after a
+`queue:retry` delivers it, exactly as a retried templated email does (see
+"Sending decision emails"); judge a retry by the worker and the mailbox.
 
-A row **stuck at `queued`** is a stopped queue worker: everything that fails
-for good is marked `failed`. The one failure with **no row at all** is a
-notification that throws before it is rendered — a bug in the code, not an
-outage — which is only in `queue:failed`. Check both:
+A row **stuck at `queued`** is a stopped queue worker, with three exceptions.
+`App\Mail\ContactMessage`, the public contact form, has no `failed()` hook:
+each of its tries writes its own `queued` row, a final failure marks none of
+them, and the job is in `queue:failed`. A notification first tried before the
+Plan 7 release keeps that try's `queued` row whatever its later tries do,
+because rows were not keyed by the notification then, and a notification that
+failed for good before the release stays `queued` for good; judge those by
+`queue:failed` (which keeps a failure for 720 hours) and the mailbox. And a
+notification that throws before it is rendered has **no row at all** — a bug
+in the code, not an outage — and is only in `queue:failed`. Check both:
 ```
 
 The three commands under it and everything after them stay as they are. **Every release** needs no Plan 7 paragraph for this task: it adds no migration.
+
+**Rollback** — from this commit on, every queued notification names `App\Notifications\SendQueuedNotificationsWithLog` in its payload, which an older image cannot unserialize (`vendor/laravel/framework/src/Illuminate/Queue/CallQueuedHandler.php:135-136` throws `Job is incomplete class`, and `failed()` returns early for it at `:426-428`). The section today is the single paragraph that starts "Coolify -> Deployments -> redeploy the previous successful build." Append, after that paragraph:
+
+```markdown
+Rolling back to an image older than Plan 7: every queued notification travels
+in `App\Notifications\SendQueuedNotificationsWithLog`, which an older image
+does not have. Any notification still in `jobs` then fails three times with
+"Job is incomplete class" and lands in `failed_jobs`, and its email-log row
+stays `queued`; a job that failed under Plan 7 and sits in `failed_jobs`
+cannot be retried there either. If you can, wait until
+`queue:monitor database:default` prints `[0] OK` (the drain under "Secret
+rotation") before rolling back; otherwise `queue:retry` those jobs by id once
+you have rolled forward again.
+```
+
+This belongs to Part A, not Part B: the class name enters the payload with the binding, and Part B's encryption is separately revertible.
 
 - [ ] **Step 7: Run the tests**
 
@@ -7177,7 +7394,9 @@ it('changes the reviewer\'s own affiliation for one conference, trimmed, and log
     expect($entry->causer_id)->toBe($this->reviewer->id)
         ->and($entry->subject_type)->toBe(ConferenceReviewer::class)
         ->and($entry->subject_id)->toBe($this->row->id)
-        ->and($entry->properties->all())->toBe([
+        // toEqual, not toBe: activity_log.properties is a json column, and
+        // MySQL hands an object back shorter key first.
+        ->and($entry->properties->all())->toEqual([
             'conference_id' => $this->conference->id,
             'from' => 'Old Hospital',
             'to' => 'New Hospital',
@@ -7507,12 +7726,13 @@ Append these two paths to `$plan7Sources` in `tests/Feature/LanguageCoverageTest
 cd /c/Users/ahmed/Documents/CASS && php artisan test --compact --filter='ReviewerAffiliationTest|LanguageCoverageTest' > /tmp/t-task-6.log 2>&1; echo "rc=$?"; tail -5 /tmp/t-task-6.log
 ```
 
-The filter matches both new files, because `ReviewerAffiliationTest` is a substring of `UpdateReviewerAffiliationTest`, and it matches the language cases. Expected: `rc=2`, with **19 failed**. Add one if Task 2's second `$plan7Sources` case also opens every listed path.
+The filter matches both new files, because `ReviewerAffiliationTest` is a substring of `UpdateReviewerAffiliationTest`, and it matches the language cases. Expected: `rc=2`, **20 failed, 19 passed**.
 - Five unit cases error with `Target class [App\Actions\Reviewers\UpdateReviewerAffiliation] does not exist.`
 - The other five unit cases fail because that same error is not the `MemberChangeRefused` they expect.
 - Seven panel cases error with `ComponentNotFoundException`.
 - The first panel case fails with `Failed asserting that two strings are identical`: `'Filament\Auth\Pages\EditProfile'` where `'App\Filament\Reviewer\Pages\EditProfile'` is expected.
 - The `$plan7Sources` key case fails on `Expected app/Actions/Reviewers/UpdateReviewerAffiliation.php to exist.`
+- The `$plan7Sources` visible-English case, `leaves no visible english in the files plan 7 swept`, errors with `ErrorException: file_get_contents(…/app/Actions/Reviewers/UpdateReviewerAffiliation.php): Failed to open stream: No such file or directory`.
 
 **Two of the new cases already pass, and that is correct:**
 - The drift pin reads only the vendor `content()` method.
@@ -7977,7 +8197,7 @@ cd /c/Users/ahmed/Documents/CASS && php artisan test --compact > /tmp/all-task-6
 git add app/Actions/Reviewers/UpdateReviewerAffiliation.php app/Filament/Reviewer/Pages/EditProfile.php \
   app/Policies/ConferenceReviewerPolicy.php app/Providers/Filament/ReviewerPanelProvider.php lang/en/reviewer.php \
   tests/Unit/UpdateReviewerAffiliationTest.php tests/Feature/Reviewer/ReviewerAffiliationTest.php \
-  tests/Feature/LanguageCoverageTest.php && git status --short
+  tests/Feature/LanguageCoverageTest.php && git status --short --untracked-files=no
 ```
 
 Expected: `all rc=0 - the suite gates this commit`, then eight staged paths: four `A` and four `M`. Commit them with the session's Co-Authored-By trailer and this message:
@@ -8008,13 +8228,14 @@ No application code. This task proves on the production driver what Tasks 1-6 pr
 
 - [ ] **Step 1: Run the whole suite against MySQL, not only SQLite**
 
-Five things in this plan behave differently on MySQL, and they are why this run is the gate rather than a formality:
+Six things in this plan behave differently on MySQL, and they are why this run is the gate rather than a formality:
 
-1. **Task 5 writes a notification's id into `email_logs.ulid`, which is `char(26)` on MySQL** (`$table->ulid('ulid')->unique()`). A raw notification UUID is 36 characters, and MySQL in strict mode refuses it where SQLite stores it silently. `EmailLog::ulidForNotification()` re-encodes the UUID as a 26-character ULID, and this run is the only place that proves it. Task 5's final design was not run on MySQL while it was being written: the prototype container lost its Docker daemon after its first design passed on MySQL 8.4.
+1. **Task 5 writes a notification's id into `email_logs.ulid`, which is `char(26)` on MySQL** (`$table->ulid('ulid')->unique()`). A raw notification UUID is 36 characters, and MySQL in strict mode refuses it where SQLite stores it silently. `EmailLog::ulidForNotification()` re-encodes the UUID as a 26-character ULID, and this run is the only place on the owner's machine that proves it. Task 5's final design was not run on MySQL while it was being written (the prototype container lost its Docker daemon after its first design passed on MySQL 8.4); the plan's review then ran it there, and `FailedNotificationLogTest` and `QueuedMailPayloadTest` passed on MySQL 8.4.
 2. **Task 6's 255-character limit is enforced by the column only here.** `conference_reviewers.affiliation` is `varchar(255)`. MySQL in strict mode refuses a 256th character, where SQLite stores it silently. `UpdateReviewerAffiliation` refuses it first, with a sentence, and the 255/256 boundary case in `tests/Unit/UpdateReviewerAffiliationTest.php` proves the action answers before the database would.
 3. **Task 3's logo deletion runs after the commit** (`DB::afterCommit`), and its rollback case proves a failed write leaves the old file in place. The callback semantics do not depend on the driver, but InnoDB is what production runs, so this is where a transaction that commits on one driver and not the other would show.
-4. **Task 4's ownership hand-over writes two `organization_user` rows in one transaction.** The unique key is enforced on both drivers. Lock order only matters on InnoDB, and the hand-over case is the one that would deadlock if the order were wrong.
+4. **Task 4 sends a platform admin through `ChangeMemberRole::handle()` and `RemoveMember::handle()`, which re-count owners under `lockForUpdate()` inside their transactions** (`ChangeMemberRole.php:76`, `RemoveMember.php:68`; the pivot is `organization_members`). SQLite's grammar compiles the lock clause to nothing and InnoDB runs it, so the hand-over, last-owner and remove cases run the production locking query only here. The hand-over is two separate role changes, each its own one-row transaction, and this suite is sequential on one connection: it proves the query, not concurrency, and no lock-order deadlock is claimed.
 5. **Task 5's encrypted notification payload is read back from `jobs.payload`,** a `longtext`. The "the reset token is not in the queue" case asserts what MySQL actually stores.
+6. **MySQL's `json` columns reorder object keys** (shorter key first), where SQLite keeps the order written. Any test that compares a decoded `json` attribute with `toBe()` on an associative array, or prints one in key order, must not depend on the order written. The plan's review found two that did, and both are fixed above: the submission export's extra-answers cell (Task 2's `ExtractedEnglishTest` and `LanguageCoverageTest` write `first_time` before `needs_projector`) and `activity_log.properties` (Task 6's `UpdateReviewerAffiliationTest` compares with `toEqual()`).
 
 ```bash
 cd /c/Users/ahmed/Documents/CASS && docker compose -f docker-compose.dev.yml up -d && sleep 15 && npm run build > /tmp/build-task-7.log 2>&1 && \
@@ -8022,7 +8243,7 @@ DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=cass DB_USERNAME=cass DB_PASSW
   php artisan test > /tmp/mysql-task-7.log 2>&1; echo "mysql rc=$?"; tail -4 /tmp/mysql-task-7.log
 ```
 
-Expected: `mysql rc=0` and the same count as the SQLite run in Step 4.
+Expected: `mysql rc=0` and the same passed count as Task 6 Step 10's SQLite run (Step 4 below repeats it). A failure here that SQLite never showed is one of the six differences above; read it before touching the test.
 
 - [ ] **Step 2: Run the browser suite**
 
@@ -8038,13 +8259,13 @@ Expected: `browser rc=0`. CI's `browser` job runs the same command.
 - [ ] **Step 3: Confirm the schedule, the routes and the build this plan added**
 
 ```bash
-cd /c/Users/ahmed/Documents/CASS && php artisan schedule:list | grep -E 'cass:sweep-uploads' ; \
+cd /c/Users/ahmed/Documents/CASS && CACHE_STORE=array php artisan schedule:list 2>&1 | grep -E 'cass:sweep-uploads' ; \
 php artisan route:list --path=admin/organizations 2>/dev/null | grep -c edit ; \
-grep -c 'resources/css/filament/theme.css' public/build/manifest.json ; \
+grep -c '"src": "resources/css/filament/theme.css"' public/build/manifest.json ; \
 test -e public/images/icons/badge.svg && echo "badge.svg STILL THERE" || echo "badge.svg gone"
 ```
 
-Expected: one `cass:sweep-uploads` line with an hourly expression (`0 * * * *`); `1` (the admin `edit` route); `1` (the theme is in the manifest); `badge.svg gone`.
+Expected: one `cass:sweep-uploads` line with an hourly expression (`0 * * * *`); `1` (the admin `edit` route); `1` (the theme is in the manifest: Vite writes each entry's path twice, as its key and as its `src`, so the grep counts the `src` line); `badge.svg gone`. `CACHE_STORE=array` for the reason Task 5 Step 19 gives: `schedule:list` asks the cache about `withoutOverlapping()` mutexes, and a local `.env` may point the cache at a database that is not running.
 
 - [ ] **Step 4: The final gate, on SQLite**
 
@@ -8055,7 +8276,7 @@ cd /c/Users/ahmed/Documents/CASS && npm run build > /tmp/build-final.log 2>&1; e
 php artisan test > /tmp/t-final.log 2>&1; echo "tests rc=$?"; tail -4 /tmp/t-final.log
 ```
 
-Expected: every `rc=0`, and **baseline + 120 passed, 1 skipped** (1336 on a 1216 baseline). Per task: Task 1 +13, Task 2 +44, Tasks 3-4 +30, Task 5 +13, Task 6 +20. Task 1's fourteenth test is the browser case in Step 2.
+Expected: every `rc=0`, and **baseline + 124 passed, 1 skipped** (1340 on a 1216 baseline). Per task: Task 1 +13, Task 2 +45, Tasks 3-4 +33, Task 5 +13, Task 6 +20. Task 1's fourteenth test is the browser case in Step 2.
 
 - [ ] **Step 5: Update `docs/superpowers/plans/backlog.md`**
 
@@ -8074,7 +8295,7 @@ Expected: every `rc=0`, and **baseline + 120 passed, 1 skipped** (1336 on a 1216
 
 **Replace both language entries** ("**The language sweep still stops at the file boundary.**" in Decisions, and the same title in Launch) **with this one,** in the Launch section:
 
-> - **The language sweep now covers every file the backlog named; it does not cover the application.** Plan 7 converted every enum label but `Decision`'s, both export headings, the publishing blockers and the three admin tables Plans 1-2 wrote, and `LanguageCoverageTest` now reads PHP for English as well as Blade (`$plan7PhpProse`). Run over all of `app/`, that sweep still finds: the organizer panel's Plan 2-3 classes (222 literals in 16 files under `app/Filament/Organizer/`); **what a visitor or author reads** — `SubmitAbstract`, `UpdateSubmission`, `WithdrawSubmission`, `SaveSubmissionDraft`, `SendSubmissionStatusLink`, `SubmissionFileRejected`, and the titles and throttle messages of `ContactForm`, `RegisterOrganization` and `AcceptInvitation` (46 literals in 9 files, reaching the public form through `SubmissionForm` and `SubmissionStatus`); the admin infolists, `EmailLogResource`'s navigation label, the panel brand names and the purge modal's raw table names (37); five organizer refusals and `CreateDefaultReviewForm`'s nine default questions (15); and the two notifications not on the template system, `NewSubmissionNotice` and `OrganizationRegistered` (16). Do the visitor-facing nine first — they are on the public site, where Arabic is promised. `Decision::getLabel()` still moves with the bilingual templates of spec section 14, and `LanguageCoverageTest` pins it until then. Separately: the approve, reject and purge notifications in the admin tables pass an organization's name unescaped into a title Filament renders through `sanitizeHtml()`; `ConferenceStatusActions` escapes the equivalent conference name.
+> - **The language sweep now covers every file the backlog named; it does not cover the application.** Plan 7 converted every enum label but `Decision`'s, both export headings, the publishing blockers and the three admin tables Plans 1-2 wrote, and `LanguageCoverageTest` now reads PHP for English as well as Blade (`$plan7PhpProse`). Run over all of `app/`, that sweep still finds: the organizer panel's Plan 2-3 classes (210 literals in 15 files under `app/Filament/Organizer/`; Plan 7 Task 3 converted `EditOrganizationProfile`); **what a visitor or author reads** — `SubmitAbstract`, `UpdateSubmission`, `WithdrawSubmission`, `SaveSubmissionDraft`, `SendSubmissionStatusLink`, `SubmissionFileRejected`, and the titles and throttle messages of `ContactForm`, `RegisterOrganization` and `AcceptInvitation` (46 literals in 9 files, reaching the public form through `SubmissionForm` and `SubmissionStatus`); the admin infolists, `EmailLogResource`'s navigation label, the panel brand names and the purge modal's raw table names (37); five organizer refusals and `CreateDefaultReviewForm`'s nine default questions (15); and the two notifications not on the template system, `NewSubmissionNotice` and `OrganizationRegistered` (16). Do the visitor-facing nine first — they are on the public site, where Arabic is promised. `Decision::getLabel()` still moves with the bilingual templates of spec section 14, and `LanguageCoverageTest` pins it until then.
 
 **Rewrite one clause of the Content-Security-Policy entry** (Security and platform, first bullet). Replace:
 
@@ -8087,6 +8308,10 @@ with:
 **Append one sentence to both pagination entries** ("Add the pagination views to the Tailwind `@source` list…" in Public site polish, and "**The pagination views are still not in the Tailwind `@source` list**" in Launch):
 
 > Since Plan 7, `resources/css/app.css` imports Tailwind with `source(none)`, so its `@source` list is the only thing Tailwind scans. The instruction matters more than it did, not less.
+
+**Append to the Dependencies entry "The next Filament bump is red by design."** — header note 2 sends the Filament 5.9 pull request to Task 6's drift pin, and this entry is what that pull request's author reads:
+
+> Since Plan 7 it can also fail `tests/Feature/Reviewer/ReviewerAffiliationTest.php`'s `content()` drift pin, if Filament changed `EditProfile::content()`. Restate the method in `app/Filament/Reviewer/Pages/EditProfile.php` and update the pinned string in the same commit.
 
 **Add these entries.** The first goes in Organizer features:
 
@@ -8103,6 +8328,7 @@ Then a new section at the end of the file:
 > - **Should an organization's owners be emailed when a platform admin edits their organization or its members?** Nothing is sent. Every change is in the activity log, with the admin as causer.
 > - **When a reviewer's new affiliation creates a conflict on an abstract already assigned to them, should the organizer be told or the assignment flagged?** Nothing is unassigned, and the reviewer's modal asks them to tell the organizers.
 > - **Should organizers be able to edit an active reviewer's affiliation?** It is own-row only (`ConferenceReviewerPolicy::updateAffiliation()`).
+> - **Should `cass:health` warn before the private volume fills, and at what free-space threshold?** Nothing measures free space today. `cass:health` only checks that the volume can be written, and `cass:sweep-uploads` (Plan 7) removes day-old temporary uploads hourly.
 
 ```bash
 cd /c/Users/ahmed/Documents/CASS && grep -c 'Open questions for the owner (raised by Plan 7)' docs/superpowers/plans/backlog.md; \
@@ -8111,11 +8337,11 @@ grep -cE 'Organizer panel theme: `php artisan make:filament-theme|badge.svg` \(4
 
 Expected: `1`, then `0`.
 
-Commit, with the session's Co-Authored-By trailer:
+Commit, with the session's Co-Authored-By trailer in place of the second `-m`'s placeholder:
 
 ```bash
 cd /c/Users/ahmed/Documents/CASS && git add docs/superpowers/plans/backlog.md && \
-git commit -q -m "docs: record what plan 7 closed, what it found and what it asks the owner" && git log --oneline -1
+git commit -q -m "docs: record what plan 7 closed, what it found and what it asks the owner" -m "<the session's Co-Authored-By trailer>" && git log --oneline -1
 ```
 
 - [ ] **Step 6: Push and open the pull request**
@@ -8125,14 +8351,14 @@ cd /c/Users/ahmed/Documents/CASS && git push -u origin plan-7-post-launch && \
 gh pr create --base main --head plan-7-post-launch --title "Plan 7: the panel theme, platform-admin writes, failed-notification logging, reviewer affiliation and the backlog's language sweep" --body-file /tmp/pr-plan-7.md
 ```
 
-Write `/tmp/pr-plan-7.md` first:
+Write `/tmp/pr-plan-7.md` first. Its last line is a placeholder: put the session's pull-request attribution there, as every commit's last line carries its trailer.
 
-```markdown
+````markdown
 ## The panel theme (Task 1)
-One Vite-built theme for all three panels (`resources/css/filament/theme.css`, `->viteTheme()`), written from Filament's stub without running `make:filament-theme`. The public stylesheet uses `source(none)`, so a checkout and the image compile the same CSS. The Dockerfile builds `vendor` before `assets`, and `tests/Unit/DockerAssetsStageTest.php` plus the smoke job guard it. From this release on, `npm run build` must run before `php artisan test`.
+One Vite-built theme for all three panels (`resources/css/filament/theme.css`, `->viteTheme()`), written from Filament's stub without running `make:filament-theme`. The public stylesheet uses `source(none)`, so a checkout and the image compile the same CSS. The Dockerfile builds `vendor` before `assets`, and `tests/Unit/DockerAssetsStageTest.php` plus the smoke job guard it. From this release on, `npm run build` must run before `php artisan test`, with `npm run dev` stopped; CLAUDE.md's test command and the runbook's "Every release" check now say so.
 
 ## Platform-admin writes (Tasks 3 and 4)
-The admin can edit an organization's profile, branding and custom domain through the same action and form as the organizer (`UpdateOrganizationProfile`, `OrganizationProfileForm`), and can change a member's role, remove a member and withdraw an invitation through the existing actions, with every guard kept. Replaced, cleared and purged logos are deleted from the `branding` disk after the write commits. Logos above 16 MP are refused at upload.
+The admin can edit an organization's profile, branding and custom domain through the same action and form as the organizer (`UpdateOrganizationProfile`, `OrganizationProfileForm`), and can change a member's role, remove a member and withdraw an invitation through the existing actions, with every guard kept. Replaced, cleared and purged logos are deleted from the `branding` disk after the write commits, never while another organization's row holds the path and never when the stored path is not spelled as Filament writes one. Logos above 16 MP are refused at upload.
 
 ## Notifications and uploads (Task 5)
 Every queued notification travels in `SendQueuedNotificationsWithLog`: a final failure marks its `email_logs` row `failed`, and the payload is encrypted. `cass:sweep-uploads` runs hourly. `badge.svg` is gone.
@@ -8141,17 +8367,31 @@ Every queued notification travels in `SendQueuedNotificationsWithLog`: a final f
 A reviewer corrects their own affiliation, per conference, from their profile page (`UpdateReviewerAffiliation`, `ConferenceReviewerPolicy::updateAffiliation()`). Existing assignments are untouched.
 
 ## The backlog's language sweep (Task 2)
-Enum labels (all but `Decision`'s), both export heading rows, three admin tables and the publishing blockers move to `lang/en`. English pins written against the old code pass on both sides. `LanguageCoverageTest` now reads PHP.
+Enum labels (all but `Decision`'s), both export heading rows, three admin tables and the publishing blockers move to `lang/en`. English pins written against the old code pass on both sides. `LanguageCoverageTest` now reads PHP. The approve, reject and purge notifications now escape the organization's name, and the admin conference purge escapes the conference name (Task 3), as `ConferenceStatusActions` already did.
 
 ## Verification
-SQLite and MySQL suites, the browser suite, Pint and Larastan, all `rc=0` (Task 7, Steps 1-4). Each new test was shown failing first.
+SQLite and MySQL suites, the browser suite, Pint and Larastan, all `rc=0` (Task 7, Steps 1-4). Every new test that drives a change was shown failing first. The English pins and the guard cases that pin existing behaviour pass on both sides by design (Task 2, decision 9).
 
 ## Before this is deployed
 1. **No migration.** This release changes no schema, so there is no window between the container going live and `migrate`.
-2. **Jobs already in the queue keep working.** Anything queued before the deploy was serialized as Laravel's own `SendQueuedNotifications`, unencrypted. The new worker reads both shapes. Only jobs queued after the deploy are encrypted and marked on failure.
+2. **Jobs already in the queue keep working.** Anything queued before the deploy was serialized as Laravel's own `SendQueuedNotifications`, unencrypted. The new worker reads both shapes. Only jobs queued after the deploy are encrypted and marked on failure. A notification first tried before the deploy keeps that try's `queued` row even when the new worker delivers or fails it, and so does every notification that failed before the release. Judge those by `queue:failed` and the mailbox, not by the email log.
 3. **After the deploy:** `php artisan schedule:list` in the app container shows `cass:sweep-uploads` hourly, and CI's smoke job has already proved the theme is served under the nonce.
-4. **The verification-email hotfix (`fe7f949`) is not in this pull request.** It shipped before Plan 7. If any registration's verification email is still in `failed_jobs` from before it, `php artisan queue:retry` re-sends it with a fresh link.
-```
+4. **The verification-email hotfix (`fe7f949`) is not in this pull request.** It shipped before Plan 7. If any registration's verification email is still in `failed_jobs` from before it (failed jobs are pruned after 720 hours), list them with `C=$(cass_container app); sudo docker exec "$C" su-exec app php artisan queue:failed`, where the class column reads `App\Notifications\QueuedVerifyEmail`, and retry those rows by id: `sudo docker exec "$C" su-exec app php artisan queue:retry <uuid> [<uuid> ...]`. `queue:retry` with no id retries nothing, and `queue:retry all` re-sends every other failed job too.
+5. **Audit logo paths before deploying.** On the production host, with the `cass_container` helper from the top of `docs/runbooks/deploy-production.md`:
+
+   ```bash
+   C=$(cass_container mysql)
+   sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass' <<'SQL'
+   SELECT id, slug, logo_path FROM organizations WHERE logo_path IS NOT NULL AND (logo_path NOT REGEXP '^logos/[A-Za-z0-9]+(\\.[A-Za-z0-9]*)?$' OR logo_path REGEXP '[[:cntrl:]]');
+   SELECT logo_path, COUNT(*) FROM organizations WHERE logo_path IS NOT NULL GROUP BY logo_path HAVING COUNT(*) > 1;
+   SQL
+   ```
+
+   The first query must return no rows: null the `logo_path` of any row it returns, by hand, before deploying. The second is for information: the code keeps a file while any row holds its path. If a path is shared, null it only on the organization that did not upload it; its activity log shows which one did. From this release a replaced, cleared or purged logo is deleted from the public disk, and the code never hands the disk a path spelled any other way (Task 3, decision 5).
+6. **Rolling back past this release strands queued notifications.** Every queued notification now travels in `App\Notifications\SendQueuedNotificationsWithLog`, which an older image does not have: any notification still in `jobs` fails three times with "Job is incomplete class" and lands in `failed_jobs`, its email-log row stays `queued`, and a job that failed under Plan 7 cannot be retried on the old image either. If you can, wait until `queue:monitor database:default` prints `[0] OK` before rolling back; otherwise `queue:retry` those jobs by id once you have rolled forward again. The runbook's "Rollback" section says the same.
+
+<the session's pull-request attribution>
+````
 
 Expected: the pull request URL. CI runs `test`, `scripts`, `browser`, `image` and `smoke`; this plan expects all five green.
 
