@@ -1,0 +1,22 @@
+/*
+ * The one theme for all three panels (admin, organizer, reviewer), each of
+ * which registers it with ->viteTheme('resources/css/filament/theme.css').
+ *
+ * Written from vendor/filament/filament/stubs/ThemeCss.stub by hand rather
+ * than by `php artisan make:filament-theme`, which also runs
+ * `npm install tailwindcss@latest @tailwindcss/vite --save-dev` and would move
+ * package.json in a commit about a stylesheet.
+ *
+ * Filament's theme.css imports Tailwind with source(none), so
+ * nothing is scanned automatically: the two @source lines are the whole of
+ * where a panel utility class can come from. A class written anywhere else -
+ * resources/views/brand, a public view, app/Livewire - is not in this file.
+ *
+ * The Dockerfile's assets stage copies vendor/filament from the vendor stage
+ * and app/Filament from the context for these three lines;
+ * tests/Unit/DockerAssetsStageTest.php fails if it stops.
+ */
+@import '../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../app/Filament/**/*';
+@source '../../../resources/views/filament/**/*';

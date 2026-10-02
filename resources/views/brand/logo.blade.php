@@ -1,11 +1,13 @@
 {{--
     The CASS lock-up: the hummingbird mark beside the "CASS" wordmark.
 
-    Everything is inline-styled on purpose. This view is handed to Filament as
-    the panels' brand logo, and the panels compile their CSS from Filament's own
-    sources - `@source '../views'` in resources/css/app.css only reaches the
-    public site's stylesheet, so a Tailwind class written here would render
-    unstyled inside /admin and /org.
+    Everything is inline-styled on purpose. This one view is styled by two
+    stylesheets: the public layout's (resources/css/app.css) and, as the
+    brand logo, the panels' (resources/css/filament/theme.css, whose @source
+    stops at resources/views/filament). The two also disagree about `dark:` -
+    the panels' is Filament's `.dark` class, the public site's is the
+    operating system's preference - so a utility here would mean different
+    things on the two sides. An inline style means the same thing in both.
 
     The one rule that cannot be inlined is the dark-mode wordmark colour:
     Filament toggles a `dark` class on <html> (see

@@ -1,4 +1,13 @@
-@import 'tailwindcss';
+/*
+ * source(none): Tailwind scans the @source lines below and nothing else.
+ * Its automatic detection starts from the build's working directory and
+ * honours .gitignore, so a checkout scanned the whole repository while the
+ * image's assets stage scanned whatever that stage had copied - one commit,
+ * two different stylesheets, and a class used only in an unscanned directory
+ * missing from production alone. Named roots build the same file in both
+ * places; tests/Unit/DockerAssetsStageTest.php keeps the stage copying them.
+ */
+@import 'tailwindcss' source(none);
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 @import '@fontsource/ibm-plex-sans/400.css';
@@ -7,6 +16,7 @@
 @import '@fontsource/ibm-plex-mono/400.css';
 
 @source '../views';
+@source '../js';
 @source '../../app/Livewire';
 
 @theme {

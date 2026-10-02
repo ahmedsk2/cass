@@ -17,7 +17,7 @@ Conference Abstract Submission System. Multi-tenant Laravel 13 + Filament 5. Spe
 
 ## Commands
 
-- Tests: `php artisan test` (SQLite in-memory). MySQL suite: `docker compose -f docker-compose.dev.yml up -d` then `DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=cass DB_USERNAME=cass DB_PASSWORD=cass php artisan test`.
+- Tests: `npm run build` first, then `php artisan test` (SQLite in-memory). Public pages render `@vite`, and since Plan 7 every panel page asks the manifest for `resources/css/filament/theme.css`, so a missing or stale `public/build` fails with "Unable to locate file in Vite manifest". Stop `npm run dev` first: with `public/hot` present the panels link the dev server instead. MySQL suite: `docker compose -f docker-compose.dev.yml up -d` then `DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_DATABASE=cass DB_USERNAME=cass DB_PASSWORD=cass php artisan test`.
 - Static analysis: `./vendor/bin/phpstan analyse`. Style: `./vendor/bin/pint --test`.
 - Dev server: `composer run dev` (or `php artisan serve`), Mailpit UI at http://localhost:8025.
 

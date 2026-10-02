@@ -29,12 +29,10 @@
         </x-filament::section>
 
         {{--
-            Inline styles, not Tailwind utilities: a Filament panel loads only
-            Filament's precompiled CSS, which contains theme variables and
-            fi-* component classes and no general utilities, and this panel has
-            no custom theme (`->viteTheme()`). `flex`, `h-24`, `items-end` and
-            `bg-primary-500` would all be no-ops here, so the spec 5.7
-            sparkline would render as invisible full-width blocks.
+            Inline styles. They were the only option until Plan 7 gave the
+            panels a theme (resources/css/filament/theme.css); utilities work
+            here now, but each bar's height is data, which only a style
+            attribute can carry, so the sparkline stays as it is.
             `--primary-500` is a real colour value Filament emits on the page.
         --}}
         <x-filament::section :heading="__('public.short_link.scans_heading')">

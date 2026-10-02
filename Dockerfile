@@ -12,20 +12,32 @@
 # .github/dependabot.yml raises a weekly pull request when any of these moves.
 # Do not "unpin to get the security fix" - let Dependabot open the PR, so the
 # change is reviewed and the digest stays recorded.
-FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS assets
-WORKDIR /build
-COPY package*.json vite.config.js ./
-RUN npm ci
-COPY resources ./resources
-COPY public ./public
-RUN npm run build
-
 FROM composer:2@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 AS vendor
 WORKDIR /build
 COPY composer.json composer.lock ./
 # intl and gd are installed in the runtime stage; the platform check is waived only here.
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-progress \
     --ignore-platform-req=ext-intl --ignore-platform-req=ext-gd
+
+# After `vendor`, because COPY --from names an EARLIER stage: the panel theme
+# (resources/css/filament/theme.css) @imports Filament's own CSS out of
+# vendor/filament, and .dockerignore keeps vendor out of the build context.
+# Every directory a stylesheet @sources is copied in too - Tailwind scans a
+# missing one as empty and builds green, so a class used only there would be
+# absent in production and present everywhere else: app/Livewire for
+# resources/css/app.css, app/Filament for the theme.
+# tests/Unit/DockerAssetsStageTest.php holds this list to the @source lines.
+# npm ci runs before any of it, so its layer survives a PHP-only change.
+FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS assets
+WORKDIR /build
+COPY package*.json vite.config.js ./
+RUN npm ci
+COPY resources ./resources
+COPY public ./public
+COPY app/Filament ./app/Filament
+COPY app/Livewire ./app/Livewire
+COPY --from=vendor /build/vendor/filament ./vendor/filament
+RUN npm run build
 
 FROM php:8.4-fpm-alpine@sha256:49734670eccf414af884c2a0c2e558401e228615f8028f1c9fca30a0d4fb1bc2 AS runtime
 RUN apk add --no-cache nginx supervisor su-exec icu-libs libpng libjpeg-turbo freetype libzip mysql-client tzdata \

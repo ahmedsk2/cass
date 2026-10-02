@@ -107,3 +107,22 @@ it('renders a panel login with filament own inline scripts intact', function () 
         ->and($result['hasLivewire'])->toBeTrue()
         ->and($result['inlineRan'])->toBeFalse();
 })->group('browser');
+
+it('applies a panel theme utility on a panel page under the policy', function () {
+    // Plan 7 Task 1: the panels load resources/css/filament/theme.css as a
+    // Vite <link> carrying the request nonce. If style-src refused it, or the
+    // panel were still on Filament's precompiled stylesheet - which has no
+    // general utilities - this class would compute to nothing. bg-amber-50 is
+    // in the theme because the organizer dashboard's pending banner uses it.
+    $background = visit('/org/login')->assertSee('CASS')->script(<<<'JS'
+(() => {
+    const probe = document.createElement('div');
+    probe.className = 'bg-amber-50';
+    document.body.appendChild(probe);
+
+    return getComputedStyle(probe).backgroundColor;
+})()
+JS);
+
+    expect($background)->not->toBe('rgba(0, 0, 0, 0)');
+})->group('browser');

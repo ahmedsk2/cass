@@ -96,7 +96,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
    "no decision yet" block. Turn auto-deploy off for this release and run
    `migrate --force` the moment the new container is healthy, then run the
    `cass:rescore` backfill described under "Scoring, ranking and decisions".
-4. Check https://cass.towardpcc.com/up returns 200, then open the landing page and `/org/login`. **`/org/login` must be styled**: this release is the first image that runs `filament:assets` and publishes Livewire's script, so `/css/filament/filament/app.css` and `/vendor/livewire/livewire.min.js` should both return 200. Cloudflare may still be serving the old 404s — purge `/css/filament/*`, `/js/filament/*`, `/fonts/filament/*` and `/vendor/livewire/*` if so.
+4. Check https://cass.towardpcc.com/up returns 200, then open the landing page and `/org/login`. **`/org/login` must be styled**: this release is the first image that runs `filament:assets` and publishes Livewire's script, so `/vendor/livewire/livewire.min.js` should return 200, and so must the `/build/assets/theme-<hash>.css` that the page source links: since Plan 7 that is the panels' only stylesheet. `/css/filament/filament/app.css` is still published, but no panel loads it. Cloudflare may still be serving the old 404s — purge `/css/filament/*`, `/js/filament/*`, `/fonts/filament/*` and `/vendor/livewire/*` if so.
 5. Time the public conference page after the deploy. Spec section 10 gives it a 300 ms server budget, which is the reason it is plain Blade instead of Livewire.
 
    ```bash

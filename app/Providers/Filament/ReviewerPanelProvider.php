@@ -44,6 +44,7 @@ class ReviewerPanelProvider extends PanelProvider
         return $panel
             ->id('reviewer')
             ->path('review')
+            ->viteTheme('resources/css/filament/theme.css')
             ->login(Login::class)
             ->passwordReset()
             ->emailVerification()
