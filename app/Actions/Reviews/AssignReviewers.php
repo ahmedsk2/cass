@@ -6,6 +6,7 @@ namespace App\Actions\Reviews;
 
 use App\Enums\ReviewerStatus;
 use App\Enums\ReviewMode;
+use App\Enums\ReviewStatus;
 use App\Exceptions\ReviewNotAcceptable;
 use App\Models\ReviewAssignment;
 use App\Models\Submission;
@@ -55,6 +56,22 @@ class AssignReviewers
                 $reasons[] = __('reviewer.assign.errors.not_a_reviewer');
                 break;
             }
+        }
+
+        // Owner decision (launch checklist section 1), spec 5.5: assignments
+        // change "until the review is submitted". Dropping a reviewer who has
+        // submitted would not take the review out of the score - the ranking
+        // reads `reviews` - so it could only make the coverage summary wrong.
+        $removing = array_values(array_diff(
+            $submission->reviewAssignments()->pluck('reviewer_user_id')->map('intval')->all(),
+            array_map('intval', $reviewerUserIds),
+        ));
+
+        if ($removing !== [] && $submission->reviews()
+            ->whereIn('reviewer_user_id', $removing)
+            ->where('status', ReviewStatus::Submitted->value)
+            ->exists()) {
+            $reasons[] = __('reviewer.assign.errors.already_reviewed');
         }
 
         return array_values(array_unique($reasons));
