@@ -16,10 +16,10 @@ enum ReviewQuestionType: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Likert => 'Rating scale',
-            self::Text => 'Free text comment',
-            self::Boolean => 'Yes / no',
-            self::Select => 'Choose one from a list',
+            self::Likert => __('enums.review_question_type.likert'),
+            self::Text => __('enums.review_question_type.text'),
+            self::Boolean => __('enums.review_question_type.boolean'),
+            self::Select => __('enums.review_question_type.select'),
         };
     }
 

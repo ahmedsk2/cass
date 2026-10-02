@@ -14,8 +14,8 @@ enum ReviewMode: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::OpenPool => 'Open pool - every reviewer sees every abstract',
-            self::Assigned => 'Assigned - each abstract goes to named reviewers',
+            self::OpenPool => __('enums.review_mode.open_pool'),
+            self::Assigned => __('enums.review_mode.assigned'),
         };
     }
 

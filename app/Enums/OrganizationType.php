@@ -17,11 +17,11 @@ enum OrganizationType: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Society => 'Scientific society or association',
-            self::Hospital => 'Hospital or health cluster',
-            self::University => 'University or college',
-            self::Company => 'Company or agency',
-            self::Other => 'Other',
+            self::Society => __('enums.organization_type.society'),
+            self::Hospital => __('enums.organization_type.hospital'),
+            self::University => __('enums.organization_type.university'),
+            self::Company => __('enums.organization_type.company'),
+            self::Other => __('enums.organization_type.other'),
         };
     }
 }

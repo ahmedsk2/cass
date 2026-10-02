@@ -24,6 +24,74 @@ return [
         'done' => 'Purged :name — :rows rows and :files files removed.',
     ],
 
+    // The three tables Plans 1 and 2 wrote before this file existed. Eight of
+    // their columns and all three status filters had no label at all and
+    // printed one Filament made up from the column name ("Name", "Status",
+    // "Type", "Country", "Subject"); those are keys now too, with the same
+    // words. `organizations` is the list and its two review actions.
+    'conferences' => [
+        'columns' => [
+            'name' => 'Name',
+            'organization' => 'Organization',
+            'status' => 'Status',
+            'abstracts' => 'Abstracts',
+            'decided' => 'Decided',
+            'notified' => 'Letters sent',
+            'deadline' => 'Deadline',
+            'created' => 'Created',
+        ],
+        'filters' => [
+            'status' => 'Status',
+        ],
+        'not_set' => 'Not set',
+    ],
+
+    'organizations' => [
+        'columns' => [
+            'name' => 'Name',
+            'type' => 'Type',
+            'country' => 'Country',
+            'owner' => 'Owner',
+            'status' => 'Status',
+            'registered' => 'Registered',
+        ],
+        'filters' => [
+            'status' => 'Status',
+        ],
+        'approve' => [
+            'action' => 'Approve',
+            'heading' => 'Approve this organization?',
+            'description' => 'The owner will be emailed and can publish conferences immediately.',
+            'done' => ':name approved',
+        ],
+        'reject' => [
+            'action' => 'Reject',
+            'reason' => 'Reason sent to the owner',
+            'done' => ':name rejected',
+        ],
+    ],
+
+    'email_log' => [
+        'columns' => [
+            'queued' => 'Queued',
+            'to' => 'To',
+            'subject' => 'Subject',
+            'status' => 'Status',
+            'template' => 'Template',
+            'sent_by' => 'Sent by',
+            'organization' => 'Organization',
+            'sent' => 'Sent',
+        ],
+        'filters' => [
+            'status' => 'Status',
+            'organization' => 'Organization',
+        ],
+        // An email with no organization: a password reset, a registration
+        // notice to the platform admin.
+        'platform' => 'Platform',
+        'empty' => 'Nothing sent yet',
+    ],
+
     'submissions' => [
         'title' => 'Abstracts',
         'columns' => [

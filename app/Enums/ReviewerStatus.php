@@ -15,8 +15,8 @@ enum ReviewerStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Active => 'Active',
-            self::Removed => 'Removed',
+            self::Active => __('enums.reviewer_status.active'),
+            self::Removed => __('enums.reviewer_status.removed'),
         };
     }
 

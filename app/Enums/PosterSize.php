@@ -14,8 +14,8 @@ enum PosterSize: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::A4 => 'A4 poster (210 x 297 mm)',
-            self::A3 => 'A3 poster (297 x 420 mm)',
+            self::A4 => __('enums.poster_size.a4'),
+            self::A3 => __('enums.poster_size.a3'),
         };
     }
 

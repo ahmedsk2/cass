@@ -29,33 +29,37 @@ class PublishConference
         $organization = $conference->organization;
 
         if ($organization->status === OrganizationStatus::Pending) {
-            $reasons[] = 'Your organization is still waiting for platform approval. You can publish as soon as it is approved.';
+            $reasons[] = __('organizer.publish.errors.pending');
         }
 
         if ($organization->status === OrganizationStatus::Suspended) {
-            $reasons[] = 'This organization is suspended, so its conferences cannot be published.';
+            $reasons[] = __('organizer.publish.errors.suspended');
         }
 
         if ($conference->submission_opens_at === null || $conference->submission_deadline === null) {
-            $reasons[] = 'Set both a submission opening date and a submission deadline.';
+            $reasons[] = __('organizer.publish.errors.no_window');
         } else {
             if ($conference->submission_deadline->isPast()) {
-                $reasons[] = 'The submission deadline is in the past. Choose a future date and time.';
+                $reasons[] = __('organizer.publish.errors.deadline_past');
             }
 
             if ($conference->submission_deadline->lessThanOrEqualTo($conference->submission_opens_at)) {
-                $reasons[] = 'The submission deadline must come after the submission opening date.';
+                $reasons[] = __('organizer.publish.errors.deadline_order');
             }
         }
 
         if (($conference->reviewForm()->first()?->questions()->count() ?? 0) === 0) {
-            $reasons[] = 'The review form has no questions yet. Add at least one before publishing.';
+            $reasons[] = __('organizer.publish.errors.no_questions');
         }
 
         if ($conference->status === ConferenceStatus::Archived) {
-            $reasons[] = 'An archived conference cannot be published again.';
+            $reasons[] = __('organizer.publish.errors.archived');
         } elseif (! $conference->status->canTransitionTo(ConferenceStatus::Open)) {
-            $reasons[] = 'A conference that is '.strtolower($conference->status->getLabel()).' cannot be opened for submissions.';
+            // mb_strtolower() and a placeholder, the shape StartReviewing and
+            // MarkDecided already use for the same sentence.
+            $reasons[] = __('organizer.publish.errors.wrong_status', [
+                'status' => mb_strtolower($conference->status->getLabel()),
+            ]);
         }
 
         return $reasons;

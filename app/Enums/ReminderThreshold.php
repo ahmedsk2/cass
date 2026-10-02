@@ -25,10 +25,10 @@ enum ReminderThreshold: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Days7 => '7 days before the deadline',
-            self::Days3 => '3 days before the deadline',
-            self::Days1 => '1 day before the deadline',
-            self::Overdue => 'After the deadline',
+            self::Days7 => __('enums.reminder_threshold.days_7'),
+            self::Days3 => __('enums.reminder_threshold.days_3'),
+            self::Days1 => __('enums.reminder_threshold.days_1'),
+            self::Overdue => __('enums.reminder_threshold.overdue'),
         };
     }
 

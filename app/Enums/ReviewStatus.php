@@ -15,8 +15,8 @@ enum ReviewStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Draft => 'Draft',
-            self::Submitted => 'Submitted',
+            self::Draft => __('enums.review_status.draft'),
+            self::Submitted => __('enums.review_status.submitted'),
         };
     }
 

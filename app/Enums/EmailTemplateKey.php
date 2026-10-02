@@ -32,18 +32,18 @@ enum EmailTemplateKey: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::SubmissionReceived => 'Abstract received',
-            self::SubmissionDraftSaved => 'Draft saved',
-            self::ReviewerInvitation => 'Reviewer invitation',
-            self::ReviewerReminder => 'Reviewer reminder',
-            self::ReviewerOverdue => 'Reviewer overdue',
-            self::DecisionAcceptedOral => 'Decision: accepted for oral presentation',
-            self::DecisionAcceptedPoster => 'Decision: accepted for poster',
-            self::DecisionWaitlisted => 'Decision: waitlisted',
-            self::DecisionRejected => 'Decision: not accepted',
-            self::OrganizationApproved => 'Organization approved',
-            self::OrganizationRejected => 'Organization rejected',
-            self::OrganizationSuspended => 'Organization suspended',
+            self::SubmissionReceived => __('enums.email_template_key.submission_received'),
+            self::SubmissionDraftSaved => __('enums.email_template_key.submission_draft_saved'),
+            self::ReviewerInvitation => __('enums.email_template_key.reviewer_invitation'),
+            self::ReviewerReminder => __('enums.email_template_key.reviewer_reminder'),
+            self::ReviewerOverdue => __('enums.email_template_key.reviewer_overdue'),
+            self::DecisionAcceptedOral => __('enums.email_template_key.decision_accepted_oral'),
+            self::DecisionAcceptedPoster => __('enums.email_template_key.decision_accepted_poster'),
+            self::DecisionWaitlisted => __('enums.email_template_key.decision_waitlisted'),
+            self::DecisionRejected => __('enums.email_template_key.decision_rejected'),
+            self::OrganizationApproved => __('enums.email_template_key.organization_approved'),
+            self::OrganizationRejected => __('enums.email_template_key.organization_rejected'),
+            self::OrganizationSuspended => __('enums.email_template_key.organization_suspended'),
         };
     }
 
