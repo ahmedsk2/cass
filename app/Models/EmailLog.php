@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use Symfony\Component\Uid\Ulid;
 
 class EmailLog extends Model
 {
@@ -47,6 +48,30 @@ class EmailLog extends Model
     public function getRouteKeyName(): string
     {
         return 'ulid';
+    }
+
+    /**
+     * The `ulid` of the row that records one notification: the notification's
+     * own id - a UUID Laravel mints per recipient before it queues anything
+     * (NotificationSender::queueNotification()) - with the same 128 bits
+     * written the way this column writes them. RecordOutgoingEmail reads that
+     * id from the message data and SendQueuedNotificationsWithLog::failed()
+     * from the job, so both ends find the row without a column of their own,
+     * and a notification's second and third tries find the row its first one
+     * wrote.
+     *
+     * Such a ULID's leading 48 bits are random rather than a timestamp.
+     * Nothing reads them: the admin panel sorts on created_at.
+     *
+     * Null for anything that is not a UUID - a Mailable, a raw send, or a
+     * notification that chose an id of its own - which then gets an ordinary
+     * random row exactly as before.
+     */
+    public static function ulidForNotification(mixed $notificationId): ?string
+    {
+        return is_string($notificationId) && Str::isUuid($notificationId)
+            ? (string) Ulid::fromRfc4122($notificationId)
+            : null;
     }
 
     /**

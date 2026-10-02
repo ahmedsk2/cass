@@ -238,12 +238,27 @@ The three statuses mean exactly this:
 | Status | Meaning |
 |---|---|
 | `sent` | The transport accepted the message. Not the same as delivered — check the mailbox's own logs for a bounce. |
-| `failed` | The queued job threw, and `error` holds the exception message. Only templated mail (`App\Mail\TemplatedMail`) can reach this state: it has a `failed()` hook. |
+| `failed` | The queued job threw on its last try (the worker makes three), and `error` holds the exception message. Templated mail is marked by `TemplatedMail::failed()`; every queued notification — Filament's password-reset and verification mail included — by `App\Notifications\SendQueuedNotificationsWithLog::failed()`. |
 | `queued` | The row was written and the job has not reported back. A few seconds is normal. Hours is not. |
 
-A row **stuck at `queued`** is either a stopped queue worker or a *notification*
-that failed: `Illuminate\Notifications\Notification` has no per-message failure
-hook, so a transport error on one leaves its row where it was. Check both:
+One templated email or notification is one row, however many tries it takes.
+A notification's row is keyed by the notification itself, so its second and
+third tries — and a later `queue:retry` — find the row the first try wrote: a
+message that went through on its second try reads `sent`, not `queued` beside
+a `sent`. A row that has gone `failed` keeps reading `failed` after a
+`queue:retry` delivers it, exactly as a retried templated email does (see
+"Sending decision emails"); judge a retry by the worker and the mailbox.
+
+A row **stuck at `queued`** is a stopped queue worker, with three exceptions.
+`App\Mail\ContactMessage`, the public contact form, has no `failed()` hook:
+each of its tries writes its own `queued` row, a final failure marks none of
+them, and the job is in `queue:failed`. A notification first tried before the
+Plan 7 release keeps that try's `queued` row whatever its later tries do,
+because rows were not keyed by the notification then, and a notification that
+failed for good before the release stays `queued` for good; judge those by
+`queue:failed` (which keeps a failure for 720 hours) and the mailbox. And a
+notification that throws before it is rendered has **no row at all** — a bug
+in the code, not an outage — and is only in `queue:failed`. Check both:
 
 ```bash
 C=$(cass_container app)
@@ -1024,6 +1039,16 @@ renewing a certificate for a name nobody uses.
 ## Rollback
 
 Coolify -> Deployments -> redeploy the previous successful build. Migrations are additive; do not roll back the schema without a backup restore.
+
+Rolling back to an image older than Plan 7: every queued notification travels
+in `App\Notifications\SendQueuedNotificationsWithLog`, which an older image
+does not have. Any notification still in `jobs` then fails three times with
+"Job is incomplete class" and lands in `failed_jobs`, and its email-log row
+stays `queued`; a job that failed under Plan 7 and sits in `failed_jobs`
+cannot be retried there either. If you can, wait until
+`queue:monitor database:default` prints `[0] OK` (the drain under "Secret
+rotation") before rolling back; otherwise `queue:retry` those jobs by id once
+you have rolled forward again.
 
 ## Backups
 

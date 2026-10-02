@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Contracts\DnsResolver;
 use App\Listeners\RecordOutgoingEmail;
+use App\Notifications\SendQueuedNotificationsWithLog;
 use App\Support\ClientIp;
 use App\Support\Domains\SystemDnsResolver;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
 use Illuminate\Mail\Markdown;
+use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -28,9 +30,18 @@ class AppServiceProvider extends ServiceProvider
     {
         // The first container binding in this application, and the reason is
         // narrow: DnsResolver wraps dns_get_record(), a global function, which
-        // no test can substitute any other way. Everything else in app/ is
-        // resolved by autowiring and faked with $this->mock().
+        // no test can substitute any other way. Apart from the notification
+        // job below, everything else in app/ is resolved by autowiring and
+        // faked with $this->mock().
         $this->app->bind(DnsResolver::class, SystemDnsResolver::class);
+
+        // The second, and as narrow. NotificationSender::queueNotification()
+        // builds every queued notification's job through the container
+        // (vendor/.../Illuminate/Notifications/NotificationSender.php:285), so
+        // this one line gives every queued notification - including
+        // Filament's password-reset and verification mail, which this
+        // application cannot edit - a failed() that marks its email_logs row.
+        $this->app->bind(SendQueuedNotifications::class, SendQueuedNotificationsWithLog::class);
     }
 
     /**
