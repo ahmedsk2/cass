@@ -16,6 +16,7 @@ return [
         'nothing' => 'There is nothing left to remove.',
         'counts_heading' => 'What will be deleted',
         'files' => 'uploaded files',
+        'logo' => 'logo file on the public branding disk',
         'audit_note' => 'The audit log is kept: the record of who did what, including this purge, is not erased.',
         'confirm_label' => 'Type :word to confirm',
         'confirm_help' => 'That is the slug from the URL. Typing it is the confirmation.',
@@ -175,6 +176,36 @@ return [
             'status' => 'Status',
             'accepted' => 'Accepted',
             'removed' => 'Removed',
+        ],
+    ],
+
+    // The organization profile form (App\Filament\Schemas\OrganizationProfileForm).
+    // The organizer's tenant profile page renders it as well as the admin's
+    // edit page: one form, so one set of strings, here because the admin page
+    // is what made it shared.
+    'organization' => [
+        'profile_title' => 'Organization profile',
+        'logo_too_large' => 'This image is :width × :height pixels. A logo can be at most :max megapixels — resize it and upload it again.',
+        'form' => [
+            'details' => 'Details',
+            'name' => 'Name',
+            'slug' => 'Slug',
+            'slug_help' => 'Used in your public URLs. Contact us if it needs to change.',
+            'type' => 'Type',
+            'country' => 'Country',
+            'website' => 'Website',
+            'contact_email' => 'Contact email',
+            'contact_email_help' => 'How we reach you about your conferences. Use a shared inbox, not a personal address.',
+            'publish_contact_email' => 'Show this address on public conference pages',
+            'publish_contact_email_help' => 'Off by default. Anyone - including a scraper - can read an address printed on a public page.',
+            'branding' => 'Branding',
+            'logo' => 'Logo',
+            'logo_help' => 'PNG or JPEG, at most 2 MB and :max megapixels. A transparent background works best.',
+            'primary_color' => 'Primary color',
+            'primary_color_help' => 'Buttons and headings on your public pages. Must be readable on white.',
+            'accent_color' => 'Accent color',
+            'accent_color_help' => 'Links and highlights.',
+            'contrast' => 'This colour is too light to read on a white background. Choose a darker shade.',
         ],
     ],
 

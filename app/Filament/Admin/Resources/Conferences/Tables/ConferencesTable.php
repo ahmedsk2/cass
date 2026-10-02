@@ -123,7 +123,7 @@ class ConferencesTable
                 unset($counts['private files']);
 
                 Notification::make()->success()->title(__('admin.purge.done', [
-                    'name' => $name,
+                    'name' => e($name),
                     'rows' => number_format(array_sum($counts)),
                     'files' => number_format($files),
                 ]))->send();

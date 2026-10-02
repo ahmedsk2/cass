@@ -48,7 +48,10 @@ use Illuminate\Support\Facades\Storage;
  * risking, because content addressing means it belongs to exactly one row and
  * nothing will ever reference it again. That is also why PurgeConference has
  * two entry points: rows() deletes rows and *returns* the paths, so this class
- * can do one disk pass after its own transaction commits.
+ * can do one disk pass after its own transaction commits. The organization's
+ * logo on the public `branding` disk goes in the same pass, through
+ * DeleteOrganizationLogo - the rule the profile form's logo replacement uses -
+ * and is reported as `branding files` beside `private files`.
  *
  * Every delete here is a **mass** delete through the query builder, so no model
  * event fires: nothing writes an activity entry per row, ReviewQuestion's
@@ -76,7 +79,10 @@ use Illuminate\Support\Facades\Storage;
  */
 final class PurgeOrganization
 {
-    public function __construct(private readonly PurgeConference $conferences) {}
+    public function __construct(
+        private readonly PurgeConference $conferences,
+        private readonly DeleteOrganizationLogo $logos,
+    ) {}
 
     /**
      * @return array<string, int> what was deleted, keyed by table, in the order
@@ -91,6 +97,10 @@ final class PurgeOrganization
         }
 
         $conferences = Conference::withTrashed()->where('organization_id', $organizationId)->get();
+
+        // Read from the row, not the instance the caller holds: the purge
+        // removes what the database says, and the file goes after the commit.
+        $logo = Organization::withTrashed()->whereKey($organizationId)->value('logo_path');
 
         /** @var list<string> $paths */
         $paths = [];
@@ -143,6 +153,12 @@ final class PurgeOrganization
         }
 
         $result['private files'] = count($paths);
+
+        // The same pass, the same side of the commit. DeleteOrganizationLogo
+        // keeps a file another organization's row still points at, and never
+        // hands the disk a path Filament would not have written, so the count
+        // is what was actually released - and what preview() predicts.
+        $result['branding files'] = is_string($logo) && $this->logos->handle($logo) ? 1 : 0;
 
         // Plan 6 Task 4's own line, reachable only now that Task 1 has landed
         // App\Support\Domains\CustomDomains: the slug and the custom domain are
@@ -229,6 +245,12 @@ final class PurgeOrganization
         $counts['organization_members'] = OrganizationMember::query()->where('organization_id', $organizationId)->count();
         $counts['organizations'] = Organization::withTrashed()->whereKey($organizationId)->count();
         $counts['private files'] = $files;
+
+        // What handle() will release: a logo spelled as Filament writes one,
+        // which no other organization's row points at. Read from the row, as
+        // handle() reads it.
+        $logo = Organization::withTrashed()->whereKey($organizationId)->value('logo_path');
+        $counts['branding files'] = is_string($logo) && DeleteOrganizationLogo::isCanonical($logo) && ! $this->logos->stillUsed($logo, except: $organization) ? 1 : 0;
 
         return $counts;
     }

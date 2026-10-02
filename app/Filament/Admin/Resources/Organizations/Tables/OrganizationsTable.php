@@ -129,11 +129,15 @@ class OrganizationsTable
 
                 $name = (string) $record->name;
                 $counts = app(PurgeOrganization::class)->handle($record, $user);
-                $files = $counts['private files'] ?? 0;
-                unset($counts['private files']);
+                // Both disks are files, not rows: the private objects behind
+                // the abstracts and the logo on the public branding disk.
+                $files = ($counts['private files'] ?? 0) + ($counts['branding files'] ?? 0);
+                unset($counts['private files'], $counts['branding files']);
 
+                // Escaped: an anonymous registrant chooses the name, and the
+                // title is rendered through sanitizeHtml(), which keeps style.
                 Notification::make()->success()->title(__('admin.purge.done', [
-                    'name' => $name,
+                    'name' => e($name),
                     'rows' => number_format(array_sum($counts)),
                     'files' => number_format($files),
                 ]))->send();

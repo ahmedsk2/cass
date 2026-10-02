@@ -629,6 +629,9 @@ $plan7Sources = [
     // since Plan 6; it is here so this list's Blade branch has a file to read
     // from day one rather than first running on a later task's view.
     'resources/views/filament/admin/partials/purge-counts.blade.php',
+    'app/Filament/Schemas/OrganizationProfileForm.php',
+    'app/Filament/Organizer/Pages/Tenancy/EditOrganizationProfile.php',
+    'app/Filament/Admin/Resources/Organizations/Pages/EditOrganization.php',
 ];
 
 /**

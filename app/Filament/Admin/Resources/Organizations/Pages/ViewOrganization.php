@@ -6,6 +6,7 @@ namespace App\Filament\Admin\Resources\Organizations\Pages;
 
 use App\Filament\Admin\Resources\Organizations\OrganizationResource;
 use App\Filament\Admin\Resources\Organizations\Tables\OrganizationsTable;
+use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
 class ViewOrganization extends ViewRecord
@@ -15,6 +16,7 @@ class ViewOrganization extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            EditAction::make(),
             OrganizationsTable::approveAction(),
             OrganizationsTable::rejectAction(),
             OrganizationsTable::purgeAction(),
