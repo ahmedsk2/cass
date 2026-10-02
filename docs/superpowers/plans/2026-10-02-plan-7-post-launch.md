@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status: DRAFT, reviewed 2026-10-02.** Written task by task, with every task prototyped in a throwaway worktree off `main` (`45d2d8e`) and its full suite run green there. The adversarial review (CLAUDE.md, "Pipeline per plan") ran on 2026-10-02, including an executor that ran the tasks in order on SQLite and MySQL 8.4, and its editor's changes are applied in this text. The critic's verdict was **ready**: no blocker or major finding remains, and its six minor gaps are applied too. One thing waits on the owner before Task 1 runs: the one-line change to CLAUDE.md's test command (Task 1, Step 8).
+> **Status: DRAFT, reviewed 2026-10-02.** Written task by task, with every task prototyped in a throwaway worktree off `main` (`45d2d8e`) and its full suite run green there. The adversarial review (CLAUDE.md, "Pipeline per plan") ran on 2026-10-02, including an executor that ran the tasks in order on SQLite and MySQL 8.4, and its editor's changes are applied in this text. The critic's verdict was **ready**: no blocker or major finding remains, and its six minor gaps are applied too. The owner approved the one-line change to CLAUDE.md's test command (Task 1, Step 8) on 2026-10-02, so nothing blocks Task 1.
 
 **Goal:** CASS is live, and this plan closes the post-launch half of `docs/superpowers/plans/backlog.md` that needs no decision from the owner. When it is done, the three Filament panels share one Vite-built theme, so a utility class in a panel view finally does something, and the production image compiles byte-for-byte the CSS a checkout does. The platform admin can do the two things spec section 4 gives them and no screen offered: edit an organization's profile, branding and custom domain, and manage its members (change a role, remove a member, withdraw an invitation). A notification email that fails for good is marked `failed` in the email log instead of sitting at `queued`, every queued notification's payload is encrypted, abandoned Livewire uploads are swept every hour, and a hard purge takes the organization's logo with it. A reviewer can correct their own affiliation, the one input to spec 5.5's conflict rule. And every string the backlog's language entry names (enum labels, both export heading rows, three admin tables, the publishing blockers) lives in `lang/en`, with tests that prove the English did not change by a byte.
 
@@ -1117,7 +1117,7 @@ so `/vendor/livewire/livewire.min.js` should return 200, and so must the `/build
 
 The rest of the step, the Cloudflare purge list included, stays as it is.
 
-**CLAUDE.md is the owner's session guide: the orchestrator confirms this one-line change with the owner before Task 1 runs.** If the owner has not confirmed it, skip the CLAUDE.md block below, drop `CLAUDE.md` from this task's `git add` list, and leave the rule in decision 8 and the pull-request body.
+**CLAUDE.md is the owner's session guide. The owner approved this one-line change on 2026-10-02**, so the implementer makes it as written; nothing else in CLAUDE.md changes.
 
 `CLAUDE.md`, under **Commands** — the test command, because decision 8's rule now holds for every session, not only this plan's. Replace the line:
 
