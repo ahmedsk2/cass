@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Filament\Admin\Resources\Organizations;
 
+use App\Filament\Admin\Resources\Organizations\Pages\EditOrganization;
 use App\Filament\Admin\Resources\Organizations\Pages\ListOrganizations;
 use App\Filament\Admin\Resources\Organizations\Pages\ViewOrganization;
 use App\Filament\Admin\Resources\Organizations\RelationManagers\InvitationsRelationManager;
 use App\Filament\Admin\Resources\Organizations\RelationManagers\MembersRelationManager;
 use App\Filament\Admin\Resources\Organizations\Schemas\OrganizationInfolist;
 use App\Filament\Admin\Resources\Organizations\Tables\OrganizationsTable;
+use App\Filament\Schemas\OrganizationProfileForm;
 use App\Models\Organization;
 use App\Models\User;
 use BackedEnum;
@@ -66,6 +68,16 @@ class OrganizationResource extends Resource
         return OrganizationInfolist::configure($schema);
     }
 
+    /**
+     * The organizer's own profile form, not a second one: one set of rules
+     * (contrast, the 16 MP logo limit, the domain checks) for both panels.
+     * ViewOrganization keeps the infolist above.
+     */
+    public static function form(Schema $schema): Schema
+    {
+        return OrganizationProfileForm::configure($schema);
+    }
+
     public static function table(Table $table): Table
     {
         return OrganizationsTable::configure($table);
@@ -75,7 +87,9 @@ class OrganizationResource extends Resource
      * Spec section 4's platform-admin cell for "Manage organization members",
      * which had no screen: the organizer panel is membership-gated, so an admin
      * who is not a member of an organization could not see who is in it. Both
-     * managers are read-only by class.
+     * refuse Filament's own write actions (isReadOnly()); the three writes they
+     * do offer - change a role, remove a member, withdraw an invitation - are
+     * custom actions over ChangeMemberRole, RemoveMember and RevokeInvitation.
      *
      * @return array<int, class-string>
      */
@@ -92,6 +106,7 @@ class OrganizationResource extends Resource
         return [
             'index' => ListOrganizations::route('/'),
             'view' => ViewOrganization::route('/{record}'),
+            'edit' => EditOrganization::route('/{record}/edit'),
         ];
     }
 

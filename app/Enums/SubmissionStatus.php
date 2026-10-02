@@ -27,13 +27,13 @@ enum SubmissionStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Draft => 'Draft',
-            self::Submitted => 'Submitted',
-            self::Withdrawn => 'Withdrawn',
-            self::UnderReview => 'Under review',
-            self::Accepted => 'Accepted',
-            self::Rejected => 'Not accepted',
-            self::Waitlisted => 'Waitlisted',
+            self::Draft => __('enums.submission_status.draft'),
+            self::Submitted => __('enums.submission_status.submitted'),
+            self::Withdrawn => __('enums.submission_status.withdrawn'),
+            self::UnderReview => __('enums.submission_status.under_review'),
+            self::Accepted => __('enums.submission_status.accepted'),
+            self::Rejected => __('enums.submission_status.rejected'),
+            self::Waitlisted => __('enums.submission_status.waitlisted'),
         };
     }
 

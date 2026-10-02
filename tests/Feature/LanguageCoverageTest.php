@@ -2,11 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Actions\Submissions\ExportSubmissionsCsv;
+use App\Enums\Decision;
 use App\Enums\EmailTemplateKey;
 use App\Enums\InvitationStatus;
 use App\Enums\ReminderThreshold;
+use App\Models\Submission;
+use App\Support\Scoring\RankingRows;
+use Filament\Support\Contracts\HasLabel;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Lang;
+use Illuminate\Support\Str;
 
 /**
  * Spec section 10. This is the test that makes "add Arabic by copying lang/en"
@@ -574,4 +580,361 @@ it('resolves every translation key the php classes use, not only the ones in the
     // the case would pass while checking no key at all.
     expect($checked)->toBeGreaterThan(200)
         ->and($missing)->toBe([]);
+});
+
+/**
+ * Plan 7: the PHP classes every earlier sweep stopped at. The backlog named
+ * them - every enum's getLabel(), both export headings, the publishing
+ * checklist and the admin tables Plans 1 and 2 wrote - and none of them is a
+ * Blade view, which is why no $planNSources case above ever read a line of
+ * them: every visible-English case in this file skips a file that does not
+ * end in .blade.php.
+ *
+ * NOT here, on purpose:
+ * - app/Enums/Decision.php. Its label is `{{decision}}`'s value in every
+ *   decision letter, so it follows the letter's language rather than the
+ *   panel's and moves with spec section 14's bilingual templates (backlog).
+ *   The enum case below pins it as the one label still spelled out.
+ * - app/Enums/DemoStage.php and app/Enums/SubmissionWindow.php. Neither has
+ *   a label: DemoStage's values are the `--stage=` arguments an operator
+ *   types, and the public views turn SubmissionWindow into submission.window.*
+ *   keys themselves.
+ *
+ * Tasks 3 to 6 append their own files to the end of this list.
+ */
+$plan7Sources = [
+    'app/Enums/ConferenceStatus.php',
+    'app/Enums/CustomFieldType.php',
+    'app/Enums/EmailLogStatus.php',
+    'app/Enums/EmailTemplateKey.php',
+    'app/Enums/InvitationStatus.php',
+    'app/Enums/OrganizationRole.php',
+    'app/Enums/OrganizationStatus.php',
+    'app/Enums/OrganizationType.php',
+    'app/Enums/PosterSize.php',
+    'app/Enums/PresentationPreference.php',
+    'app/Enums/ReminderThreshold.php',
+    'app/Enums/ReviewMode.php',
+    'app/Enums/ReviewQuestionType.php',
+    'app/Enums/ReviewStatus.php',
+    'app/Enums/ReviewerStatus.php',
+    'app/Enums/SubmissionStatus.php',
+    'app/Support/Scoring/RankingRows.php',
+    'app/Actions/Submissions/ExportSubmissionsCsv.php',
+    'app/Actions/Conferences/PublishConference.php',
+    'app/Filament/Admin/Resources/Conferences/Tables/ConferencesTable.php',
+    'app/Filament/Admin/Resources/EmailLogs/Tables/EmailLogsTable.php',
+    'app/Filament/Admin/Resources/Organizations/Tables/OrganizationsTable.php',
+    // The purge modal both admin tables render. Its own words have been keys
+    // since Plan 6; it is here so this list's Blade branch has a file to read
+    // from day one rather than first running on a later task's view.
+    'resources/views/filament/admin/partials/purge-counts.blade.php',
+    'app/Filament/Schemas/OrganizationProfileForm.php',
+    'app/Filament/Organizer/Pages/Tenancy/EditOrganizationProfile.php',
+    'app/Filament/Admin/Resources/Organizations/Pages/EditOrganization.php',
+    'app/Filament/Admin/Resources/Organizations/RelationManagers/MembersRelationManager.php',
+    'app/Filament/Admin/Resources/Organizations/RelationManagers/InvitationsRelationManager.php',
+    // Task 6: the reviewer's own affiliation.
+    'app/Actions/Reviewers/UpdateReviewerAffiliation.php',
+    'app/Filament/Reviewer/Pages/EditProfile.php',
+];
+
+/**
+ * Literals in the files above that read as English and are not interface.
+ * Each entry is exact text, never a pattern, so a new hardcoded label in the
+ * same file is still caught.
+ */
+$plan7NotProse = [
+    // EmailTemplateKey::sampleValues() is the template editor's preview DATA:
+    // a person's name, an abstract title, a conference and a society name -
+    // things somebody types, which no translation changes - plus the two
+    // values that mirror what the application really substitutes. `deadline`
+    // is how SubmitAbstract formats it (`->format('j F Y, H:i')`, which is not
+    // localised), and `decision` is Decision::getLabel(), which stays English
+    // until the bilingual templates (see above). `reason` is what an admin
+    // types into the reject box.
+    'app/Enums/EmailTemplateKey.php' => [
+        'Dr Sara Al-Harbi',
+        'Dr Omar Khan',
+        'Early mobilisation after cardiac surgery',
+        'Gulf Pediatric Critical Care 2026',
+        'Gulf Pediatric Society',
+        '3 November 2026, 23:59 (Asia/Riyadh)',
+        'Accepted for oral presentation',
+        'The society could not be verified from the details given.',
+    ],
+];
+
+/**
+ * The visible text of a Blade view: the Plan 6 sweep, unchanged - compile,
+ * drop the PHP and the script/style bodies, then strip_tags(), plus the four
+ * attributes a reader or a screen reader is given.
+ *
+ * @return list<string>
+ */
+$plan7BladeText = static function (string $blade): array {
+    $stripped = (string) preg_replace([
+        '/<\?php.*?\?>/s',
+        '/<\?php.*$/s',
+        '/<script\b[^>]*>.*?<\/script>/s',
+        '/<style\b[^>]*>.*?<\/style>/s',
+    ], ' ', Blade::compileString($blade));
+
+    preg_match_all(
+        '/\b(?:placeholder|title|alt|aria-label)\s*=\s*"([^"]*)"|\b(?:placeholder|title|alt|aria-label)\s*=\s*\'([^\']*)\'/i',
+        $stripped,
+        $attributes,
+    );
+
+    $text = strip_tags($stripped)."\n".implode("\n", [...$attributes[1], ...$attributes[2]]);
+    $lines = [];
+
+    foreach (preg_split('/\r?\n/', $text) ?: [] as $line) {
+        $line = trim(preg_replace('/\s+/', ' ', $line) ?? '');
+
+        if ($line !== '') {
+            $lines[] = $line;
+        }
+    }
+
+    return $lines;
+};
+
+/**
+ * The string literals of a PHP file that read as English.
+ *
+ * Blade::compileString() has nothing to say about a class, so this reads
+ * PHP's own tokens. Comments and docblocks are never string tokens, and a key
+ * inside __('...') never reads as English, so neither needs handling. What is
+ * left is the shape of the literal itself:
+ *
+ * - a capitalised word on its own reads as English: 'Draft', 'Owner',
+ *   'Platform-wide', 'Decision:'. An identifier does not, even with capitals in
+ *   it: 'reviewAssignments', 'Content-Type', 'X-CASS-Log', 'Y-m-d-His',
+ *   'App\Filament\Admin', 'CASS';
+ * - a literal with a space in it reads as English when it holds a capitalised
+ *   word, or a word of two or more letters standing between spaces: 'Letters
+ *   sent', 'open for submissions', 'A4 poster (210 x 297 mm)'. A date format
+ *   does not ('j M Y, H:i'), and nor does a MIME type ('text/csv;
+ *   charset=UTF-8');
+ * - a fragment of an interpolated "..." string reads as English when a word
+ *   touches a space, because "{$record->name} approved" is a sentence whose
+ *   only literal word is lower-case, while "livewire-tmp/{$file}" is a path.
+ *
+ * Two places a sentence-shaped literal is still an identifier are skipped by
+ * position, not by list: an array key ('Content-Type' => ...,
+ * ['submissions as decided_count' => fn ...]) and a subscript
+ * ($counts['private files']). Anything else that reads as English and is not
+ * interface - an SQL fragment, a rel="" value - goes in $plan7NotProse, by
+ * exact text and with a reason, so a reviewer sees every exception.
+ *
+ * The blind spot, stated rather than hidden: ONE lower-case word on its own
+ * ('yes') is an identifier to these rules. The runtime cases - the enum and
+ * export cases below, and tests/Feature/Admin/AdminTableLanguageTest.php -
+ * are what cover that shape, and the labels Filament makes up from a column
+ * name, which no literal holds at all.
+ *
+ * @return list<string> "line: text"
+ */
+$plan7PhpProse = static function (string $php): array {
+    $tokens = array_values(array_filter(
+        token_get_all($php),
+        static fn (array|string $token): bool => ! is_array($token)
+            || ! in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true),
+    ));
+    $found = [];
+
+    foreach ($tokens as $i => $token) {
+        if (! is_array($token) || ! in_array($token[0], [T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE], true)) {
+            continue;
+        }
+
+        $previous = $tokens[$i - 1] ?? null;
+        $beforePrevious = $tokens[$i - 2] ?? null;
+        $next = $tokens[$i + 1] ?? null;
+
+        if (is_array($next) && $next[0] === T_DOUBLE_ARROW) {
+            continue;
+        }
+
+        if ($previous === '[' && $next === ']' && is_array($beforePrevious) && $beforePrevious[0] === T_VARIABLE) {
+            continue;
+        }
+
+        if ($token[0] === T_ENCAPSED_AND_WHITESPACE) {
+            $text = $token[1];
+            $prose = preg_match('/\s\p{L}{2,}|\p{L}{2,}\s/u', $text) === 1;
+        } else {
+            $text = substr($token[1], 1, -1);
+            $prose = preg_match('/\s/u', $text) === 1
+                ? preg_match('/(?<!\p{L})\p{Lu}\p{Ll}+|(?<!\S)\p{L}{2,}(?!\S)/u', $text) === 1
+                : preg_match('/^\p{Lu}\p{Ll}+(?:-\p{Ll}+)*\p{P}?$/u', $text) === 1;
+        }
+
+        if ($prose) {
+            $found[] = $token[2].': '.$text;
+        }
+    }
+
+    return $found;
+};
+
+it('resolves every translation key plan 7 uses', function () use ($plan7Sources) {
+    // The namespaces come from lang/en itself, as in the app-wide case above,
+    // so a later task that opens a new language file is checked without
+    // anybody remembering to widen a pattern. A key ending in a dot is built by
+    // concatenation and is skipped, as there.
+    $namespaces = collect(glob(lang_path('en/*.php')) ?: [])
+        ->map(fn (string $path): string => basename($path, '.php'))
+        ->implode('|');
+
+    $missing = [];
+    $checked = 0;
+
+    foreach ($plan7Sources as $relative) {
+        $path = base_path($relative);
+
+        expect(file_exists($path))->toBeTrue("Expected {$relative} to exist.");
+
+        preg_match_all(
+            '/(?:__|@lang|trans)\(\s*[\'"]((?:'.$namespaces.')\.[a-z0-9_.]+)[\'"]/',
+            (string) file_get_contents($path),
+            $matches,
+        );
+
+        foreach (array_unique($matches[1]) as $key) {
+            if (str_ends_with($key, '.')) {
+                continue;
+            }
+
+            $checked++;
+
+            if (! Lang::has($key)) {
+                $missing[] = "{$key} (used in {$relative})";
+            }
+        }
+    }
+
+    // 163 today: 67 enum labels, 32 export keys, 8 blockers, 52 keys on the
+    // three admin tables (16 of them the Plan 6 purge action's) and 4 in the
+    // purge modal. Later tasks only add to the list.
+    expect($checked)->toBeGreaterThanOrEqual(163)
+        ->and($missing)->toBe([]);
+});
+
+it('leaves no visible english in the files plan 7 swept', function () use ($plan7Sources, $plan7NotProse, $plan7BladeText, $plan7PhpProse) {
+    // Blade views get the Plan 6 sweep at its Plan 6 threshold - ONE word,
+    // with the same allow-list of things that are not prose. PHP files get
+    // the token sweep above. A later task may append either.
+    $allowed = ['CASS', 'KB', 'MB', 'PDF', '·', '–', '—'];
+    $offenders = [];
+
+    foreach ($plan7Sources as $relative) {
+        $source = (string) file_get_contents(base_path($relative));
+
+        if (str_ends_with($relative, '.blade.php')) {
+            foreach ($plan7BladeText($source) as $line) {
+                if (! in_array($line, $allowed, true)) {
+                    $offenders[] = "{$relative}: {$line}";
+                }
+            }
+
+            continue;
+        }
+
+        $excused = $plan7NotProse[$relative] ?? [];
+        $seen = [];
+
+        foreach ($plan7PhpProse($source) as $found) {
+            [, $text] = explode(': ', $found, 2);
+
+            if (in_array($text, $excused, true)) {
+                $seen[] = $text;
+            } else {
+                $offenders[] = "{$relative}:{$found}";
+            }
+        }
+
+        // An exception nobody needs any more is an exception nobody reviews:
+        // an entry whose text has left the file is reported too.
+        foreach (array_diff($excused, $seen) as $stale) {
+            $offenders[] = "{$relative}: '{$stale}' is excused in \$plan7NotProse but no longer in the file";
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});
+
+it('looks every enum label up rather than spelling it, except the decision', function () {
+    // A locale with no language file and no fallback, so __() hands back the
+    // key it was given. A label that comes back as a key was looked up; one
+    // that comes back as English was spelled out in the enum. Derived from
+    // the directory rather than the list above, so an enum a later task adds
+    // is inside the sweep on the day it is written.
+    app()->setLocale('xx');
+    app('translator')->setFallback('xx');
+
+    $spelled = [];
+    $checked = 0;
+
+    foreach (glob(app_path('Enums/*.php')) ?: [] as $path) {
+        $enum = 'App\\Enums\\'.basename($path, '.php');
+
+        if (! is_a($enum, HasLabel::class, true) || $enum === Decision::class) {
+            continue;
+        }
+
+        foreach ($enum::cases() as $case) {
+            $checked++;
+            $key = 'enums.'.Str::snake(class_basename($enum)).'.'.$case->value;
+
+            if ($case->getLabel() !== $key) {
+                $spelled[] = "{$enum}::{$case->name} is '{$case->getLabel()}', not {$key}";
+            }
+        }
+    }
+
+    // The exception, pinned so that translating it is a decision somebody
+    // makes on purpose: a decision letter's `{{decision}}` has to follow the
+    // LETTER's language, which is the bilingual-templates item of spec
+    // section 14, not this sweep.
+    expect($checked)->toBeGreaterThanOrEqual(67)
+        ->and($spelled)->toBe([])
+        ->and(Decision::AcceptedOral->getLabel())->toBe('Accepted for oral presentation');
+});
+
+it('looks both export heading rows up, and the yes and no inside a cell', function () {
+    // The same keyless locale as the enum case. The ranking headings are a
+    // plain list; the submission list is read off the streamed file, because
+    // its yes/no is a single lower-case word inside a data cell - the one
+    // shape the token sweep above cannot see.
+    app()->setLocale('xx');
+    app('translator')->setFallback('xx');
+
+    // Keys in MySQL's order: a json column hands an object back shorter key
+    // first, where SQLite keeps the order written, and the cell follows it.
+    $submission = Submission::factory()->submitted()->create([
+        'custom_field_values' => ['first_time' => false, 'needs_projector' => true],
+    ]);
+
+    $response = app(ExportSubmissionsCsv::class)
+        ->handle(Submission::query()->whereKey($submission->getKey()), 'submissions.csv');
+
+    ob_start();
+    $response->sendContent();
+    $csv = (string) ob_get_clean();
+
+    $rows = array_map(
+        static fn (string $line): array => str_getcsv($line, escape: ''),
+        preg_split('/\r?\n/', trim(substr($csv, 3))) ?: [],
+    );
+
+    $spelled = static fn (array $headings): array => array_values(array_filter(
+        $headings,
+        static fn (?string $heading): bool => preg_match('/^export\.headings\.[a-z_]+$/', (string) $heading) !== 1,
+    ));
+
+    expect($spelled(RankingRows::headers()))->toBe([])
+        ->and($spelled($rows[0]))->toBe([])
+        ->and($rows[1][13])->toBe('first_time: export.answers.no; needs_projector: export.answers.yes');
 });

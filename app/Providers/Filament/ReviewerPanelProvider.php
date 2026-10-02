@@ -6,6 +6,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Auth\Login;
 use App\Filament\Reviewer\Pages\Dashboard;
+use App\Filament\Reviewer\Pages\EditProfile;
 use App\Support\Panels\InitialsAvatarProvider;
 use App\Support\Panels\PanelSwitch;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
@@ -44,10 +45,14 @@ class ReviewerPanelProvider extends PanelProvider
         return $panel
             ->id('reviewer')
             ->path('review')
+            ->viteTheme('resources/css/filament/theme.css')
             ->login(Login::class)
             ->passwordReset()
             ->emailVerification()
-            ->profile()
+            // Filament's profile page plus the reviewer's own affiliation per
+            // conference (Plan 7 Task 6). The organizer and admin panels keep
+            // Filament's page unchanged.
+            ->profile(EditProfile::class)
             ->multiFactorAuthentication([
                 AppAuthentication::make()->recoverable(),
             ])

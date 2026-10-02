@@ -20,9 +20,9 @@ enum PresentationPreference: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Oral => 'Oral presentation',
-            self::Poster => 'Poster',
-            self::Either => 'Either is fine',
+            self::Oral => __('enums.presentation_preference.oral'),
+            self::Poster => __('enums.presentation_preference.poster'),
+            self::Either => __('enums.presentation_preference.either'),
         };
     }
 }

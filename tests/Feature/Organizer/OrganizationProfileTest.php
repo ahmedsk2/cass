@@ -14,6 +14,8 @@ use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
 use function Pest\Livewire\livewire;
 
+use Spatie\Activitylog\Models\Activity;
+
 beforeEach(function () {
     Storage::fake('branding');
     $this->org = Organization::factory()->approved()->create(['name' => 'Alpha Society']);
@@ -91,4 +93,45 @@ it('publishes the contact address only when the organizer opts in', function () 
     $this->org->refresh();
     expect($this->org->contact_email)->toBe('abstracts@alpha.example.org')
         ->and($this->org->publish_contact_email)->toBeTrue();
+});
+
+it('deletes the replaced logo from the branding disk and logs the organizer as the causer', function () {
+    Storage::disk('branding')->put('logos/old.png', 'old bytes');
+    // refresh(): the factory leaves the colours to their database defaults,
+    // and the form below is filled partially (see the contact-address case).
+    $this->org->forceFill(['logo_path' => 'logos/old.png'])->save();
+    $this->org->refresh();
+
+    livewire(EditOrganizationProfile::class)
+        // The browser's file picker removes the stored file before it uploads
+        // the new one; filling the field alone appends beside the old path.
+        ->fillForm(['logo_path' => []])
+        ->fillForm(['logo_path' => UploadedFile::fake()->image('new.png', 400, 200)])
+        ->call('save')
+        ->assertHasNoFormErrors();
+
+    $new = (string) $this->org->refresh()->logo_path;
+
+    expect($new)->not->toBe('logos/old.png');
+    Storage::disk('branding')->assertMissing('logos/old.png');
+    Storage::disk('branding')->assertExists($new);
+
+    $entry = Activity::query()->where('description', 'organization.profile_updated')->sole();
+
+    expect($entry->causer_id)->toBe($this->user->getKey())
+        ->and($entry->properties->get('changed'))->toBe(['logo_path']);
+});
+
+it('refuses a logo above 16 megapixels at upload, with the reason', function () {
+    // 4001 x 4000 is 16,004,000 pixels: one row over the line that
+    // GenerateConferencePoster::logoDataUri() silently drops a logo at.
+    $this->org->refresh();
+
+    livewire(EditOrganizationProfile::class)
+        ->fillForm(['logo_path' => UploadedFile::fake()->createWithContent('huge.png', blankPng(4001, 4000))])
+        ->call('save')
+        ->assertHasFormErrors(['logo_path'])
+        ->assertSee(__('admin.organization.logo_too_large', ['width' => '4,001', 'height' => '4,000', 'max' => 16]));
+
+    expect($this->org->refresh()->logo_path)->toBeNull();
 });

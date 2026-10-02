@@ -30,15 +30,15 @@ class OrganizationsTable
         return $table
             ->defaultSort('created_at', 'desc')
             ->columns([
-                TextColumn::make('name')->searchable()->sortable()->description(fn (Organization $record): string => $record->slug),
-                TextColumn::make('type')->badge(),
-                TextColumn::make('country')->formatStateUsing(fn (string $state): string => config('cass.countries')[$state] ?? $state),
-                TextColumn::make('owners.email')->label('Owner')->listWithLineBreaks(),
-                TextColumn::make('status')->badge()->sortable(),
-                TextColumn::make('created_at')->label('Registered')->since()->sortable(),
+                TextColumn::make('name')->label(__('admin.organizations.columns.name'))->searchable()->sortable()->description(fn (Organization $record): string => $record->slug),
+                TextColumn::make('type')->label(__('admin.organizations.columns.type'))->badge(),
+                TextColumn::make('country')->label(__('admin.organizations.columns.country'))->formatStateUsing(fn (string $state): string => config('cass.countries')[$state] ?? $state),
+                TextColumn::make('owners.email')->label(__('admin.organizations.columns.owner'))->listWithLineBreaks(),
+                TextColumn::make('status')->label(__('admin.organizations.columns.status'))->badge()->sortable(),
+                TextColumn::make('created_at')->label(__('admin.organizations.columns.registered'))->since()->sortable(),
             ])
             ->filters([
-                SelectFilter::make('status')->options(OrganizationStatus::class)->default(OrganizationStatus::Pending->value),
+                SelectFilter::make('status')->label(__('admin.organizations.filters.status'))->options(OrganizationStatus::class)->default(OrganizationStatus::Pending->value),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -51,36 +51,36 @@ class OrganizationsTable
     public static function approveAction(): Action
     {
         return Action::make('approve')
-            ->label('Approve')
+            ->label(__('admin.organizations.approve.action'))
             ->icon(Heroicon::OutlinedCheckCircle)
             ->color('success')
             ->requiresConfirmation()
-            ->modalHeading('Approve this organization?')
-            ->modalDescription('The owner will be emailed and can publish conferences immediately.')
+            ->modalHeading(__('admin.organizations.approve.heading'))
+            ->modalDescription(__('admin.organizations.approve.description'))
             ->visible(fn (Organization $record): bool => $record->status !== OrganizationStatus::Approved)
             ->action(function (Organization $record, ApproveOrganization $approve): void {
                 /** @var User $admin */
                 $admin = auth()->user();
                 $approve->handle($record, $admin);
-                Notification::make()->success()->title("{$record->name} approved")->send();
+                Notification::make()->success()->title(__('admin.organizations.approve.done', ['name' => e((string) $record->name)]))->send();
             });
     }
 
     public static function rejectAction(): Action
     {
         return Action::make('reject')
-            ->label('Reject')
+            ->label(__('admin.organizations.reject.action'))
             ->icon(Heroicon::OutlinedXCircle)
             ->color('danger')
             ->visible(fn (Organization $record): bool => $record->status !== OrganizationStatus::Suspended)
             ->schema([
-                Textarea::make('reason')->label('Reason sent to the owner')->required()->minLength(10)->maxLength(500)->rows(3),
+                Textarea::make('reason')->label(__('admin.organizations.reject.reason'))->required()->minLength(10)->maxLength(500)->rows(3),
             ])
             ->action(function (Organization $record, array $data, RejectOrganization $reject): void {
                 /** @var User $admin */
                 $admin = auth()->user();
                 $reject->handle($record, $admin, $data['reason']);
-                Notification::make()->warning()->title("{$record->name} rejected")->send();
+                Notification::make()->warning()->title(__('admin.organizations.reject.done', ['name' => e((string) $record->name)]))->send();
             });
     }
 
@@ -129,11 +129,15 @@ class OrganizationsTable
 
                 $name = (string) $record->name;
                 $counts = app(PurgeOrganization::class)->handle($record, $user);
-                $files = $counts['private files'] ?? 0;
-                unset($counts['private files']);
+                // Both disks are files, not rows: the private objects behind
+                // the abstracts and the logo on the public branding disk.
+                $files = ($counts['private files'] ?? 0) + ($counts['branding files'] ?? 0);
+                unset($counts['private files'], $counts['branding files']);
 
+                // Escaped: an anonymous registrant chooses the name, and the
+                // title is rendered through sanitizeHtml(), which keeps style.
                 Notification::make()->success()->title(__('admin.purge.done', [
-                    'name' => $name,
+                    'name' => e($name),
                     'rows' => number_format(array_sum($counts)),
                     'files' => number_format($files),
                 ]))->send();

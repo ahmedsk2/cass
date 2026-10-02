@@ -100,6 +100,9 @@ return [
         'detail_choice' => 'Choose one of: :choices.',
         'detail_boolean' => 'Choose yes or no.',
         'detail_text' => 'Write something, or ask the organizers to make this question optional.',
+        'affiliation_not_yours' => 'You can only change your own affiliation.',
+        'affiliation_removed' => 'You no longer review for this conference, so its affiliation cannot be changed.',
+        'affiliation_too_long' => 'An affiliation can be at most :max characters.',
     ],
 
     'mail' => [
@@ -174,6 +177,27 @@ return [
     'switch' => [
         'to_reviewer' => 'Switch to reviewing',
         'to_organizer' => 'Switch to organizing',
+    ],
+
+    // The reviewer's own affiliation, per conference, on the reviewer panel's
+    // profile page. Three strings are REUSED rather than copied: the field
+    // label is `fields.affiliation`, the column heading is
+    // `queue.columns.conference` and a refusal's title is `notices.refused`.
+    // `fields.affiliation_help` is not reused: it speaks to an organizer about
+    // "a reviewer".
+    'affiliation' => [
+        'heading' => 'Your affiliation for each conference',
+        'description' => 'Organizers use it to keep abstracts from your own institution away from you, so keep it current. Each conference has its own, because each organization may know you by a different one.',
+        'model' => 'affiliation',
+        'model_plural' => 'affiliations',
+        'none' => 'None given',
+        'edit' => 'Change',
+        'edit_heading' => 'Your affiliation for :conference',
+        'edit_description' => 'Changing it does not take you off abstracts already assigned to you. If you now share an institution with the authors of one of them, tell the organizers.',
+        'help' => 'Your institution, as you would write it on an abstract. Leave it empty if you have none.',
+        'saved' => 'Affiliation saved',
+        'empty_heading' => 'No conferences',
+        'empty_body' => 'When you accept an invitation to review, the conference appears here.',
     ],
 
     // Two of these sentences deliberately do NOT promise an email at the moment

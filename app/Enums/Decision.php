@@ -36,11 +36,12 @@ enum Decision: string implements HasColor, HasLabel
     /**
      * The label is what `{{decision}}` expands to in the decision email, so it
      * is a sentence fragment an author reads ("has been **accepted for oral
-     * presentation**"), not a panel word. It is deliberately NOT translated
-     * through __() here, for the same reason every other enum in this codebase
-     * is not: the language sweep of spec section 10 is a single backlog item
-     * covering all of them, and half-translating one enum is worse than
-     * translating none.
+     * presentation**"), not a panel word. It is the one enum label NOT looked
+     * up in lang/en/enums.php, deliberately: a letter's `{{decision}}` has to
+     * follow the language the LETTER is written in, not the language of
+     * whoever's panel sent it, and that is the bilingual-templates item of
+     * spec section 14 (backlog). tests/Feature/LanguageCoverageTest.php pins
+     * this exception, so translating it is a decision rather than a tidy-up.
      */
     public function getLabel(): string
     {

@@ -19,12 +19,12 @@ enum ConferenceStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Draft => 'Draft',
-            self::Open => 'Open for submissions',
-            self::Closed => 'Submissions closed',
-            self::Reviewing => 'Under review',
-            self::Decided => 'Decisions sent',
-            self::Archived => 'Archived',
+            self::Draft => __('enums.conference_status.draft'),
+            self::Open => __('enums.conference_status.open'),
+            self::Closed => __('enums.conference_status.closed'),
+            self::Reviewing => __('enums.conference_status.reviewing'),
+            self::Decided => __('enums.conference_status.decided'),
+            self::Archived => __('enums.conference_status.archived'),
         };
     }
 

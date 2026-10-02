@@ -13,14 +13,13 @@
             <p class="mt-1 text-sm">{{ __('public.dashboard.suspended_contact', ['email' => config('cass.platform_contact_email')]) }}</p>
         </div>
     @else
-        {{-- <x-filament::section>, not Tailwind utilities: a panel loads only
-             Filament's precompiled CSS, which has no general utilities, so
-             `rounded-xl border bg-white p-4` renders as nothing (the existing
-             pending and suspended banners above have the same problem - see
-             the backlog item about an organizer panel theme). --}}
+        {{-- Utilities work in the panels since Plan 7: every panel loads
+             resources/css/filament/theme.css, whose @source reaches this
+             directory. The two banners above were written that way in Plan 1
+             and rendered unstyled until then. --}}
         <x-filament::section>
-            <p style="font-weight:600">{{ __('public.dashboard.welcome_title', ['organization' => $this->getOrganization()->name]) }}</p>
-            <p style="margin-top:0.25rem;font-size:0.875rem">
+            <p class="font-semibold">{{ __('public.dashboard.welcome_title', ['organization' => $this->getOrganization()->name]) }}</p>
+            <p class="mt-1 text-sm">
                 {{ __('public.dashboard.welcome_body') }}
             </p>
         </x-filament::section>

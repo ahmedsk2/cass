@@ -96,7 +96,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
    "no decision yet" block. Turn auto-deploy off for this release and run
    `migrate --force` the moment the new container is healthy, then run the
    `cass:rescore` backfill described under "Scoring, ranking and decisions".
-4. Check https://cass.towardpcc.com/up returns 200, then open the landing page and `/org/login`. **`/org/login` must be styled**: this release is the first image that runs `filament:assets` and publishes Livewire's script, so `/css/filament/filament/app.css` and `/vendor/livewire/livewire.min.js` should both return 200. Cloudflare may still be serving the old 404s — purge `/css/filament/*`, `/js/filament/*`, `/fonts/filament/*` and `/vendor/livewire/*` if so.
+4. Check https://cass.towardpcc.com/up returns 200, then open the landing page and `/org/login`. **`/org/login` must be styled**: this release is the first image that runs `filament:assets` and publishes Livewire's script, so `/vendor/livewire/livewire.min.js` should return 200, and so must the `/build/assets/theme-<hash>.css` that the page source links: since Plan 7 that is the panels' only stylesheet. `/css/filament/filament/app.css` is still published, but no panel loads it. Cloudflare may still be serving the old 404s — purge `/css/filament/*`, `/js/filament/*`, `/fonts/filament/*` and `/vendor/livewire/*` if so.
 5. Time the public conference page after the deploy. Spec section 10 gives it a 300 ms server budget, which is the reason it is plain Blade instead of Livewire.
 
    ```bash
@@ -173,6 +173,23 @@ Back it up with the database, not separately: a file with no row is unreachable
 and a row with no file is a broken link, so the two have to be restored from the
 same moment.
 
+Every upload lands first in `storage/app/private/livewire-tmp`, and submitting
+the form *copies* it into place, so every file an author ever attached —
+submitted or abandoned — leaves a temporary copy behind. Livewire deletes the
+ones more than a day old only when the *next* upload finishes, so
+`cass:sweep-uploads` does the same thing every hour from the scheduler. It
+touches nothing outside that directory. If `cass:health` reports the private
+disk full, it is the first thing to run:
+
+```bash
+C=$(cass_container app)
+sudo docker exec "$C" su-exec app php artisan cass:sweep-uploads
+```
+
+An attachment left in an open form for more than a day is gone when the form is
+submitted — as it already was whenever another author's upload finished in the
+meantime, which is when Livewire sweeps.
+
 The request-body ceilings are `client_max_body_size 110m` (nginx) and
 `post_max_size=110M` (PHP), sized for the maximum ten files at 10 MB a
 conference may allow in **one** Livewire upload POST — Livewire sends every file
@@ -238,12 +255,27 @@ The three statuses mean exactly this:
 | Status | Meaning |
 |---|---|
 | `sent` | The transport accepted the message. Not the same as delivered — check the mailbox's own logs for a bounce. |
-| `failed` | The queued job threw, and `error` holds the exception message. Only templated mail (`App\Mail\TemplatedMail`) can reach this state: it has a `failed()` hook. |
+| `failed` | The queued job threw on its last try (the worker makes three), and `error` holds the exception message. Templated mail is marked by `TemplatedMail::failed()`; every queued notification — Filament's password-reset and verification mail included — by `App\Notifications\SendQueuedNotificationsWithLog::failed()`. |
 | `queued` | The row was written and the job has not reported back. A few seconds is normal. Hours is not. |
 
-A row **stuck at `queued`** is either a stopped queue worker or a *notification*
-that failed: `Illuminate\Notifications\Notification` has no per-message failure
-hook, so a transport error on one leaves its row where it was. Check both:
+One templated email or notification is one row, however many tries it takes.
+A notification's row is keyed by the notification itself, so its second and
+third tries — and a later `queue:retry` — find the row the first try wrote: a
+message that went through on its second try reads `sent`, not `queued` beside
+a `sent`. A row that has gone `failed` keeps reading `failed` after a
+`queue:retry` delivers it, exactly as a retried templated email does (see
+"Sending decision emails"); judge a retry by the worker and the mailbox.
+
+A row **stuck at `queued`** is a stopped queue worker, with three exceptions.
+`App\Mail\ContactMessage`, the public contact form, has no `failed()` hook:
+each of its tries writes its own `queued` row, a final failure marks none of
+them, and the job is in `queue:failed`. A notification first tried before the
+Plan 7 release keeps that try's `queued` row whatever its later tries do,
+because rows were not keyed by the notification then, and a notification that
+failed for good before the release stays `queued` for good; judge those by
+`queue:failed` (which keeps a failure for 720 hours) and the mailbox. And a
+notification that throws before it is rendered has **no row at all** — a bug
+in the code, not an outage — and is only in `queue:failed`. Check both:
 
 ```bash
 C=$(cass_container app)
@@ -363,8 +395,10 @@ never recovered.
   in CASS that grants verification that way, and it is why accepting while
   signed in as a *different* account is refused outright.
 - **The queued job payload carrying a token is encrypted.** `TemplatedMail`,
-  `ContactMessage` and `MemberInvitation` all implement `ShouldBeEncrypted`, so
-  the `command` blob in `jobs.payload` — and in `failed_jobs.payload`, which
+  `ContactMessage` and `MemberInvitation` all implement `ShouldBeEncrypted`, and
+  so does `SendQueuedNotificationsWithLog`, the job every queued notification
+  travels in (Filament's password reset, whose token is in its URL, included),
+  so the `command` blob in `jobs.payload` — and in `failed_jobs.payload`, which
   `queue:prune-failed --hours=720` keeps for 30 days, longer than the 14-day
   invitation expiry — is ciphertext under `APP_KEY` rather than a readable
   serialization. `tests/Feature/Security/QueuedMailPayloadTest.php` is what
@@ -1025,6 +1059,16 @@ renewing a certificate for a name nobody uses.
 
 Coolify -> Deployments -> redeploy the previous successful build. Migrations are additive; do not roll back the schema without a backup restore.
 
+Rolling back to an image older than Plan 7: every queued notification travels
+in `App\Notifications\SendQueuedNotificationsWithLog`, which an older image
+does not have. Any notification still in `jobs` then fails three times with
+"Job is incomplete class" and lands in `failed_jobs`, and its email-log row
+stays `queued`; a job that failed under Plan 7 and sits in `failed_jobs`
+cannot be retried there either. If you can, wait until
+`queue:monitor database:default` prints `[0] OK` (the drain under "Secret
+rotation") before rolling back; otherwise `queue:retry` those jobs by id once
+you have rolled forward again.
+
 ## Backups
 
 Spec section 8: nightly `mysqldump`, 14-day rotation, then the existing off-host
@@ -1173,7 +1217,7 @@ run. Check with `ls -ld /srv/backups/cass` and `ls -l /srv/backups/cass | head`.
 
 Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and the encrypted two-factor secrets; announce a re-login and re-enrolment.
 
-Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail implements ShouldBeEncrypted`), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database:default` should print `[database] default` with `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
+Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail` and `SendQueuedNotificationsWithLog` implement `ShouldBeEncrypted`, so that is every templated email and every notification), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database:default` should print `[database] default` with `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
 
 The `connection:queue` form is not optional here. `MonitorCommand::parseQueues()` splits each argument on `:` and, when there is no colon, reads the whole word as a **queue name** on the default connection — so `queue:monitor database` monitors a queue *called* `database`, which this application never dispatches to, and prints `[0] OK` over a full backlog. Every job in CASS goes to the `default` queue of the `database` connection (`config/queue.php:44`, `DB_QUEUE`), so `database:default` is the pair to ask about.
 
@@ -1247,7 +1291,7 @@ sudo docker exec "$C" su-exec app php artisan cass:health
 | `migrations` | the image deployed and nobody ran `migrate --force`. Every page touching a new column is 500ing. |
 | `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. |
 | `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. |
-| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. |
+| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
 | `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. |
 
 `--json` for a cron. It exits 1 if any row is red, so

@@ -13,6 +13,13 @@ use Illuminate\Support\Facades\Storage;
 
 class GenerateConferencePoster
 {
+    /**
+     * The largest logo, in pixels, that logoDataUri() will decode. The upload
+     * form refuses anything bigger (App\Filament\Schemas\OrganizationProfileForm),
+     * so the two can only disagree if one of them stops reading this constant.
+     */
+    public const MAX_LOGO_PIXELS = 16_000_000;
+
     public function __construct(private readonly GenerateConferenceQr $qr) {}
 
     /**
@@ -57,6 +64,9 @@ class GenerateConferencePoster
      * So the logo is normalised here instead: refused above 16 MP, scaled to
      * the height the template uses, flattened onto white and handed over as
      * JPEG, which dompdf embeds with addJpegFromFile and never decodes.
+     *
+     * Since Plan 7 the upload form refuses a logo above MAX_LOGO_PIXELS too, so
+     * the silent drop below only ever meets a logo stored before that.
      */
     public function logoDataUri(Conference $conference): ?string
     {
@@ -78,7 +88,7 @@ class GenerateConferencePoster
         // 16 MP is already about 128 MB of GD buffers to decode; a logo that
         // big is a mistake, and the poster is better off without it than
         // returning a 500.
-        if ($size === false || ($size[0] * $size[1]) > 16_000_000) {
+        if ($size === false || ($size[0] * $size[1]) > self::MAX_LOGO_PIXELS) {
             return null;
         }
 

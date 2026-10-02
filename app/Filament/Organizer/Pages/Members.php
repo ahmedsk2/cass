@@ -60,9 +60,10 @@ class Members extends Page implements HasTable
      * page lives in the membership-gated organizer panel
      * (User::canAccessPanel('organizer') is organizations()->exists(),
      * app/Models/User.php:70), so spec section 4's platform-admin cell for
-     * "Manage organization members" has no screen behind it - exactly as Plan 3
-     * left submissions. Plan 6 adds the read-only admin resources; it is in the
-     * backlog and in the "does NOT build" list, not a surprise.
+     * "Manage organization members" is not served here. It is served in the
+     * admin panel, by OrganizationResource's MembersRelationManager and
+     * InvitationsRelationManager (Plan 7 Task 4), through the same actions this
+     * page calls.
      */
     public static function canAccess(): bool
     {

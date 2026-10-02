@@ -24,15 +24,30 @@ use App\Support\Export\SpreadsheetCell;
  */
 final class RankingRows
 {
-    /** @return list<string> */
+    /**
+     * The words are lang/en/export.php's, shared with the submission-list
+     * export wherever the two print the same column; the order is this
+     * method's, because it is the file format and must match row() below.
+     *
+     * @return list<string>
+     */
     public static function headers(): array
     {
         return [
-            'Reference', 'Title', 'Track', 'Presentation preference',
-            'Score', 'Spread', 'Reviews',
-            'Status', 'Decision', 'Decision letter sent',
-            'Corresponding author', 'Corresponding email', 'All authors',
-            'Submitted at',
+            __('export.headings.reference'),
+            __('export.headings.title'),
+            __('export.headings.track'),
+            __('export.headings.presentation_preference'),
+            __('export.headings.score'),
+            __('export.headings.spread'),
+            __('export.headings.reviews'),
+            __('export.headings.status'),
+            __('export.headings.decision'),
+            __('export.headings.decision_letter_sent'),
+            __('export.headings.corresponding_author'),
+            __('export.headings.corresponding_email'),
+            __('export.headings.all_authors'),
+            __('export.headings.submitted_at'),
         ];
     }
 

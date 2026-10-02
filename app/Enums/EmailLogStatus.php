@@ -16,9 +16,9 @@ enum EmailLogStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Queued => 'Queued',
-            self::Sent => 'Sent',
-            self::Failed => 'Failed',
+            self::Queued => __('enums.email_log_status.queued'),
+            self::Sent => __('enums.email_log_status.sent'),
+            self::Failed => __('enums.email_log_status.failed'),
         };
     }
 

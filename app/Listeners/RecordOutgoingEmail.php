@@ -20,11 +20,13 @@ use Symfony\Component\Mime\Email;
  * which is what makes a header the correlation key rather than a static map
  * that would leak across a long-running queue worker.
  *
- * Failures: a templated send is marked failed by TemplatedMail::failed(). A
- * *notification* has no such hook, so a transport failure leaves its row at
- * `queued`. That is a known, documented gap (runbook, "Email triage"), not an
- * oversight: a row stuck at `queued` with no `sent_at` is exactly the signal
- * the admin panel's status filter exists to surface.
+ * Failures: a templated send is marked failed by TemplatedMail::failed(), and
+ * a queued notification by SendQueuedNotificationsWithLog::failed(). Both find
+ * a row they did not write by its `ulid`, which for a notification is the
+ * notification's own id (EmailLog::ulidForNotification()). The worker tries a
+ * job three times (docker/supervisord.conf) and every try renders a new
+ * message and fires MessageSending again, so a notification whose row already
+ * exists reuses it: one email, one row, whatever happened to it on the way.
  */
 class RecordOutgoingEmail
 {
@@ -47,8 +49,23 @@ class RecordOutgoingEmail
             return;
         }
 
+        $ulid = EmailLog::ulidForNotification($event->data['__laravel_notification_id'] ?? null);
+
+        // A second or third try of a notification, or a `queue:retry` of one
+        // that failed for good: the row is the first try's, and is left as it
+        // is. sent() flips it only from `queued` - so a retried failure keeps
+        // reading `failed`, exactly as a retried templated email does.
+        if ($ulid !== null && EmailLog::query()->where('ulid', $ulid)->exists()) {
+            $headers->addTextHeader(self::LOG_HEADER, $ulid);
+
+            return;
+        }
+
         $log = new EmailLog;
         $log->forceFill([
+            // Null for anything but a notification; the model's creating hook
+            // then mints a random ULID, as it always has.
+            'ulid' => $ulid,
             ...$this->context($event->message),
             'mailable' => $this->source($event->data),
             'to_email' => $this->firstRecipient($event->message),

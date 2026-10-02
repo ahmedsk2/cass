@@ -129,3 +129,25 @@ function scoredReview(
 
     return $review;
 }
+
+/**
+ * A well-formed PNG of any size that costs almost nothing to build or upload:
+ * 8-bit greyscale, every pixel black, so the deflated image data is a few
+ * kilobytes even at sixteen megapixels. GD is never involved -
+ * imagecreatetruecolor(4001, 4000) is a 64 MB buffer, and
+ * UploadedFile::fake()->image() would build exactly that - while getimagesize()
+ * reads the size from the IHDR chunk alone. Here rather than in a test file
+ * because both logo tests call it (see scoredReview() above for why).
+ */
+function blankPng(int $width, int $height): string
+{
+    $chunk = static fn (string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+
+    // Each row is one filter byte (0, "none") followed by one byte per pixel.
+    $rows = str_repeat("\0".str_repeat("\0", $width), $height);
+
+    return "\x89PNG\r\n\x1a\n"
+        .$chunk('IHDR', pack('NNCCCCC', $width, $height, 8, 0, 0, 0, 0))
+        .$chunk('IDAT', (string) gzcompress($rows, 9))
+        .$chunk('IEND', '');
+}

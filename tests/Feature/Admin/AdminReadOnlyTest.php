@@ -153,7 +153,7 @@ it('hangs members and invitations off the organization', function () {
     ])->assertSee('pending@example.org');
 });
 
-it('offers nothing that writes on any of the five relation managers or the review list', function (string $manager, string $owner, string $page) {
+it('offers no write on the five relation managers but the named ones that go through an action class', function (string $manager, string $owner, string $page, array $writes) {
     $table = livewire($manager, ['ownerRecord' => $this->{$owner}, 'pageClass' => $page])
         ->instance()
         ->getTable();
@@ -166,14 +166,17 @@ it('offers nothing that writes on any of the five relation managers or the revie
     // RelationManager adds CreateAction, EditAction and DeleteAction by
     // default, and every one of these parents' policies answers true for a
     // platform admin through before() - so the refusal is the class, not the
-    // policy.
-    expect(array_diff($names, ['view']))->toBe([]);
+    // policy. The writes that do exist are named here one by one: each is a
+    // custom Action calling an app/Actions class (Plan 7 Task 4), never a
+    // Filament built-in that would write the row directly.
+    expect(array_values(array_diff($names, ['view', ...$writes])))->toBe([])
+        ->and(array_values(array_intersect($writes, $names)))->toBe($writes);
 })->with([
-    [ReviewsRelationManager::class, 'submission', ViewSubmission::class],
-    [AssignmentsRelationManager::class, 'submission', ViewSubmission::class],
-    [ReviewersRelationManager::class, 'conference', ViewConference::class],
-    [MembersRelationManager::class, 'organization', ViewOrganization::class],
-    [InvitationsRelationManager::class, 'organization', ViewOrganization::class],
+    [ReviewsRelationManager::class, 'submission', ViewSubmission::class, []],
+    [AssignmentsRelationManager::class, 'submission', ViewSubmission::class, []],
+    [ReviewersRelationManager::class, 'conference', ViewConference::class, []],
+    [MembersRelationManager::class, 'organization', ViewOrganization::class, ['changeRole', 'remove']],
+    [InvitationsRelationManager::class, 'organization', ViewOrganization::class, ['revoke']],
 ]);
 
 it('refuses the review list to an organization owner', function () {

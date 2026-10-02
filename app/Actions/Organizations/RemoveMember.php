@@ -17,7 +17,10 @@ class RemoveMember
     public function blockers(Organization $organization, User $member, User $actor): array
     {
         $reasons = [];
-        $actorRole = $actor->roleIn($organization);
+        // authorityIn(), not roleIn(): a platform admin manages any
+        // organization's members with an owner's authority without joining it
+        // (Plan 7 Task 4). Every guard below still applies to them.
+        $actorRole = $actor->authorityIn($organization);
         $currentRole = $member->roleIn($organization);
 
         if ($currentRole === null) {

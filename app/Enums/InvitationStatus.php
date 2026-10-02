@@ -22,10 +22,10 @@ enum InvitationStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Pending => 'Invited',
-            self::Accepted => 'Accepted',
-            self::Expired => 'Expired',
-            self::Revoked => 'Withdrawn',
+            self::Pending => __('enums.invitation_status.pending'),
+            self::Accepted => __('enums.invitation_status.accepted'),
+            self::Expired => __('enums.invitation_status.expired'),
+            self::Revoked => __('enums.invitation_status.revoked'),
         };
     }
 

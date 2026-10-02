@@ -30,13 +30,13 @@ class ConferencesTable
         return $table
             ->defaultSort('created_at', 'desc')
             ->columns([
-                TextColumn::make('name')->searchable()->sortable()
+                TextColumn::make('name')->label(__('admin.conferences.columns.name'))->searchable()->sortable()
                     ->description(fn (Conference $record): string => $record->slug),
-                TextColumn::make('organization.name')->label('Organization')->searchable()->sortable(),
-                TextColumn::make('status')->badge()->sortable(),
+                TextColumn::make('organization.name')->label(__('admin.conferences.columns.organization'))->searchable()->sortable(),
+                TextColumn::make('status')->label(__('admin.conferences.columns.status'))->badge()->sortable(),
                 TextColumn::make('submissions_count')
                     ->counts('submissions')
-                    ->label('Abstracts')
+                    ->label(__('admin.conferences.columns.abstracts'))
                     ->badge()
                     ->color('gray')
                     ->sortable(),
@@ -49,24 +49,24 @@ class ConferencesTable
                 // query per row.
                 TextColumn::make('decided_count')
                     ->counts(['submissions as decided_count' => fn (Builder $query): Builder => $query->whereNotNull('decision')])
-                    ->label('Decided')
+                    ->label(__('admin.conferences.columns.decided'))
                     ->badge()
                     ->color('success')
                     ->sortable(),
                 TextColumn::make('notified_count')
                     ->counts(['submissions as notified_count' => fn (Builder $query): Builder => $query->whereNotNull('decision_notified_at')])
-                    ->label('Letters sent')
+                    ->label(__('admin.conferences.columns.notified'))
                     ->badge()
                     ->color('info')
                     ->sortable(),
-                TextColumn::make('submission_deadline')->label('Deadline')->dateTime('j M Y, H:i')
+                TextColumn::make('submission_deadline')->label(__('admin.conferences.columns.deadline'))->dateTime('j M Y, H:i')
                     ->timezone(fn (Conference $record): string => $record->timezone)
                     ->description(fn (Conference $record): string => $record->timezone)
-                    ->placeholder('Not set'),
-                TextColumn::make('created_at')->label('Created')->since()->sortable(),
+                    ->placeholder(__('admin.conferences.not_set')),
+                TextColumn::make('created_at')->label(__('admin.conferences.columns.created'))->since()->sortable(),
             ])
             ->filters([
-                SelectFilter::make('status')->options(ConferenceStatus::class)->multiple(),
+                SelectFilter::make('status')->label(__('admin.conferences.filters.status'))->options(ConferenceStatus::class)->multiple(),
                 TrashedFilter::make(),
             ])
             ->recordActions([
@@ -123,7 +123,7 @@ class ConferencesTable
                 unset($counts['private files']);
 
                 Notification::make()->success()->title(__('admin.purge.done', [
-                    'name' => $name,
+                    'name' => e($name),
                     'rows' => number_format(array_sum($counts)),
                     'files' => number_format($files),
                 ]))->send();

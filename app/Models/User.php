@@ -99,6 +99,19 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
         return $member?->pivot->role;
     }
 
+    /**
+     * The role this user ACTS WITH when managing an organization's members:
+     * their own membership role, or an owner's for a platform admin, member or
+     * not. Spec section 4 ticks "Manage organization members" for the platform
+     * admin exactly as for the owner. roleIn() stays the membership question -
+     * panels, policies and the self-edit guards keep asking it - and only
+     * ChangeMemberRole and RemoveMember ask this one.
+     */
+    public function authorityIn(Organization $organization): ?OrganizationRole
+    {
+        return $this->is_platform_admin ? OrganizationRole::Owner : $this->roleIn($organization);
+    }
+
     public function canAccessPanel(Panel $panel): bool
     {
         return match ($panel->getId()) {

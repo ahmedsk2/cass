@@ -15,7 +15,11 @@ enum OrganizationStatus: string implements HasColor, HasLabel
 
     public function getLabel(): string
     {
-        return ucfirst($this->value);
+        return match ($this) {
+            self::Pending => __('enums.organization_status.pending'),
+            self::Approved => __('enums.organization_status.approved'),
+            self::Suspended => __('enums.organization_status.suspended'),
+        };
     }
 
     public function getColor(): string

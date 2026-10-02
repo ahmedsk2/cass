@@ -17,11 +17,11 @@ enum CustomFieldType: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Text => 'Single line of text',
-            self::Textarea => 'Paragraph',
-            self::Select => 'Choose one from a list',
-            self::Checkbox => 'Yes / no checkbox',
-            self::Number => 'Number',
+            self::Text => __('enums.custom_field_type.text'),
+            self::Textarea => __('enums.custom_field_type.textarea'),
+            self::Select => __('enums.custom_field_type.select'),
+            self::Checkbox => __('enums.custom_field_type.checkbox'),
+            self::Number => __('enums.custom_field_type.number'),
         };
     }
 

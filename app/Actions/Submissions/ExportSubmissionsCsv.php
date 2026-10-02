@@ -26,11 +26,36 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class ExportSubmissionsCsv
 {
-    private const HEADERS = [
-        'Reference', 'Conference', 'Title', 'Status', 'Track', 'Presentation preference',
-        'Corresponding author', 'Corresponding email', 'All authors', 'Affiliations',
-        'Contact phone', 'Word count', 'Files', 'Extra answers', 'Submitted at', 'Last edited at',
-    ];
+    /**
+     * The heading row. A method rather than the constant it was, because a
+     * constant cannot call __(): the words are lang/en/export.php's, shared
+     * with RankingRows::headers() wherever the two files print the same
+     * column, and the order is this method's because it is the file format
+     * and must match row() below.
+     *
+     * @return list<string>
+     */
+    private static function headers(): array
+    {
+        return [
+            __('export.headings.reference'),
+            __('export.headings.conference'),
+            __('export.headings.title'),
+            __('export.headings.status'),
+            __('export.headings.track'),
+            __('export.headings.presentation_preference'),
+            __('export.headings.corresponding_author'),
+            __('export.headings.corresponding_email'),
+            __('export.headings.all_authors'),
+            __('export.headings.affiliations'),
+            __('export.headings.contact_phone'),
+            __('export.headings.word_count'),
+            __('export.headings.files'),
+            __('export.headings.extra_answers'),
+            __('export.headings.submitted_at'),
+            __('export.headings.last_edited_at'),
+        ];
+    }
 
     /**
      * @param  Builder<Submission>  $query
@@ -46,7 +71,7 @@ class ExportSubmissionsCsv
 
             $writer = new Writer($options);
             $writer->openToFile('php://output');
-            $writer->addRow(Row::fromValues(self::HEADERS));
+            $writer->addRow(Row::fromValues(self::headers()));
 
             $query
                 ->with(['conference', 'track', 'authors', 'files'])
@@ -122,7 +147,7 @@ class ExportSubmissionsCsv
 
         foreach ($values as $key => $value) {
             $printable = match (true) {
-                is_bool($value) => $value ? 'yes' : 'no',
+                is_bool($value) => $value ? __('export.answers.yes') : __('export.answers.no'),
                 is_scalar($value) => (string) $value,
                 default => json_encode($value) ?: '',
             };

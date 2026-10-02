@@ -35,6 +35,7 @@ class OrganizerPanelProvider extends PanelProvider
         return $panel
             ->id('organizer')
             ->path('org')
+            ->viteTheme('resources/css/filament/theme.css')
             ->login(Login::class)
             ->passwordReset()
             ->emailVerification()
