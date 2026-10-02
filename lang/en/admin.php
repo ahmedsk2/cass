@@ -218,6 +218,12 @@ return [
             'notified' => 'Emailed on submission',
             'since' => 'Member since',
         ],
+        // The admin's Change role and Remove reuse members.actions.* for the
+        // buttons and headings; these two descriptions differ because the
+        // reader does: a platform admin acts with an owner's authority, and
+        // cannot invite anybody back.
+        'change_role_description' => 'You act with an owner\'s authority here. An organization always keeps at least one owner, so make somebody else an owner before you change the last one.',
+        'remove_description' => 'They lose access to this organization straight away, and every invitation they sent is withdrawn. Their CASS account and anything they created stay as they are, and an owner or admin of the organization can invite them again.',
     ],
 
     'invitations' => [

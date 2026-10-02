@@ -632,6 +632,8 @@ $plan7Sources = [
     'app/Filament/Schemas/OrganizationProfileForm.php',
     'app/Filament/Organizer/Pages/Tenancy/EditOrganizationProfile.php',
     'app/Filament/Admin/Resources/Organizations/Pages/EditOrganization.php',
+    'app/Filament/Admin/Resources/Organizations/RelationManagers/MembersRelationManager.php',
+    'app/Filament/Admin/Resources/Organizations/RelationManagers/InvitationsRelationManager.php',
 ];
 
 /**

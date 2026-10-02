@@ -87,7 +87,9 @@ class OrganizationResource extends Resource
      * Spec section 4's platform-admin cell for "Manage organization members",
      * which had no screen: the organizer panel is membership-gated, so an admin
      * who is not a member of an organization could not see who is in it. Both
-     * managers are read-only by class.
+     * refuse Filament's own write actions (isReadOnly()); the three writes they
+     * do offer - change a role, remove a member, withdraw an invitation - are
+     * custom actions over ChangeMemberRole, RemoveMember and RevokeInvitation.
      *
      * @return array<int, class-string>
      */
