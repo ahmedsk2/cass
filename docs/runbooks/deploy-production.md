@@ -173,6 +173,23 @@ Back it up with the database, not separately: a file with no row is unreachable
 and a row with no file is a broken link, so the two have to be restored from the
 same moment.
 
+Every upload lands first in `storage/app/private/livewire-tmp`, and submitting
+the form *copies* it into place, so every file an author ever attached —
+submitted or abandoned — leaves a temporary copy behind. Livewire deletes the
+ones more than a day old only when the *next* upload finishes, so
+`cass:sweep-uploads` does the same thing every hour from the scheduler. It
+touches nothing outside that directory. If `cass:health` reports the private
+disk full, it is the first thing to run:
+
+```bash
+C=$(cass_container app)
+sudo docker exec "$C" su-exec app php artisan cass:sweep-uploads
+```
+
+An attachment left in an open form for more than a day is gone when the form is
+submitted — as it already was whenever another author's upload finished in the
+meantime, which is when Livewire sweeps.
+
 The request-body ceilings are `client_max_body_size 110m` (nginx) and
 `post_max_size=110M` (PHP), sized for the maximum ten files at 10 MB a
 conference may allow in **one** Livewire upload POST — Livewire sends every file
@@ -1274,7 +1291,7 @@ sudo docker exec "$C" su-exec app php artisan cass:health
 | `migrations` | the image deployed and nobody ran `migrate --force`. Every page touching a new column is 500ing. |
 | `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. |
 | `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. |
-| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. |
+| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
 | `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. |
 
 `--json` for a cron. It exits 1 if any row is red, so

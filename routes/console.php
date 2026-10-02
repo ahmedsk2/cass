@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\SendReviewerRemindersCommand;
+use App\Console\Commands\SweepTemporaryUploadsCommand;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -38,6 +39,13 @@ Schedule::command(SendReviewerRemindersCommand::class)
     // (docker-compose.production.yml sets CACHE_STORE=database), so nothing
     // clears it on restart either. At 55 minutes the next hourly run takes over.
     ->withoutOverlapping(55);
+
+// Livewire sweeps its temporary upload directory only when the next upload
+// finishes, so a quiet week after a deadline keeps every abandoned PDF. Hourly,
+// so nothing outlives Livewire's own one-day limit by more than an hour; the
+// run is one directory listing. No withoutOverlapping(): two runs deleting the
+// same file is a `false` from the second, not an error.
+Schedule::command(SweepTemporaryUploadsCommand::class)->hourly();
 
 // The scheduler has no "last run" anywhere in Laravel, so cass:health cannot
 // answer "is schedule:work alive" without one. Five minutes, a one-hour TTL:
