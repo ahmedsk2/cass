@@ -1,8 +1,45 @@
 # Automation used to build CASS v2
 
-The scripts the orchestrating Claude session used for Plans 2–6, kept so the method survives a
-change of machine. None of them holds a secret; the host address and the Coolify application
-uuid come from the environment or from the private project memory.
+The method and the scripts the orchestrating Claude session used for Plans 2–6, kept so the
+method survives a change of machine. None of them holds a secret; the host address and the
+Coolify application uuid come from the environment or from the private project memory.
+`CLAUDE.md` "How work is done" is the short version; this file has the detail.
+
+## Models and cost
+
+- The orchestrator (currently Fable 5.1) decides, briefs agents, reads their one-line reports,
+  verifies gates by exit code and talks to the owner. It does not read plans, vendor code, diffs
+  or long logs itself; it asks an agent for the answer instead. It does read the pre-merge
+  review's list of sensitive files and migrations before asking the owner to approve a merge.
+- The strongest available model (currently Opus, at maximum effort) does the substantive work:
+  writing and reviewing plans, implementing tasks, reviewing code, fixing findings, writing
+  scripts, asset work. Multi-step work runs through the Workflow tool; single tasks through the
+  Agent tool; both in the background.
+- A mid-tier model (currently Sonnet) only for a mechanical one-file edit with a complete spec.
+  Never a small model (Haiku) for code.
+
+## Owner review points
+
+Adopted from the outside review of 2026-10-16 (`docs/reviews/2026-10-16-expert-brief.md`, Q2).
+
+| Point | The owner reads | Then |
+|---|---|---|
+| 1. Plan approval | The plan's summary and its list of migrations, policies, environment variables and sensitive files, not the plan | Approves, or asks |
+| 2. Pre-merge | The pre-merge review in a fixed format: sensitive files with one line each, migrations, tests added, anything skipped, gate log paths | Approves the merge |
+| 3. Deploy | The CI result and the `docs/HANDOVER.md` line for this release | Unlocks production for 60 minutes (`touch .claude/deploy-unlocked`) and watches the deploy |
+| 4. Post-deploy | `cass:health`, `migrate:status`, the two page timings | Confirms `docs/HANDOVER.md` is updated in the same session |
+
+Without the owner in the session, an agent never: pushes to `main`; merges a pull request;
+deploys or runs anything on the host, in Coolify, Cloudflare or OCI; edits `.github/`,
+`Dockerfile`, a compose file or `.claude/`; deletes, skips or weakens a test; updates a pinned
+digest; reads `Legacy/`; raises a major version constraint; runs a `tinker` write anywhere.
+`.claude/settings.json`, `.claude/hooks/guard-production.mjs` and `tools/git-hooks/pre-push`
+enforce the production, data, force-push and push-to-`main` items; `gh pr merge` always asks.
+
+Length budget for briefs and outputs: a task file under 150 lines; a review report under 40
+lines plus its findings list; a backlog entry of three lines plus a link to a decision file; a
+runbook procedure under 40 lines. Anything longer becomes a file in `docs/decisions/` and is
+linked.
 
 | File | Runs where | What it does |
 |---|---|---|
@@ -15,10 +52,14 @@ uuid come from the environment or from the private project memory.
 Per-task log files: parallel worktree agents share `/tmp`, so every gate command writes to
 `/tmp/t-task-N.log`, never `/tmp/t.log`.
 
-Paths: `premerge-review.js` and `implement-plan-staged.js` default to the repository at
-`/c/Users/ahmed/Documents/CASS` (and worktrees beside it). On any other machine pass `repo`,
-`worktreeRoot` and `scratch` in the Workflow `args`; `split-plan.sh` and `deploy.sh` take their
-paths as arguments or environment and need no change.
+Paths: `premerge-review.js` and `implement-plan-staged.js` still default to the old PC's
+repository at `/c/Users/ahmed/Documents/CASS` (and worktrees beside it), and
+`review-plan.template.js` names it outright; until those defaults are removed (work order item
+A7), always pass `repo`, `worktreeRoot` and `scratch` in the Workflow `args`. `split-plan.sh`
+and `deploy.sh` take their paths as arguments or environment and need no change.
+
+Tests for the guardrails: `node --test .claude/hooks/guard-production.test.mjs
+tools/git-hooks/pre-push.test.mjs` (also run by CI's `scripts` job).
 
 ## Dependabot
 

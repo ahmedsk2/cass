@@ -63,3 +63,8 @@ Thumbs.db
 
 # Pest browser plugin
 /tests/Browser/Screenshots
+
+# --- Claude Code: this machine only ---
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/deploy-unlocked

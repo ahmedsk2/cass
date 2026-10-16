@@ -83,6 +83,10 @@ jobs:
         run: sh -n docker/backup.sh docker/storage-backup.sh docker/entrypoint.sh docker/backup.test.sh
       - name: Backup container detection
         run: sh docker/backup.test.sh
+      # The Claude Code production guard and the pre-push hook that stands in
+      # for branch protection. The runner's preinstalled Node is enough.
+      - name: Guardrail hooks
+        run: node --test .claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs
 
   # Spec section 12's one end-to-end browser run. Its own job so the `test` job
   # stays fast and so a Playwright flake never hides a real unit failure. No

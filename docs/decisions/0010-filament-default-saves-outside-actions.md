@@ -1,0 +1,6 @@
+# Some Filament screens save without an Action
+
+- **Context.** The rule is that business logic lives in `app/Actions` and panels validate and delegate. A few organiser screens predate any logic worth an Action and use Filament's own create, edit and delete: conference editing (`app/Filament/Organizer/Resources/Conferences/Pages/EditConference.php`), and the tracks, custom fields and review questions relation managers. The review-form lock lives in model events (`app/Models/ReviewQuestion.php`) rather than in an Action.
+- **Decision.** These are deliberate exceptions, accepted on 2026-10-16 after the outside expert review (`docs/reviews/2026-10-16-expert-brief.md`, question 6). Do not "fix" them by wrapping a default save in an Action that adds nothing.
+- **Consequence.** A rule that depends on conference status cannot live in these screens' default saves. When one is needed (locking `review_mode` and `blind_review` from `reviewing` onward, refusing to delete a track or custom field that submissions reference), it arrives with an `UpdateConference` Action, or a policy check, and its tests.
+- **To reverse.** Route the screen's save through a new Action and assert in its test that the page calls it.

@@ -1,0 +1,5 @@
+# Turnstile fails open when Cloudflare is unreachable
+
+Decided by the owner on 2026-10-01. Copied unedited from `docs/superpowers/plans/backlog.md` (Submissions); the launch checklist records it in section 1.
+
+**Decided (owner, 2026-10-01): Turnstile fails open** when Cloudflare is unreachable — a `ConnectionException` is logged at `warning` and the submission is allowed; an explicit `success: false` or a 5xx from Cloudflare is still a refusal. The reasoning is that an outage would otherwise refuse every abstract in the last hour before a deadline, which is when it would cost the most, while the honeypot, the four-second minimum fill time and the 5/min/IP throttle all keep running. The spec says only "Turnstile when keys are configured". Flipping it to fail-closed later is `return false;` in place of the `return true;` in the `catch (ConnectionException …)` branch of `App\Support\Turnstile::verify()`, plus inverting `it('lets a submission through when cloudflare itself is unreachable, and says so in the log')` in `tests/Unit/TurnstileTest.php`.

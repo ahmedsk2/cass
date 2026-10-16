@@ -1,8 +1,13 @@
 # Handover — start here (open as of 2026-10-16)
 
-Written when the owner moved to a new PC. A new session reads this first, then
-`docs/launch-checklist.md` and `docs/superpowers/plans/backlog.md`. Keep this file
-current: every line under "Open" is either done or still true.
+The single state document. A new session reads this first, then `docs/launch-checklist.md` and
+`docs/superpowers/plans/backlog.md`. Keep this file current: every line under "Open" is either
+done or still true.
+
+On 2026-10-16 an outside expert reviewed the project (`docs/reviews/2026-10-16-project-review.md`)
+and answered with a ranked work order (`docs/reviews/2026-10-16-expert-brief.md`). "Open" below
+is that work order: phase A before any other code change, phase B before real conferences and
+real authors, phases C and D after. Each item's "done when" is in the brief.
 
 ## Where things stand
 
@@ -18,30 +23,50 @@ current: every line under "Open" is either done or still true.
 | Backups | Nightly database dump 03:17 and weekly storage archive Sunday 03:47, from root's crontab on the host, into `/srv/backups/cass` (0700). Latest dump 2026-10-16. A restore into a scratch database matched production row counts on 2026-09-13. |
 | Turnstile | Keys still empty in Coolify; the submit form fails open (no bot challenge) until they are set. |
 
-## Open — owner
+## Open — phase A, before any other code change
 
-From `docs/launch-checklist.md` (its eight product decisions were answered on 2026-10-01 and are recorded there):
+| # | Item | Who | Status |
+|---|---|---|---|
+| A1 | Confirm Coolify can still fetch the repository now that it is private; switch to a GitHub App or deploy key if not, and say which in runbook "One-time setup" step 2. **Nothing else ships until this is known.** | Owner, with the engineer | Not started |
+| A2 | Rule book and guardrails: `CLAUDE.md`, `docs/dev-setup.md`, `.claude/settings.json`, the production hook, `tools/git-hooks/pre-push`, model policy in `tools/claude/README.md` | Engineer; owner puts PHP and Composer on the user PATH | In review (pull request) |
+| A3 | `.env.example` complete and enforced by `tests/Unit/EnvExampleTest.php`; `MAIL_ENCRYPTION` retired for `MAIL_SCHEME` | Engineer; owner deletes `MAIL_ENCRYPTION` in Coolify | In review (pull request) |
+| A4 | `docs/decisions/` and `docs/security-exceptions.md` | Engineer | In review (pull request) |
+| A5 | Patch `filament/filament` to 5.8.2+ (CVE-2026-104181) and `league/commonmark` past 2.10.1; re-publish the three nonce'd views with their digests; closes Dependabot #26 | Engineer | Not started |
+| A6 | `tools/claude/deploy.sh` fails loudly (`set -euo pipefail`, no `tail`, exit codes checked), backs up before a pending migration, prints `DEPLOY_DONE` only when clean | Engineer | Not started |
+| A7 | Remove the old PC's default paths from the `tools/claude` Workflow scripts | Engineer | Not started |
+| A8 | Deploy `main` (Plan 7 and the launch decisions; no migration), then re-run and tick launch checklist section 3 | Owner deploys, engineer checks | Not started |
+| A9 | Triage Dependabot #25, #27, #28, #30, #31 (green) and #29 (red: base images) | Engineer; owner decides any base-image major | Not started |
 
-1. Section 2, services only the owner controls: Turnstile keys, two-factor on the platform admin account, one real email to check SPF/DKIM on `towardpicu.com`, the Cloudflare settings (Always Use HTTPS, HSTS, WAF + Bot Fight Mode, Rocket Loader off, cache rules for `/build/*` and `/storage/*`), port 22 restricted on the OCI security list.
-2. Section 4, the manual walk-through on the demo tenant.
-3. Section 5, data: decide whether to import the two legacy conferences (`cass:import-legacy`, runbook "Importing the legacy conferences"); reset the demo tenant.
-4. Section 6: flip CSP to enforcing after the walk-through.
-5. The six open questions Plan 7 raised, in `backlog.md` under "Open questions for the owner (raised by Plan 7)".
+## Open — phase B, before real conferences and real authors
 
-## Open — engineering
+| # | Item | Who |
+|---|---|---|
+| B1 | Turnstile keys in Coolify | Owner |
+| B2 | Platform-admin second factor enrolled, and enforced on the admin panel | Owner and engineer |
+| B3 | Origin lockdown: 80/443 to Cloudflare only, 22 to known addresses | Owner |
+| B4 | Cloudflare settings (checklist section 2) | Owner |
+| B5 | External uptime monitor on `/up`, runbook "Monitoring" | Owner; engineer documents |
+| B6 | Dead-man heartbeats: hourly `cass:health`, both backup crons | Engineer; owner creates the checks |
+| B7 | Error tracking | Engineer; owner picks the service |
+| B8 | Off-host encrypted backups and a restore drill from the off-host copy | Owner, with the engineer |
+| B9 | Suspended organisations cannot send invitations or reminders | Engineer |
+| B10 | Cap status-link emails per address and per IP | Engineer |
+| B11 | Lock `review_mode` and `blind_review` from `reviewing`; no deleting referenced tracks or custom fields; log deadline edits | Engineer |
+| B12 | CSP enforcing after the walk-through | Owner |
+| B13 | Launch checklist closed (walk-through, data, sign-off, memory readings) | Owner and engineer |
 
-1. Deploy `main` (Plan 7) once the owner wants it live: `tools/claude/deploy.sh` on the host, then runbook "Every release" step 4. No migration to run.
-2. Triage the seven Dependabot PRs.
-3. Section 3 of the launch checklist (production readiness) was executed by hand on 2026-09-13 with every command green, but the boxes were never ticked in the file. Re-run after the Plan 7 deploy and tick them.
-4. The backlog's Plan 6/7 leftovers (69 inline `style` attributes in panel views, the language sweep's uncovered files, `ClaimCustomDomain` not forgetting the verified-host cache after a re-claim).
+Also open for the owner: the six questions Plan 7 raised (`backlog.md`, "Open questions for the
+owner"). Phases C (CI audits, build once and deploy that image, disk check, seeder hardening,
+native submission tenancy, one membership check, test hygiene, docs restructure) and D (on
+touch) are in the brief.
 
 ## How the work is done
 
-`CLAUDE.md` "Models and cost" is the method: the orchestrating session briefs Opus agents and
-reads one-line reports; plans are written, adversarially reviewed, implemented in staged
-Workflows (parallel worktrees for independent tasks), reviewed again over the whole branch
-before merge, then deployed with migrations run by hand in the container. The scripts that
-did this for Plans 2–6 are in `tools/claude/` with their own README.
+`CLAUDE.md` "How work is done" is the method and `tools/claude/README.md` has the detail: the
+model policy, the four owner review points, what an agent never does without the owner, and the
+length budget. Plans are written, adversarially reviewed, implemented task by task, reviewed
+again over the whole branch, merged through a pull request the owner approves, and deployed by
+the owner with migrations run by hand in the container.
 
 Plans 1–7 and the backlog are in `docs/superpowers/plans/`; the design is
 `docs/superpowers/specs/2026-09-10-cass-v2-design.md`; the runbook is
@@ -60,8 +85,8 @@ or an encrypted drive, never a cloud drive:
 | `Legacy/` (`CASS.zip`, `dbg1vzqja6lgef.sql`) | the old application and its dump, **real people's data** — the import source | repo root |
 | `legacy-review.md` | the walkthrough of the old app, names its vulnerabilities and data quirks | repo root |
 | `assets/envato/` | licensed Envato downloads (logo template, illustrations, icons, email template) | `assets/envato/` |
-| Claude project memory | `%USERPROFILE%\.claude\projects\C--Users-ahmed-Documents-CASS\memory\` — host facts, Coolify uuids, decisions | same path (the key is the repo path; copy it if the path or username changes) |
-| Workflow scripts of the build sessions | `%USERPROFILE%\.claude\projects\C--Users-ahmed-Documents-CASS\<session>\workflows\scripts\` | reference only; `tools/claude/` has the reusable versions |
+| Claude project memory | `%USERPROFILE%\.claude\projects\<key>\memory\`, where the key is the repository path with `:\` and every `\` turned into `-` — host facts, Coolify uuids, decisions | the new key whenever the clone moves |
+| Workflow scripts of the build sessions | kept in the owner's private bundle | reference only; `tools/claude/` has the reusable versions |
 | `old-main-history` git bundle | the pre-purge history that still contains the host IP (the public repo was recreated without it on 2026-09-10) | keep private; `git bundle verify` then `git fetch <bundle> old-main-history` if ever needed |
 
 Secrets that are **not** on any PC: the Coolify API token, the Cloudflare token and
@@ -70,26 +95,13 @@ Secrets that are **not** on any PC: the Coolify API token, the Cloudflare token 
 screen. The SSH key `~/.ssh/oci_server` and the owner's infrastructure ledger
 (`Documents\ORACLE MCP\infra\`) move with the owner's global Claude migration bundle.
 
-## Setting up the new PC
+## Setting up a development PC
 
-1. Clone: `git clone https://github.com/ahmedsk2/cass.git` into the owner's projects folder on
-   that machine (the path, and the Claude memory key it implies, are in the private extras README
-   and in the project memory, not here). The identity is set per repo on the old PC:
-   `git config user.name "Ahmed"` and `git config user.email ahmedsk2@gmail.com`.
-2. Restore the `C:\cass-extras` items per its README (verify the bundle first).
-3. Toolchain (see `CLAUDE.md` "Toolchain (this machine)"): PHP 8.4 with `gd`, `intl`, `sockets`
-   (`extension=sockets` uncommented in `php.ini` — `composer install` fails its platform check
-   without it), Composer, Node 24, Docker Desktop, Python 3.14, `gh` logged in as `ahmedsk2`,
-   `~/.ssh/oci_server`.
-4. Build and prove it, in Git Bash, each exit code captured:
-   `php <composer.phar> install`, `npm ci`, `npm run build`,
-   `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` (expect rc=0, about 1,250 tests),
-   `./vendor/bin/phpstan analyse`, `./vendor/bin/pint --test`. The browser suite is CI-only.
-5. Local server: the Claude desktop app's Browser pane starts `cass-dev` from
-   `.claude/launch.json` (now tracked); sign in with the two local accounts above.
-6. Host access: `ssh -i ~/.ssh/oci_server ubuntu@<host>` (the address is in the project memory
-   and the infra ledger, never in this repository). Deploys and migrations follow the runbook.
-7. Before the first code change on the new machine: inventory the PC against the project's
-   requirements and report it, then produce the review pack (this file's `CLAUDE.md` plus a
-   written project review) for the owner's outside expert, and change nothing until the expert's
-   feedback has been applied to `CLAUDE.md` and the docs. The extras README has the exact steps.
+`docs/dev-setup.md` has the steps; this machine's own paths go in the git-ignored
+`CLAUDE.local.md`. The owner's current PC was set up on 2026-10-16: bundle restored, build green
+(1,340 tests passed, 1 skipped), MySQL suite run against `docker-compose.dev.yml` (green but for
+one wall-clock-sensitive case, backlog "Testing"), review pack sent and answered. The private extras bundle is no longer needed on that PC; its originals stay
+on the owner's transfer drive. The Claude project memory is keyed by the repository path, so it
+must be copied to the new key whenever the clone moves. Host access is
+`ssh -i ~/.ssh/<key> <user>@<host>`; the address is in the project memory and the infra ledger,
+never in this repository.

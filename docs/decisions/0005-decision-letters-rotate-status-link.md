@@ -1,0 +1,5 @@
+# Sending decision letters rotates every notified author's status link
+
+Decided by the owner on 2026-10-01. Copied unedited from `docs/superpowers/plans/backlog.md` (Decisions); the launch checklist records it in section 1.
+
+**Decided (owner, 2026-10-01): sending decision letters rotates every notified author's status link.** `/s/{token}`'s token is stored as a SHA-256 hash and the plaintext exists only inside an emailed link (spec section 9), so there is no way to put a working `{{status_link}}` in a decision email except to mint a new token — which kills the link in the author's original confirmation email. Plan 3 already accepted the same trade for "Resend status link". Every decided author receives a letter, so every decided author receives a live link, and the runbook says so; the alternatives, if the owner dislikes it, are a second longer-lived "decision link" column on `submissions`, or accepting more than one live token per submission (a `submission_tokens` table, which is also what a "share this with my co-author" feature would want).
