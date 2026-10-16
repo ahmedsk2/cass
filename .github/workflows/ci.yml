@@ -3,8 +3,8 @@ name: CI
 on:
   # `push` on main only, `pull_request` for everything else. With both
   # unfiltered, every commit pushed to a branch that has a pull request open ran
-  # this whole workflow twice - including the 23-minute arm64 image build -
-  # for one identical tree.
+  # this whole workflow twice - including the arm64 image build, 20 to 36
+  # minutes in recent runs - for one identical tree.
   push:
     branches: [main]
   pull_request:
@@ -16,9 +16,10 @@ on:
 
 # One run per ref at a time: pushing a fixup while the previous commit is still
 # building cancels the stale run instead of queueing behind it.
-# That is for pull requests. On main a new push waits for the run in progress
-# instead, so every merged commit gets a complete run. GitHub keeps one waiting
-# run per group, so of several quick pushes to main only the newest waits.
+# That is for pull requests. On main a new push never cancels the run in
+# progress; it waits for it instead. GitHub keeps one waiting run per group,
+# though, so a newer push still drops an older waiting run: of several quick
+# pushes to main, the run in progress finishes and only the newest follows it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -31,10 +32,13 @@ permissions:
 # verified on 24.04.
 jobs:
   # Whether this run builds the arm64 image. Always on the Monday schedule and
-  # on a manual run; otherwise only when the change touches what the image is
-  # built from (Dockerfile, .dockerignore, docker/, the two compose files) or
-  # this workflow, so that a change to the workflow exercises the image job
-  # too. Full history, so that both ends of the diff are in the clone.
+  # on a manual run; otherwise only when the change touches Dockerfile,
+  # .dockerignore, docker/, the two compose files, package.json or
+  # package-lock.json, or this workflow, so that a change to the workflow
+  # exercises the image job too. The npm files are on the list because the
+  # image's assets stage runs `npm ci` and `npm run build` for arm64: the
+  # lockfile's arm64-musl native packages are installed nowhere else. Full
+  # history, so that both ends of the diff are in the clone.
   changes:
     runs-on: ubuntu-24.04
     # A checkout and a git diff: seconds, normally.
@@ -54,7 +58,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           # What the image is built from, and this workflow.
-          inputs='^(Dockerfile|\.dockerignore|docker/.*|docker-compose\.(dev|production)\.yml|\.github/workflows/ci\.yml)$'
+          inputs='^(Dockerfile|\.dockerignore|docker/.*|docker-compose\.(dev|production)\.yml|package\.json|package-lock\.json|\.github/workflows/ci\.yml)$'
           docker=
           changed=
           case "$EVENT" in
@@ -249,14 +253,15 @@ jobs:
           path: tests/Browser/Screenshots
           if-no-files-found: ignore
 
-  # The arm64 build under QEMU takes about 33 minutes and only proves something
-  # when its inputs changed, so it runs when the `changes` job says they did.
-  # The `smoke` job builds the same Dockerfile for amd64 on every run.
+  # The arm64 build under QEMU takes 20 to 36 minutes in recent runs and only
+  # proves something when its inputs changed, so it runs when the `changes` job
+  # says they did. The `smoke` job builds the same Dockerfile for amd64 on
+  # every run.
   image:
     runs-on: ubuntu-24.04
     needs: [test, changes]
     if: needs.changes.outputs.docker == 'true'
-    # About 33 minutes, so twelve minutes of headroom.
+    # Nine minutes over the slowest recent build (36 minutes).
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
