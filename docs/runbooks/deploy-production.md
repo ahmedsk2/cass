@@ -67,7 +67,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 
 ## Every release
 
-1. Merge to `main` with CI green.
+1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying.
 2. Coolify: Deploy (or enable auto-deploy on push).
 3. If the release adds migrations, apply them as soon as Coolify reports the new `app` container healthy. The migration files exist only in the new image, and Coolify's Docker Compose deploys stop the old container before the new one starts (no rolling update), so there is no moment at which the old container could run them — `migrate` there just prints "Nothing to migrate". Turn auto-deploy off for such a release so you are at the terminal when the new container goes live. Run the migration only, **not** step 6's `db:seed`: the seeder resets the platform admin's password back to `CASS_ADMIN_PASSWORD`.
 

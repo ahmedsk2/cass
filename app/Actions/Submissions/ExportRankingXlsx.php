@@ -33,7 +33,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * container restart or fill the volume the author uploads live on.
  *
  * `ext-zip` is required by openspout itself and is installed everywhere this
- * application runs (Dockerfile:25, .github/workflows/ci.yml:44 and :87).
+ * application runs (the Dockerfile's `docker-php-ext-install` line, and the
+ * `extensions:` of the `test` and `browser` jobs in .github/workflows/ci.yml).
  */
 class ExportRankingXlsx
 {

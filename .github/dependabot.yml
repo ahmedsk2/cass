@@ -56,10 +56,11 @@ updates:
       # MySQL has no downgrade - the volume is a one-way door with the only way
       # back being a restore from a dump.
       #
-      # None of that shows up in CI, which is the trap: the compose files are
-      # never used by .github/workflows/ci.yml (the `test` and `smoke` jobs
-      # declare their own `image: mysql:8.4` service), so a compose-only bump
-      # goes green having never started the image it changed. #8 was green.
+      # None of that shows up in CI, which is the trap: CI never runs the
+      # compose files. Its `test` and `smoke` services pin the same digest, and
+      # the `scripts` job fails while they differ, but those services start on
+      # an empty database, so even a matching image never exercises the upgrade
+      # of the 8.4 data volume. #8 went green before that pin existed.
       #
       # Major moves off 8.4 are therefore a planned migration - backup, dump,
       # restore, verify - and not a Monday morning merge. Digest updates and

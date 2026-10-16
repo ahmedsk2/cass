@@ -65,8 +65,12 @@ tools/git-hooks/pre-push.test.mjs` (also run by CI's `scripts` job).
 
 - `mysql`: majors are ignored in `.github/dependabot.yml` on purpose. MySQL moved to calendar
   versioning; an "innovation" release is not a successor to the 8.4 LTS line and the data
-  volume cannot be downgraded. CI never starts the compose MySQL image, so a green run on such a
-  PR proves nothing.
+  volume cannot be downgraded. CI's MySQL services pin the compose digest but start on an empty
+  database, so no CI run exercises the upgrade of the 8.4 data volume: a major is a planned
+  migration (backup, dump, restore, verify), never a merge on green.
+- A compose `mysql` digest PR also needs the same digest in `ci.yml`'s two MySQL service images
+  (`test` and `smoke`): the `scripts` job fails on the drift until they match. Push one commit
+  that changes both to the Dependabot branch; `@dependabot recreate` would drop it.
 - Base-image majors (`php`, `node`) change what production runs; the suite is verified on PHP 8.4
   only. Treat them as deliberate upgrades with the workflow's `php-version` bumped in the same
   change.
