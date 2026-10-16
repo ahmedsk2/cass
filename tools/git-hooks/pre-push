@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Refuse direct pushes to main; changes reach main through a pull request with CI green.
+# Branch protection is unavailable on a free private repository, so this is the local
+# stand-in. Enable once per clone: git config core.hooksPath tools/git-hooks
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "pre-push: direct pushes to main are refused. Open a pull request." >&2
+    exit 1
+  fi
+done
+exit 0
