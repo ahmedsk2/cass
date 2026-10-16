@@ -88,3 +88,7 @@ screen. The SSH key `~/.ssh/oci_server` and the owner's infrastructure ledger
    `.claude/launch.json` (now tracked); sign in with the two local accounts above.
 6. Host access: `ssh -i ~/.ssh/oci_server ubuntu@<host>` (the address is in the project memory
    and the infra ledger, never in this repository). Deploys and migrations follow the runbook.
+7. Before the first code change on the new machine: inventory the PC against the project's
+   requirements and report it, then produce the review pack (this file's `CLAUDE.md` plus a
+   written project review) for the owner's outside expert, and change nothing until the expert's
+   feedback has been applied to `CLAUDE.md` and the docs. The extras README has the exact steps.
