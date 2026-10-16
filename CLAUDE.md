@@ -28,3 +28,16 @@ Conference Abstract Submission System. Multi-tenant Laravel 13 + Filament 5. Spe
 - Sonnet only for mechanical one-file edits with a complete spec. Never Haiku for code.
 - Keep the orchestrator's context lean: split plans into per-task files, require single-line JSON report fields, grep instead of cat, never re-read a plan after the review, prefer background tasks with notifications over polling.
 - Pipeline per plan: Opus writes the plan → adversarial review Workflow (lens reviewers, skeptics, one editor, one critic) → implementation Workflow one task at a time (implement, spec check, quality review, up to two fix rounds) → CI → pull request → merge → Coolify deploy → migrations run in the container → live checks.
+
+## Start here
+
+- A new session reads `docs/HANDOVER.md` first (production vs `main`, what is open for the owner and for engineering), then `docs/launch-checklist.md` and `docs/superpowers/plans/backlog.md`. Keep `docs/HANDOVER.md` current when the state changes.
+- The scripts that built Plans 2-6 (deploy, plan splitter, review / staged-implementation / pre-merge Workflow scripts) are in `tools/claude/`; their README says how each is run.
+
+## Toolchain (this machine)
+
+- PHP 8.4 at `%LOCALAPPDATA%\php84` (its `php.ini` has `extension=sockets` on; `gd`, `intl`, `sockets` loaded), Composer at `%LOCALAPPDATA%\composer-bin\composer.phar`, Node 24, Python 3.14 (PyMuPDF, PIL, pypdf), Docker Desktop, `gh` signed in as `ahmedsk2`, `~/.ssh/oci_server` for the host. No Inkscape, ImageMagick or Ghostscript: rasterise SVGs with Node `sharp` (see `docs/brand/build-icons.mjs`).
+- `php -` and `python -` (a script on stdin) hang or fail here: write the script to a file and run it.
+- The Bash tool's heredocs fail with "unexpected EOF" on very long lines: write long scripts with the Write tool, then strip CRLF (`sed -i 's/\r$//'`) before handing a file to the Workflow tool, which rejects control characters.
+- Agents working in parallel worktrees share `/tmp`: every gate log carries the task number (`/tmp/t-task-N.log`).
+- Local dev: `.claude/launch.json` (tracked) runs `php artisan serve` on port 8000 against `database/database.sqlite`; local accounts `admin@cass.test` (platform admin) and `owner@cass.test` (owner of `gulf-pediatric-society`). The `.env`, the SQLite file, `Legacy/`, `legacy-review.md` and `assets/envato/` are git-ignored and travel with the owner (see `docs/HANDOVER.md`).
