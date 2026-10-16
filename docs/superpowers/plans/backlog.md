@@ -82,6 +82,10 @@ Items raised in code reviews during Plan 1 that were deliberately deferred. Each
 - **Three Filament views are frozen against an upgrade** (see the rewritten CSP entry). The day Filament ships nonce support, all three published copies are deleted and the drift test goes with them.
 - **The nightly dump lives on the host (`/srv/backups/cass`), not on the data volume spec section 8 names.** Deliberate — see Task 11's decisions 3 and 4. The consequence to keep in view: the NAS sync must cover that host path *and* the weekly `cass-storage` tarball, or a restore is half a restore.
 
+## Testing
+
+- **`SubmissionFormTest` "refuses a form that was filled faster than a human could" depends on the wall clock.** `openedAt` is stamped at mount from the real clock and the test freezes time only after filling both forms, so when the fills take four seconds (Docker Desktop MySQL on Windows, 2026-10-16: the full suite took 49 minutes there) the "too fast" form is no longer too fast and the test fails; it passes alone and on CI. Fix: `Carbon::setTestNow(now())` before mounting either component, then advance five seconds as today. Expert work order C7.
+
 ## Dependencies
 
 - **`composer.json` pins `config.platform.php` to `8.4.1`, and it is load-bearing.** Without it Dependabot resolves as PHP `8.4` (8.4.0), which the locked Symfony 8.1 components and PHPUnit 13.3 refuse (`php >=8.4.1`), so every framework-group update (Laravel, Filament, Livewire) failed in the Dependabot job without opening a pull request. `8.4.1` is the floor the lock already demands, so it cannot strand a machine that installs today. Raise it deliberately when a package needs a newer patch, and never above the PHP the development machine runs.
