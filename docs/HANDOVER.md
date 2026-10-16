@@ -27,10 +27,10 @@ real authors, phases C and D after. Each item's "done when" is in the brief.
 
 | # | Item | Who | Status |
 |---|---|---|---|
-| A1 | Confirm Coolify can still fetch the repository now that it is private; switch to a GitHub App or deploy key if not, and say which in runbook "One-time setup" step 2. **Nothing else ships until this is known.** | Owner, with the engineer | Not started |
-| A2 | Rule book and guardrails: `CLAUDE.md`, `docs/dev-setup.md`, `.claude/settings.json`, the production hook, `tools/git-hooks/pre-push`, model policy in `tools/claude/README.md` | Engineer; owner puts PHP and Composer on the user PATH | In review (pull request) |
-| A3 | `.env.example` complete and enforced by `tests/Unit/EnvExampleTest.php`; `MAIL_ENCRYPTION` retired for `MAIL_SCHEME` | Engineer; owner deletes `MAIL_ENCRYPTION` in Coolify | In review (pull request) |
-| A4 | `docs/decisions/` and `docs/security-exceptions.md` | Engineer | In review (pull request) |
+| A1 | Confirm Coolify can still fetch the repository now that it is private; switch to a GitHub App or deploy key if not, and say which in runbook "One-time setup" step 2. **Nothing else ships until this is known.** | Owner, with the engineer | **Checked 2026-10-16: it cannot.** The application's source is Coolify's built-in "Public GitHub" (no GitHub App, no deploy key); an anonymous `git ls-remote` of the repository from the host fails and GitHub answers 401, so the next build would fail at the clone. Production is unaffected until then. Fix pending: the owner connects a GitHub App (or a read-only deploy key) and switches the source |
+| A2 | Rule book and guardrails: `CLAUDE.md`, `docs/dev-setup.md`, `.claude/settings.json`, the production hook, `tools/git-hooks/pre-push`, model policy in `tools/claude/README.md` | Engineer; owner puts PHP and Composer on the user PATH | Done (#32); PATH pending |
+| A3 | `.env.example` complete and enforced by `tests/Unit/EnvExampleTest.php`; `MAIL_ENCRYPTION` retired for `MAIL_SCHEME` | Engineer; owner deletes `MAIL_ENCRYPTION` in Coolify | Done (#32). The Coolify entries (normal and preview) remain: the host's API token is read-and-deploy only, so the owner deletes them in the Coolify UI. Harmless meanwhile: nothing reads them |
+| A4 | `docs/decisions/` and `docs/security-exceptions.md` | Engineer | Done (#32) |
 | A5 | Patch `filament/filament` to 5.8.2+ (CVE-2026-104181) and `league/commonmark` past 2.10.1; re-publish the three nonce'd views with their digests; closes Dependabot #26 | Engineer | Not started |
 | A6 | `tools/claude/deploy.sh` fails loudly (`set -euo pipefail`, no `tail`, exit codes checked), backs up before a pending migration, prints `DEPLOY_DONE` only when clean | Engineer | Not started |
 | A7 | Remove the old PC's default paths from the `tools/claude` Workflow scripts | Engineer | Not started |
