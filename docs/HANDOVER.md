@@ -72,9 +72,10 @@ screen. The SSH key `~/.ssh/oci_server` and the owner's infrastructure ledger
 
 ## Setting up the new PC
 
-1. Clone: `git clone https://github.com/ahmedsk2/cass.git` into `C:\Users\<user>\Documents\CASS`.
-   The identity is set per repo on the old PC: `git config user.name "Ahmed"` and
-   `git config user.email ahmedsk2@gmail.com`.
+1. Clone: `git clone https://github.com/ahmedsk2/cass.git` into the owner's projects folder on
+   that machine (the path, and the Claude memory key it implies, are in the private extras README
+   and in the project memory, not here). The identity is set per repo on the old PC:
+   `git config user.name "Ahmed"` and `git config user.email ahmedsk2@gmail.com`.
 2. Restore the `C:\cass-extras` items per its README (verify the bundle first).
 3. Toolchain (see `CLAUDE.md` "Toolchain (this machine)"): PHP 8.4 with `gd`, `intl`, `sockets`
    (`extension=sockets` uncommented in `php.ini` — `composer install` fails its platform check
