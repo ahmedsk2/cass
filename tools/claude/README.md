@@ -15,6 +15,11 @@ uuid come from the environment or from the private project memory.
 Per-task log files: parallel worktree agents share `/tmp`, so every gate command writes to
 `/tmp/t-task-N.log`, never `/tmp/t.log`.
 
+Paths: `premerge-review.js` and `implement-plan-staged.js` default to the repository at
+`/c/Users/ahmed/Documents/CASS` (and worktrees beside it). On any other machine pass `repo`,
+`worktreeRoot` and `scratch` in the Workflow `args`; `split-plan.sh` and `deploy.sh` take their
+paths as arguments or environment and need no change.
+
 ## Dependabot
 
 - `mysql`: majors are ignored in `.github/dependabot.yml` on purpose. MySQL moved to calendar

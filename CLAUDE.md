@@ -37,6 +37,7 @@ Conference Abstract Submission System. Multi-tenant Laravel 13 + Filament 5. Spe
 ## Toolchain (this machine)
 
 - PHP 8.4 at `%LOCALAPPDATA%\php84` (its `php.ini` has `extension=sockets` on; `gd`, `intl`, `sockets` loaded), Composer at `%LOCALAPPDATA%\composer-bin\composer.phar`, Node 24, Python 3.14 (PyMuPDF, PIL, pypdf), Docker Desktop, `gh` signed in as `ahmedsk2`, `~/.ssh/oci_server` for the host. No Inkscape, ImageMagick or Ghostscript: rasterise SVGs with Node `sharp` (see `docs/brand/build-icons.mjs`).
+- After the October 2026 move to a new PC the Windows username and the tools folder differ (the owner keeps PHP and Composer in a tools folder outside `AppData`; the path is in the project memory and in the extras README). On the first session there, replace the two paths above with the real ones and pass `repo`/`worktreeRoot` to the Workflow scripts in `tools/claude/`, whose defaults name the old repo path.
 - `php -` and `python -` (a script on stdin) hang or fail here: write the script to a file and run it.
 - The Bash tool's heredocs fail with "unexpected EOF" on very long lines: write long scripts with the Write tool, then strip CRLF (`sed -i 's/\r$//'`) before handing a file to the Workflow tool, which rejects control characters.
 - Agents working in parallel worktrees share `/tmp`: every gate log carries the task number (`/tmp/t-task-N.log`).
