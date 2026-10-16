@@ -41,9 +41,10 @@ final class DomainName
 
         $value = rtrim(strtolower(trim($value)), '.');
 
-        // intl is installed everywhere this runs (php -m, Dockerfile:25,
-        // ci.yml:44). The A-label is what a resolver is asked for and what
-        // Traefik puts on the certificate, so it is what is stored.
+        // intl is installed everywhere this runs (php -m, the Dockerfile's
+        // `docker-php-ext-install` line, the `extensions:` of the `test` and
+        // `browser` jobs in ci.yml). The A-label is what a resolver is asked
+        // for and what Traefik puts on the certificate, so it is what is stored.
         if ($value !== '' && ! mb_check_encoding($value, 'ASCII')) {
             $ascii = idn_to_ascii($value, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
 
