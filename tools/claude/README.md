@@ -87,5 +87,9 @@ tools/claude/workflow-args.test.mjs` (also run by CI's `scripts` job).
 - Base-image majors (`php`, `node`) change what production runs; the suite is verified on PHP 8.4
   only. Treat them as deliberate upgrades with the workflow's `php-version` bumped in the same
   change.
+- A base-image major that fails the image build is closed with the failing step quoted and a
+  backlog entry for the upgrade (#29, backlog "Dependencies"); the ignore list is not extended
+  (owner decision 2026-10-17). Closing a grouped PR ignores nothing, so if the same major comes
+  back, close it again with a pointer to that entry.
 - Actions, composer patch/minor and npm patch/minor: merge when CI is green; click through the
   panels after a Vite major.
