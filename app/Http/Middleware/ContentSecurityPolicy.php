@@ -13,14 +13,18 @@ use Symfony\Component\HttpFoundation\Response;
  * Spec section 9's Content-Security-Policy, with a per-request nonce.
  *
  * ONE call does most of the work. Vite::useCspNonce() nonces every @vite tag
- * (Illuminate\Foundation\Vite::nonceAttribute()), and Livewire 4.4.4 reads
+ * (Illuminate\Foundation\Vite::nonceAttribute()), and Livewire 4.4.7 reads
  * Vite::cspNonce() itself in FrontendAssets::nonce() - so its <style>, its
  * <script src>, its inline window.livewireScriptConfig and the nonce it hands
- * its own runtime all follow from it. Filament 5.8.1 has no nonce support at
- * all, which is why three of its views are published into
- * resources/views/vendor with {{ Vite::cspNonce() }} added - filament::assets,
- * filament-panels::components.layout.base and filament-panels::livewire.sidebar
- * - pinned by tests/Feature/Security/PublishedFilamentViewsTest.php.
+ * its own runtime all follow from it. Filament 5.10.2 reads it only part of
+ * the way: its inline <script> tags and its registered script assets carry the
+ * nonce when one is set, its inline <style> tags never do, and its rich editor
+ * still injects its stylesheet without one (OrganizerPanelProvider ships those
+ * rules under the nonce instead). That is why three of its views are published
+ * into resources/views/vendor with the nonce on every inline tag -
+ * filament::assets, filament-panels::components.layout.base and
+ * filament-panels::livewire.sidebar - pinned by
+ * tests/Feature/Security/PublishedFilamentViewsTest.php.
  *
  * Global (bootstrap/app.php), so it covers the public pages, all three panels
  * and the /livewire endpoints alike.

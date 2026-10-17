@@ -1263,8 +1263,10 @@ Two directives look loose and are argued rather than assumed:
 
 **Three** Filament views are published verbatim into `resources/views/vendor/`
 with the nonce added — `filament::assets`, `filament-panels::components.layout.base`
-and `filament-panels::livewire.sidebar` — because Filament 5.8.1 has no nonce
-support anywhere. `tests/Feature/Security/PublishedFilamentViewsTest.php` stores
+and `filament-panels::livewire.sidebar` — because Filament 5.10.2 nonces its
+inline scripts only when a nonce is set and its inline styles never, so each
+copy carries an unconditional nonce on every inline tag in place of Filament's
+own. `tests/Feature/Security/PublishedFilamentViewsTest.php` stores
 the SHA-256 of each vendor original, so **a Filament upgrade turns the suite
 red**, and the fix is to re-publish the three files, re-add the nonce
 attributes, and update the three hashes in the same commit. Never update a hash

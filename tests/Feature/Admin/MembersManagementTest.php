@@ -204,6 +204,11 @@ it('cannot withdraw another organization invitation through this one', function 
 it('gives an organization owner neither the page nor the actions', function () {
     $invitation = OrganizationInvitation::factory()->for($this->organization)->create();
 
+    // Mounted while the platform admin is still the one signed in, because the
+    // owner cannot mount this one at all (below) and its revoke action is
+    // still checked for the owner.
+    $invitations = adminInvitationsManager($this->organization);
+
     actingAs($this->owner)
         ->get(OrganizationResource::getUrl('view', ['record' => $this->organization], panel: 'admin'))
         ->assertForbidden();
@@ -215,7 +220,12 @@ it('gives an organization owner neither the page nor the actions', function () {
         ->assertTableActionHidden('changeRole', $this->member)
         ->assertTableActionHidden('remove', $this->member);
 
-    adminInvitationsManager($this->organization)->assertTableActionHidden('revoke', $invitation);
+    // A relation manager checks canViewForRecord() before it mounts or
+    // hydrates, and OrganizationInvitationPolicy::viewAny() refuses a user who
+    // manages no tenant of the admin panel, so the invitations manager does not
+    // even boot for the owner. Behind that, revoke refuses the owner as well.
+    adminInvitationsManager($this->organization)->assertForbidden();
+    $invitations->assertTableActionHidden('revoke', $invitation);
 
     expect($this->member->roleIn($this->organization))->toBe(OrganizationRole::Member)
         ->and($invitation->fresh()?->revoked_at)->toBeNull();

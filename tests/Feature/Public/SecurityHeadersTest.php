@@ -257,7 +257,7 @@ it('renders an authenticated panel page with no off-origin image source', functi
 });
 
 it('ships the rich editor base styles under the nonce, because tiptap injects them without one', function () {
-    // Filament 5.8.1 constructs TipTap with injectNonce undefined
+    // Filament 5.10.2 constructs TipTap with injectNonce undefined
     // (vendor/filament/forms/dist/components/rich-editor.js), so the
     // <style data-tiptap-style> block it appends at runtime is refused by
     // style-src 'self' 'nonce-...' - a nonce makes the browser ignore

@@ -70,7 +70,7 @@ class OrganizerPanelProvider extends PanelProvider
             ->userMenuItems([
                 PanelSwitch::toReviewer(),
             ])
-            // Filament 5.8.1 builds TipTap with injectNonce undefined, so the
+            // Filament 5.10.2 builds TipTap with injectNonce undefined, so the
             // stylesheet the RichEditor appends at runtime is refused by
             // style-src 'self' 'nonce-...' (a nonce disables 'unsafe-inline').
             // Shipping the same rules from the server, with the nonce, is what
