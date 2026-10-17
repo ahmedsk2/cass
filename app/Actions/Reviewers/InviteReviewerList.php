@@ -24,6 +24,13 @@ class InviteReviewerList
      */
     public function handle(Conference $conference, string $text, User $actor): array
     {
+        // Every line would be refused for the same reason, so say it once.
+        $refused = $this->inviteReviewer->organizationBlockers($conference);
+
+        if ($refused !== []) {
+            return ['invited' => 0, 'skipped' => [], 'errors' => $refused];
+        }
+
         $parsed = ReviewerList::parse($text);
 
         $invited = 0;

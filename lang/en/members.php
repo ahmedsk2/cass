@@ -134,6 +134,8 @@ return [
         'already_a_member' => ':email is already a member of this organization.',
         'bad_email' => 'That does not look like an email address.',
         'send_limit' => 'Too many invitations have been sent from this account in the last hour. Try again later.',
+        'organization_pending' => 'Your organization is still waiting for platform approval. You can invite members as soon as it is approved.',
+        'organization_suspended' => 'This organization is suspended, so it cannot invite members.',
     ],
 
     'mail' => [
