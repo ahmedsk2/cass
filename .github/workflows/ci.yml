@@ -184,10 +184,11 @@ jobs:
       # fakes for sudo, docker, curl and cass-backup.
       - name: Deploy script
         run: bash -n tools/claude/deploy.sh && bash tools/claude/deploy.test.sh
-      # The Claude Code production guard and the pre-push hook that stands in
-      # for branch protection. The runner's preinstalled Node is enough.
+      # The Claude Code production guard, the pre-push hook that stands in
+      # for branch protection, and the Workflow scripts' refusal to start
+      # without their path args. The runner's preinstalled Node is enough.
       - name: Guardrail hooks
-        run: node --test .claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs
+        run: node --test .claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs tools/claude/workflow-args.test.mjs
       # The MySQL service in `test` and `smoke` is pinned to the digest both
       # compose files pin. Dependabot moves the compose digest but never a
       # workflow's service image, so a compose bump alone fails here until this

@@ -1,5 +1,7 @@
 // Workflow tool script: the six-lens adversarial plan review, as run on Plan 3 (the lens briefs,
-// CONTEXT, PLAN path and section map are plan-specific: adapt them for the plan under review).
+// CONTEXT and its section map are plan-specific: adapt them for the plan under review).
+// args: { repo, scratch, planPath }, all required: repo is a Git Bash path, scratch a directory
+// for the reviewers' throwaway scripts, planPath the plan file relative to the repository.
 
 export const meta = {
   name: 'review-plan-3',
@@ -12,10 +14,21 @@ export const meta = {
   ],
 }
 
-const PLAN = 'docs/superpowers/plans/2026-09-11-plan-3-submissions.md'
+// Paths come only from args: a missing one stops the run here, before any agent starts.
+const required = (name, example) => {
+  const value = args?.[name]
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Workflow args.${name} is required: ${example}. See tools/claude/README.md, "Paths".`)
+  }
+  return value
+}
+
+const REPO = required('repo', 'the repository path in Git Bash form, e.g. /c/Users/you/projects/CASS')
+const SCRATCH = required('scratch', 'a directory for throwaway files, such as the session scratchpad')
+const PLAN = required('planPath', 'the plan under review, relative to the repository, e.g. docs/superpowers/plans/<plan>.md')
 
 const CONTEXT = `
-Project: CASS v2, a multi-tenant Laravel 13.31 + Filament 5.8.1 + Livewire 4.4.4 + Tailwind 4.3 app. Repository: /c/Users/ahmed/Documents/CASS (use the Bash tool with Git Bash paths). Current branch: plan-3-submissions, created from main at commit 4961530 (Plans 1 and 2 merged and deployed; 232 tests green). Installed: Pest 5.1.4 (laravel + livewire plugins), Larastan level 6, Pint (strict types), spatie/laravel-activitylog 5.1, chillerlan/php-qrcode 5.0.5, barryvdh/laravel-dompdf 3.1.x, openspout/openspout 4.32.0 (transitive via filament/actions), symfony/html-sanitizer. NOT installed: pestphp/pest-plugin-browser (Plan 3 Task 13 adds it) — to check its API read its source on GitHub (https://github.com/pestphp/pest-plugin-browser) with WebFetch or state that you could not verify. PHP 8.4.23 on Windows without sodium, exif or sockets extensions; php -  (stdin scripts) does not work here.
+Project: CASS v2, a multi-tenant Laravel 13.31 + Filament 5.8.1 + Livewire 4.4.4 + Tailwind 4.3 app. Repository: ${REPO} (use the Bash tool with Git Bash paths). Current branch: plan-3-submissions, created from main at commit 4961530 (Plans 1 and 2 merged and deployed; 232 tests green). Installed: Pest 5.1.4 (laravel + livewire plugins), Larastan level 6, Pint (strict types), spatie/laravel-activitylog 5.1, chillerlan/php-qrcode 5.0.5, barryvdh/laravel-dompdf 3.1.x, openspout/openspout 4.32.0 (transitive via filament/actions), symfony/html-sanitizer. NOT installed: pestphp/pest-plugin-browser (Plan 3 Task 13 adds it) — to check its API read its source on GitHub (https://github.com/pestphp/pest-plugin-browser) with WebFetch or state that you could not verify. PHP 8.4.23 on Windows without sodium, exif or sockets extensions; php -  (stdin scripts) does not work here.
 
 Documents:
 - The plan under review: ${PLAN} (11,677 lines). Section map: header and environment facts L1-48; file structure L49-198; "Facts verified in vendor" L199-229; Task 1 L230-2145 (schema, enums, models, factories, policies); Task 2 L2146-2809 (WordCounter, tokens, reference numbers, MIME sniffing); Task 3 L2810-4146 (TemplatedMail, platform default templates, email_logs pipeline, NewSubmissionNotice); Task 4 L4147-4723 (private file storage, signed /files/{ulid}); Task 5 L4724-5934 (SaveSubmissionDraft, SubmitAbstract, UpdateSubmission, WithdrawSubmission); Task 6 L5935-7208 (public submit form Livewire component: route, structure, word count, authors, custom fields); Task 7 L7209-8061 (files, honeypot, throttle, Turnstile, CTA href); Task 8 L8062-8658 (status page /s/{token} with edit and withdraw); Task 9 L8659-9708 (organizer SubmissionResource: list, view, withdraw, resend, CSV export); Task 10 L9709-10315 (per-conference email template editor page); Task 11 L10316-10720 (admin EmailLogResource, admin conference counts); Task 12 L10721-10991 (language files, .env.example, runbook sections); Task 13 L10992-11308 (browser test with pest-plugin-browser + Playwright, CI job, php.ini sockets); Task 14 L11309-11400 (MySQL run, backlog, final gate, PR); trailing sections L11401-11677 (deferrals, verification, self-review).
@@ -28,7 +41,7 @@ Existing conventions the plan must follow: declare(strict_types=1) everywhere; b
 Owner decisions already taken (do not raise these as findings): email templates are edited on a resource page backed by an array table rather than a relation manager; SubmissionResource sets $isScopedToTenant = false and scopes its Eloquent query by hand because Submission has no organization_id (the security lens must still verify that every query, action, page and policy in the plan is scoped correctly); openspout is promoted to a direct dependency; the browser suite lives in its own phpunit.browser.xml and tests/Browser is excluded from phpunit.xml; the reviewer and decision template keys get defaults and an editor in this plan but are not sent.
 `
 
-const READ_ONLY = `This is READ-ONLY review work: do not edit, create or delete any file, do not run composer/npm install or require, do not commit, do not start Docker containers. You may read any file, grep vendor, run php artisan route:list or write a throwaway PHP script to the session scratchpad (C:/Users/ahmed/AppData/Local/Temp/claude/C--Users-ahmed-Documents-CASS/34d09af2-98e6-4f66-9155-27bca70b7eb7/scratchpad/plan3/) for read-only checks, and use WebFetch for package source that is not installed.`
+const READ_ONLY = `This is READ-ONLY review work: do not edit, create or delete any file, do not run composer/npm install or require, do not commit, do not start Docker containers. You may read any file, grep vendor, run php artisan route:list or write a throwaway PHP script to the scratch directory ${SCRATCH}/ for read-only checks, and use WebFetch for package source that is not installed.`
 
 const FINDINGS_SCHEMA = {
   type: 'object',

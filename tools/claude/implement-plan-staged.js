@@ -2,7 +2,9 @@
 // runs in the main tree; a stage with two tasks runs them in parallel worktrees, each reviewed,
 // then merges them one after the other. Each task = implement (max) -> one combined spec +
 // quality reviewer (high) -> one fix round -> recheck.
-// args: { branch, mainSha, startHead, prTask, stages, taskDir, planPath, planLabel, repo?, worktreeRoot? }
+// args: { repo, worktreeRoot, taskDir, planPath, branch, mainSha, startHead, prTask, stages, planLabel }
+//   repo, worktreeRoot, taskDir, planPath: required; repo and worktreeRoot are Git Bash paths, and a
+//     parallel task's worktree is <worktreeRoot>/CASS-wt-N; planPath is relative to the repository
 //   stages:  [[1],[2,5],[3,6],...]  task numbers; pairs run in parallel
 //   taskDir: directory holding header.md and task-NN.md from tools/claude/split-plan.sh
 export const meta = {
@@ -11,13 +13,22 @@ export const meta = {
   phases: [{ title: 'Stages', detail: 'one progress group per stage' }],
 }
 
-const REPO = args.repo || '/c/Users/ahmed/Documents/CASS'
-const WT_ROOT = args.worktreeRoot || '/c/Users/ahmed/Documents'
-const TASKS = args.taskDir
+// Paths come only from args: a missing one stops the run here, before any agent starts.
+const required = (name, example) => {
+  const value = args?.[name]
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Workflow args.${name} is required: ${example}. See tools/claude/README.md, "Paths".`)
+  }
+  return value
+}
+
+const REPO = required('repo', 'the repository path in Git Bash form, e.g. /c/Users/you/projects/CASS')
+const WT_ROOT = required('worktreeRoot', 'the directory that receives the CASS-wt-N worktrees, e.g. /c/Users/you/projects')
+const TASKS = required('taskDir', 'the directory holding header.md and the task-NN.md files from tools/claude/split-plan.sh')
+const PLAN = required('planPath', 'the plan being implemented, relative to the repository, e.g. docs/superpowers/plans/<plan>.md')
 const BRANCH = args.branch
 const PR_TASK = args.prTask
 const STAGES = args.stages
-const PLAN = args.planPath
 const LABEL = args.planLabel
 
 const wtDir = (n) => `${WT_ROOT}/CASS-wt-${n}`

@@ -45,21 +45,34 @@ linked.
 |---|---|---|
 | `deploy.sh` | on the production host, through `ssh ... 'bash -s' < tools/claude/deploy.sh` with `CASS_COOLIFY_APP_UUID` set | triggers a Coolify deploy, waits for a NEW healthy `app` container (Coolify queues deploys and restarts; a `running:healthy` status alone proves nothing), then inside it as user `app` runs `migrate:status`; only when something is pending, `cass-backup` on the host and then `migrate --force`; then, in every case, `migrate:status` again, the page probes and `cass:health`. It prints `DEPLOY_DONE` only when every step passed; otherwise one `DEPLOY_FAILED:` line and exit 1 (configuration or unexpected), 2 (no new healthy container), 3 (deploy not queued, failed or cancelled), 4 (backup failed, nothing migrated), 5 (migration), 6 (a page's status code) or 7 (`cass:health`). `deploy.test.sh` runs it against fakes, in CI's `scripts` job. |
 | `split-plan.sh` | locally | splits a plan markdown into `header.md`, `task-NN.md` and `tail.md` on `### Task N` headings, ignoring headings inside code fences, so an implementer agent reads one task file instead of an 11,000-line plan. |
-| `review-plan.template.js` | Workflow tool | the six-lens adversarial plan review: six reviewers (API correctness, cross-task consistency, security and tenancy, test validity, spec coverage, build and operations) each verified by a skeptic, one editor applying confirmed fixes to the plan, one critic, a second edit pass. Adapt `CONTEXT`, `PLAN`, the section map and the lens briefs per plan. |
+| `review-plan.template.js` | Workflow tool | the six-lens adversarial plan review: six reviewers (API correctness, cross-task consistency, security and tenancy, test validity, spec coverage, build and operations) each verified by a skeptic, one editor applying confirmed fixes to the plan, one critic, a second edit pass. Adapt `CONTEXT`, its section map and the lens briefs per plan; the plan file comes from `args.planPath`. |
 | `implement-plan-staged.js` | Workflow tool | staged implementation: `stages` is a list of task-number lists; a single task runs in the main tree, a pair runs in two worktrees at once and is merged by an agent afterwards; each task = implement (max effort) → one combined spec + quality reviewer → one fix round → recheck. The last task opens the pull request. |
 | `premerge-review.js` | Workflow tool | the quality gate that found what the per-task reviewers missed (30 verified defects per plan on average): three maximum-effort lenses over the whole branch diff, a skeptic per lens, one fixer that applies the confirmed findings test-first, pushes and watches CI. Run it on every plan branch before merging. |
 
 Per-task log files: parallel worktree agents share `/tmp`, so every gate command writes to
 `/tmp/t-task-N.log`, never `/tmp/t.log`.
 
-Paths: `premerge-review.js` and `implement-plan-staged.js` still default to the old PC's
-repository at `/c/Users/ahmed/Documents/CASS` (and worktrees beside it), and
-`review-plan.template.js` names it outright; until those defaults are removed (work order item
-A7), always pass `repo`, `worktreeRoot` and `scratch` in the Workflow `args`. `split-plan.sh`
-and `deploy.sh` take their paths as arguments or environment and need no change.
+Paths: the three Workflow scripts hold no path of their own and refuse to start, with one line
+that names the missing argument, unless their `args` carry their paths. `implement-plan-staged.js`
+needs `repo`, `worktreeRoot` (a parallel task's worktree is `<worktreeRoot>/CASS-wt-N`), `taskDir`
+(the directory `split-plan.sh` wrote) and `planPath`; `premerge-review.js` needs `repo`, `scratch`
+and `planPath`; `review-plan.template.js` needs `repo`, `scratch` and `planPath`. `repo` and
+`worktreeRoot` are Git Bash paths, `scratch` is a directory for the agents' throwaway scripts (the
+session scratchpad, for example) and `planPath` is relative to the repository; this machine's
+repository path is in `CLAUDE.local.md`. A `premerge-review.js` run, for example:
 
-Tests for the guardrails: `node --test .claude/hooks/guard-production.test.mjs
-tools/git-hooks/pre-push.test.mjs` (also run by CI's `scripts` job).
+```json
+{ "repo": "/c/Users/you/projects/CASS", "scratch": "/tmp/cass-premerge",
+  "planPath": "docs/superpowers/plans/<date>-plan-n-topic.md",
+  "branch": "plan-n-topic", "base": "abc1234", "pr": 99, "label": "Plan N" }
+```
+
+`tools/claude/workflow-args.test.mjs` proves each refusal. `split-plan.sh` and `deploy.sh` take
+their paths as arguments or environment and need no change.
+
+Tests for the guardrails and the Workflow scripts' arguments: `node --test
+.claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs
+tools/claude/workflow-args.test.mjs` (also run by CI's `scripts` job).
 
 ## Dependabot
 
