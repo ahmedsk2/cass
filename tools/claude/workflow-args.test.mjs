@@ -12,6 +12,7 @@ const AsyncFunction = (async () => {}).constructor;
 const paths = {
     repo: '/c/test/repository',
     worktreeRoot: '/c/test/worktree-root',
+    taskDir: '/c/test/task-dir',
     scratch: '/c/test/scratch-dir',
     planPath: 'docs/test/plan-under-review.md',
 };
@@ -19,7 +20,7 @@ const paths = {
 const scripts = [
     {
         file: 'implement-plan-staged.js',
-        required: ['repo', 'worktreeRoot'],
+        required: ['repo', 'worktreeRoot', 'taskDir', 'planPath'],
         // One stage of two tasks, so the prompts include the worktree setup.
         rest: {
             branch: 'feature',
@@ -27,15 +28,13 @@ const scripts = [
             startHead: 'bbbbbbb',
             prTask: 2,
             stages: [[1, 2]],
-            taskDir: '/c/test/tasks',
-            planPath: paths.planPath,
             planLabel: 'the test plan',
         },
     },
     {
         file: 'premerge-review.js',
-        required: ['repo', 'scratch'],
-        rest: { branch: 'feature', base: 'aaaaaaa', pr: 1, planPath: paths.planPath, label: 'the test plan' },
+        required: ['repo', 'scratch', 'planPath'],
+        rest: { branch: 'feature', base: 'aaaaaaa', pr: 1, label: 'the test plan' },
     },
     {
         file: 'review-plan.template.js',
@@ -79,6 +78,13 @@ function run(file, args, prompts = []) {
     return script(args, agent, parallel, pipeline, quiet, quiet, budget, workflow);
 }
 
+// A refusal is the whole message on one line: the argument's name, what it should hold, then
+// the pointer to the README. A RegExp given for `message` is matched against the message alone,
+// so ^ and $ anchor it there.
+const refusal = (name) => ({
+    message: new RegExp(`^Workflow args\\.${name} is required: [^\\n]* See tools/claude/README\\.md, "Paths"\\.$`),
+});
+
 for (const { file, required, rest } of scripts) {
     const complete = { ...rest, ...Object.fromEntries(required.map((name) => [name, paths[name]])) };
 
@@ -88,14 +94,14 @@ for (const { file, required, rest } of scripts) {
             delete missing[name];
             for (const args of [missing, { ...complete, [name]: '' }]) {
                 const prompts = [];
-                await assert.rejects(run(file, args, prompts), new RegExp(`args\\.${name} is required`));
+                await assert.rejects(run(file, args, prompts), refusal(name));
                 assert.equal(prompts.length, 0, 'an agent started before the check');
             }
         });
     }
 
     test(`${file} refuses to start when it gets no args at all`, async () => {
-        await assert.rejects(run(file, undefined), /args\.repo is required/);
+        await assert.rejects(run(file, undefined), refusal('repo'));
     });
 
     test(`${file} starts with its paths and gives its agents those paths only`, async () => {
