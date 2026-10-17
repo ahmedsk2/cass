@@ -32,4 +32,13 @@ return [
         ],
     ],
 
+    'update' => [
+        'refused' => 'Nothing was saved',
+        'errors' => [
+            'not_allowed' => 'Only a member of this organization can edit its conferences.',
+            'review_mode_locked' => 'The review mode cannot change once reviewing has started or a review has been written.',
+            'blind_review_locked' => 'Blind review cannot be switched on or off once reviewing has started or a review has been written.',
+        ],
+    ],
+
 ];
