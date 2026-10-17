@@ -180,6 +180,10 @@ jobs:
         run: sh -n docker/backup.sh docker/storage-backup.sh docker/entrypoint.sh docker/backup.test.sh
       - name: Backup container detection
         run: sh docker/backup.test.sh
+      # The release script the owner pipes to the production host, run against
+      # fakes for sudo, docker, curl and cass-backup.
+      - name: Deploy script
+        run: bash -n tools/claude/deploy.sh && bash tools/claude/deploy.test.sh
       # The Claude Code production guard and the pre-push hook that stands in
       # for branch protection. The runner's preinstalled Node is enough.
       - name: Guardrail hooks
