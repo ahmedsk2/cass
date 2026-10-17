@@ -232,10 +232,10 @@ seen in an error line is a token to rotate with **Resend status link**.
 
 `tests/Feature/AccessLogRedactionTest.php` reads `docker/nginx.conf` and fails
 if that redaction is ever removed, but it does not run nginx. Syntax-check the
-file after every edit to it:
+file after every edit to it, from the repository root:
 
 ```bash
-cd /c/Users/ahmed/Documents/CASS && MSYS_NO_PATHCONV=1 docker run --rm \
+MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$(pwd)/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
   nginx:alpine nginx -t 2>&1 | tail -3
 ```

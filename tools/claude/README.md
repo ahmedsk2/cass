@@ -54,17 +54,17 @@ Per-task log files: parallel worktree agents share `/tmp`, so every gate command
 
 Paths: the three Workflow scripts hold no path of their own and refuse to start, with one line
 that names the missing argument, unless their `args` carry their paths. `implement-plan-staged.js`
-needs `repo` and `worktreeRoot` (a parallel task's worktree is `<worktreeRoot>/CASS-wt-N`);
-`premerge-review.js` needs `repo` and `scratch`; `review-plan.template.js` needs `repo`, `scratch`
-and `planPath`. `repo` and `worktreeRoot` are Git Bash paths, `scratch` is a directory for the
-agents' throwaway scripts (the session scratchpad, for example) and `planPath` is relative to the
-repository; this machine's repository path is in `CLAUDE.local.md`. A `premerge-review.js` run,
-for example:
+needs `repo`, `worktreeRoot` (a parallel task's worktree is `<worktreeRoot>/CASS-wt-N`), `taskDir`
+(the directory `split-plan.sh` wrote) and `planPath`; `premerge-review.js` needs `repo`, `scratch`
+and `planPath`; `review-plan.template.js` needs `repo`, `scratch` and `planPath`. `repo` and
+`worktreeRoot` are Git Bash paths, `scratch` is a directory for the agents' throwaway scripts (the
+session scratchpad, for example) and `planPath` is relative to the repository; this machine's
+repository path is in `CLAUDE.local.md`. A `premerge-review.js` run, for example:
 
 ```json
 { "repo": "/c/Users/you/projects/CASS", "scratch": "/tmp/cass-premerge",
-  "branch": "plan-n-topic", "base": "abc1234", "pr": 99,
-  "planPath": "docs/superpowers/plans/<date>-plan-n-topic.md", "label": "Plan N" }
+  "planPath": "docs/superpowers/plans/<date>-plan-n-topic.md",
+  "branch": "plan-n-topic", "base": "abc1234", "pr": 99, "label": "Plan N" }
 ```
 
 `tools/claude/workflow-args.test.mjs` proves each refusal. `split-plan.sh` and `deploy.sh` take
