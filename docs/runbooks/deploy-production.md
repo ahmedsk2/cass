@@ -68,11 +68,19 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 ## Every release
 
 1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying.
-2. Coolify: Deploy (or enable auto-deploy on push).
-3. If the release adds migrations, apply them as soon as Coolify reports the new `app` container healthy. The migration files exist only in the new image, and Coolify's Docker Compose deploys stop the old container before the new one starts (no rolling update), so there is no moment at which the old container could run them — `migrate` there just prints "Nothing to migrate". Turn auto-deploy off for such a release so you are at the terminal when the new container goes live. Run the migration only, **not** step 6's `db:seed`: the seeder resets the platform admin's password back to `CASS_ADMIN_PASSWORD`.
+2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL.
+
+   ```bash
+   ssh -i <ssh-key> <ssh-user>@<origin-ip> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh
+   ```
+
+   It queues the deploy, waits for a NEW healthy `app` container (stopping early if Coolify reports the deployment failed), then runs `migrate:status` inside it as user `app`. When anything is Pending it first runs `sudo /usr/local/bin/cass-backup` on the host (see **Backups**) and migrates only if that succeeded; in every case it then runs `migrate:status` again. Then it probes eight pages through Traefik for their expected status codes and runs `cass:health`, showing every output in full. It prints `DEPLOY_DONE` only when all of that passed. **Any line starting `DEPLOY_FAILED:` means stop and read**: it names the step that failed, nothing after that step ran, and the exit codes are listed at the top of the script (4: the backup failed and nothing was migrated).
+3. Migrations are additive: expand now (new tables, new nullable columns), contract (drop, rename, tighten) in a later release, once no deployed code reads the old shape. A migration release begins with a hand-run `cass-backup` and ends with `migrate:status` and `cass:health` clean; the script backs up again just before `migrate --force` and prints `DEPLOY_DONE` only on that clean end. The migration files exist only in the new image, and Coolify's Docker Compose deploys stop the old container before the new one starts (no rolling update), so the pages that need the new schema return 500 until the script's `migrate --force` has run. Never run step 6's `db:seed` on a release: the seeder resets the platform admin's password back to `CASS_ADMIN_PASSWORD`. By hand, if the script cannot run:
 
    ```bash
    C=$(cass_container app)
+   sudo docker exec -it "$C" su-exec app php artisan migrate:status
+   sudo /usr/local/bin/cass-backup    # when anything is Pending; stop if it fails
    sudo docker exec -it "$C" su-exec app php artisan migrate --force
    sudo docker exec -it "$C" su-exec app php artisan migrate:status
    ```
