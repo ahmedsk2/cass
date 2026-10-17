@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Conferences\CreateDefaultReviewForm;
 use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
 use App\Enums\ReviewMode;
@@ -9,6 +10,7 @@ use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
 use App\Filament\Organizer\Resources\Conferences\Pages\ViewConference;
 use App\Models\Conference;
+use App\Models\ConferenceReviewer;
 use App\Models\Organization;
 use App\Models\Review;
 use App\Models\Submission;
@@ -81,4 +83,44 @@ it('refuses the same forged change through the view page and the list table', fu
 
     expect($conference->fresh()?->blind_review)->toBeTrue()
         ->and($conference->fresh()?->review_mode)->toBe(ReviewMode::OpenPool);
+});
+
+it('saves a change to blind review on a conference that is not locked', function () {
+    $conference = ($this->make)(ConferenceStatus::Closed);
+
+    ($this->edit)($conference)->fillForm(['blind_review' => false])->call('save')->assertHasNoFormErrors();
+    expect($conference->fresh()?->blind_review)->toBeFalse();
+});
+
+it('shows the stored review settings once Start reviewing on this page locks them, so the next save goes through', function () {
+    $conference = ($this->make)(ConferenceStatus::Closed);
+    app(CreateDefaultReviewForm::class)->handle($conference);
+    ConferenceReviewer::factory()->for($conference)->create();
+    Submission::factory()->for($conference)->submitted()->create();
+
+    // An unsaved change to blind review, then the header's Start reviewing.
+    ($this->edit)($conference)->fillForm(['blind_review' => false])->callAction('startReviewing')
+        ->assertFormSet(['blind_review' => true])->assertFormFieldDisabled('blind_review')
+        ->fillForm(['review_deadline' => '2026-11-10 23:59:00'])->call('save')->assertHasNoFormErrors();
+
+    expect($conference->fresh()?->status)->toBe(ConferenceStatus::Reviewing)
+        ->and($conference->fresh()?->blind_review)->toBeTrue()
+        ->and($conference->fresh()?->review_deadline?->equalTo(Carbon::parse('2026-11-10 20:59:00', 'UTC')))->toBeTrue();
+});
+
+it('puts a refused review setting back to its stored value, so the next save keeps the other edits', function () {
+    $conference = ($this->make)(ConferenceStatus::Reviewing);
+
+    ($this->edit)($conference)->fillForm(['blind_review' => false, 'name' => 'Renamed after the refusal'])
+        ->call('save')->assertNotified(__('organizer.update.refused'))->assertFormSet(['blind_review' => true])
+        ->call('save')->assertHasNoFormErrors();
+    expect($conference->fresh()?->name)->toBe('Renamed after the refusal')
+        ->and($conference->fresh()?->blind_review)->toBeTrue();
+});
+
+it('does not open the edit action of the list table on another organization conference', function () {
+    $theirs = withoutTenant(fn () => Conference::factory()->create(['name' => 'Theirs']));
+
+    livewire(ListConferences::class)->mountTableAction('edit', $theirs)->assertActionNotMounted();
+    expect($theirs->fresh()?->name)->toBe('Theirs');
 });

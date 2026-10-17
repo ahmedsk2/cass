@@ -10,6 +10,7 @@ use App\Enums\ConferenceStatus;
 use App\Enums\OrganizationRole;
 use App\Enums\OrganizationStatus;
 use App\Exceptions\MemberChangeRefused;
+use App\Exceptions\ReviewNotAcceptable;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
 use App\Models\Organization;
@@ -74,7 +75,7 @@ it('refuses a member invitation and sends nothing', function (OrganizationStatus
     Notification::assertNothingSent();
 })->with('organization not approved');
 
-it('refuses a manual reminder before it scans any reviewer queue', function (OrganizationStatus $status, string $reason) {
+it('refuses a manual reminder before it scans any reviewer queue, and sends nothing', function (OrganizationStatus $status, string $reason) {
     ($this->setStatus)($status);
     $conference = $this->conference->fresh();
     DB::enableQueryLog();
@@ -82,6 +83,12 @@ it('refuses a manual reminder before it scans any reviewer queue', function (Org
     // The queue scan is the only part of manualBlockers() that reads submissions.
     expect(app(SendReviewerReminders::class)->manualBlockers($conference))->toBe([__('reviewer.remind.errors.'.$reason)])
         ->and(collect(DB::getQueryLog())->filter(fn (array $query): bool => str_contains((string) $query['query'], 'submissions')))->toBeEmpty();
+
+    // The send itself refuses for the organization, before it claims the window.
+    expect(fn () => app(SendReviewerReminders::class)->manual($conference, $this->owner))
+        ->toThrow(ReviewNotAcceptable::class, __('reviewer.remind.errors.'.$reason))
+        ->and($conference->fresh()?->reviewer_reminded_at)->toBeNull();
+    Mail::assertNothingQueued();
 })->with('organization not approved');
 
 it('skips the automatic reminder without failing the hourly pass, and sends it once approved', function (OrganizationStatus $status) {

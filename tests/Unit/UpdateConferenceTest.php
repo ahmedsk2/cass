@@ -47,6 +47,7 @@ it('saves an open conference\'s settings and names the actor as causer of a dead
     $entry = $conference->activitiesAsSubject()->where('event', 'updated')->sole();
 
     expect($conference->fresh()?->review_mode)->toBe(ReviewMode::Assigned)
+        ->and($conference->fresh()?->blind_review)->toBeFalse()
         ->and($entry->causer_id)->toBe($this->owner->id)
         ->and(Carbon::parse($entry->attribute_changes['old']['review_deadline'])->equalTo(Carbon::parse('2026-11-03 20:59:00', 'UTC')))->toBeTrue()
         ->and(Carbon::parse($entry->attribute_changes['attributes']['review_deadline'])->equalTo(Carbon::parse('2026-11-10 20:59:00', 'UTC')))->toBeTrue();
@@ -60,6 +61,17 @@ it('refuses an edit by a member of another organization', function () {
     expect(fn () => app(UpdateConference::class)->handle($conference, ['name' => 'Taken over'], $stranger))
         ->toThrow(ConferenceUpdateRefused::class, __('organizer.update.errors.not_allowed'))
         ->and($conference->fresh()?->name)->not->toBe('Taken over');
+});
+
+it('checks the lock against the stored row, not the instance the page loaded', function () {
+    $conference = ($this->make)(ConferenceStatus::Closed);
+    // Start reviewing commits after this instance was loaded and before it is saved.
+    Conference::query()->whereKey($conference->getKey())->update(['status' => ConferenceStatus::Reviewing->value]);
+
+    expect(fn () => app(UpdateConference::class)->handle($conference, $this->change, $this->owner))
+        ->toThrow(ConferenceUpdateRefused::class, __('organizer.update.errors.review_mode_locked'))
+        ->and($conference->fresh()?->review_mode)->toBe(ReviewMode::OpenPool)
+        ->and($conference->fresh()?->blind_review)->toBeTrue();
 });
 
 it('locks on a review of this conference, trashed abstracts included, and never on a review of another conference', function () {

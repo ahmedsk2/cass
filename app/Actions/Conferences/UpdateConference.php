@@ -11,6 +11,7 @@ use App\Models\Conference;
 use App\Models\Review;
 use App\Models\Submission;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Support\CauserResolver;
 
 /**
@@ -53,17 +54,27 @@ class UpdateConference
     /** @param  array<string, mixed>  $data */
     public function handle(Conference $conference, array $data, User $actor): Conference
     {
-        $reasons = $this->blockers($conference, $data, $actor);
+        DB::transaction(function () use ($conference, $data, $actor): void {
+            // The row as stored, under the lock StartReviewing takes too: this
+            // instance was loaded when the request began, and a Start reviewing
+            // committed since must meet the lock here rather than after the
+            // write. SQLite ignores the lock clause and serialises writes
+            // anyway, so the stale-status half is what a local test can show.
+            $stored = Conference::query()->whereKey($conference->getKey())->lockForUpdate()->firstOrFail();
+            $conference->setRawAttributes($stored->getAttributes(), sync: true);
 
-        if ($reasons !== []) {
-            throw new ConferenceUpdateRefused($reasons);
-        }
+            $reasons = $this->blockers($conference, $data, $actor);
 
-        // As Filament did: $fillable keeps `status` out, and a stray key throws outside production.
-        $conference->fill($data);
+            if ($reasons !== []) {
+                throw new ConferenceUpdateRefused($reasons);
+            }
 
-        // Not the auth guard's user, who is the actor on the panel and nobody elsewhere.
-        app(CauserResolver::class)->withCauser($actor, fn (): bool => $conference->save());
+            // As Filament did: $fillable keeps `status` out, and a stray key throws outside production.
+            $conference->fill($data);
+
+            // Not the auth guard's user, who is the actor on the panel and nobody elsewhere.
+            app(CauserResolver::class)->withCauser($actor, fn (): bool => $conference->save());
+        });
 
         return $conference;
     }

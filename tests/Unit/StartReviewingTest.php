@@ -89,6 +89,16 @@ it('refuses in assigned mode until every abstract has a reviewer', function () {
     expect(app(StartReviewing::class)->blockers($this->conference->fresh()))->toBe([]);
 });
 
+it('checks the review mode stored when it starts, not the one the instance was loaded with', function () {
+    $conference = readyToReview($this->conference);
+    // An edit to assigned mode commits after this instance was loaded; its one abstract has no reviewer.
+    Conference::query()->whereKey($conference->getKey())->update(['review_mode' => ReviewMode::Assigned->value]);
+
+    expect(fn () => app(StartReviewing::class)->handle($conference, $this->actor))
+        ->toThrow(ConferenceNotPublishable::class, __('reviewer.start.errors.unassigned', ['count' => 1]))
+        ->and($conference->fresh()?->status)->toBe(ConferenceStatus::Closed);
+});
+
 it('refuses from a status the graph does not allow', function () {
     foreach ([ConferenceStatus::Draft, ConferenceStatus::Open, ConferenceStatus::Decided, ConferenceStatus::Archived] as $status) {
         $conference = readyToReview($this->conference);
