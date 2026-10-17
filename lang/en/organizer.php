@@ -45,4 +45,12 @@ return [
         'locked' => 'Fixed once reviewing starts or the first review is written, so every review is read under the settings it was written under.',
     ],
 
+    'tracks' => [
+        'in_use' => 'Abstracts are filed under this track, so it cannot be deleted. Rename it instead.',
+    ],
+
+    'custom_fields' => [
+        'in_use' => 'Authors have answered this field, so it cannot be deleted.',
+    ],
+
 ];
