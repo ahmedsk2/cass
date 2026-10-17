@@ -2,7 +2,7 @@
     The stylesheet TipTap injects at runtime, shipped from the server with a
     nonce instead.
 
-    Filament 5.8.1 builds its RichEditor's TipTap instance with
+    Filament 5.10.2 builds its RichEditor's TipTap instance with
     `injectCSS: true, injectNonce: undefined`
     (vendor/filament/forms/dist/components/rich-editor.js), so the
     `<style data-tiptap-style>` element it appends to <head> carries no nonce -
