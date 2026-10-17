@@ -1,6 +1,7 @@
 // Workflow tool script. Maximum-effort three-lens review of a whole plan branch, skeptic
 // verification, one fixer that applies confirmed findings test-first, pushes and watches CI.
-// args: { branch, base, pr, planPath, label, deferredPath?, repo?, scratch? }
+// args: { repo, scratch, branch, base, pr, planPath, label, deferredPath? }
+//   repo, scratch: required; repo is a Git Bash path, scratch a directory for the agents' throwaway scripts
 export const meta = {
   name: 'premerge-review',
   description: 'Maximum-effort three-lens review of a whole plan branch diff, skeptic verification, one fixer that applies confirmed findings test-first, pushes and watches CI',
@@ -11,8 +12,17 @@ export const meta = {
   ],
 }
 
-const REPO = args.repo || '/c/Users/ahmed/Documents/CASS'
-const SCRATCH = args.scratch || '/tmp/premerge-tmp'
+// Paths come only from args: a missing one stops the run here, before any agent starts.
+const required = (name, example) => {
+  const value = args?.[name]
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Workflow args.${name} is required: ${example}. See tools/claude/README.md, "Paths".`)
+  }
+  return value
+}
+
+const REPO = required('repo', 'the repository path in Git Bash form, e.g. /c/Users/you/projects/CASS')
+const SCRATCH = required('scratch', 'a directory for throwaway files, such as the session scratchpad')
 const BRANCH = args.branch
 const BASE = args.base
 const PR = args.pr
