@@ -2,10 +2,11 @@
 # Runs ON the production host:
 #   ssh -i ~/.ssh/oci_server ubuntu@<host> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh
 # Triggers a Coolify deploy of the CASS application and waits for a NEW healthy app container,
-# stopping early if Coolify reports the deployment failed. Then, inside that container as user
-# `app`: migrate:status; when anything is pending, cass-backup on the host first (no backup, no
-# migration), then migrate --force; then migrate:status again. Then it probes the site through
-# Traefik and runs cass:health. Every command's output is shown in full.
+# one that was not running before the deploy, stopping early if Coolify reports the deployment
+# failed. Then, inside that container as user `app`: migrate:status; when anything is pending,
+# cass-backup on the host first (no backup, no migration), then migrate --force; and in every
+# case migrate:status again. Then it probes the site through Traefik and runs cass:health. Every
+# command's output is shown in full.
 #
 # DEPLOY_DONE is printed only when all of that passed. Every failure prints one line starting
 # DEPLOY_FAILED: and exits with
@@ -115,11 +116,17 @@ containers() {
     awk -F '\t' -v uuid="$APP_UUID" 'index($1, uuid)' <<< "$listing"
 }
 
-# app_container_except <listing> <name>: the first app container in the listing that is not
-# <name>, as name<TAB>status.
-app_container_except() {
-    awk -F '\t' -v prefix="app-${APP_UUID}-" -v not="$2" \
-        'index($1, prefix) == 1 && $1 != not && !found { print; found = 1 }' <<< "$1"
+# app_names <listing>: the names of the app containers in a containers listing, one per line.
+app_names() {
+    awk -F '\t' -v prefix="app-${APP_UUID}-" 'index($1, prefix) == 1 { print $1 }' <<< "$1"
+}
+
+# new_app_container <listing>: the first app container in the listing that was not running
+# before the deploy (none of $OLD_NAMES), as name<TAB>status.
+new_app_container() {
+    awk -F '\t' -v prefix="app-${APP_UUID}-" -v old="$OLD_NAMES" '
+        BEGIN { n = split(old, names, "\n"); for (i = 1; i <= n; i++) before[names[i]] = 1 }
+        index($1, prefix) == 1 && !($1 in before) && !found { print; found = 1 }' <<< "$1"
 }
 
 # php artisan in the new container, as user app, with stderr in the same stream.
@@ -139,19 +146,24 @@ main() {
     fi
     TOKEN=$(< "$TOKEN_FILE")
     [ -n "$TOKEN" ] || fail 1 "the Coolify API token file $TOKEN_FILE is empty"
-    [[ $DEPLOY_TIMEOUT =~ ^[0-9]+$ && $DEPLOY_POLL =~ ^[0-9]+$ ]] ||
+    # No leading zero: bash arithmetic would read 08 as a bad octal number, after the deploy
+    # had been queued.
+    local seconds='^(0|[1-9][0-9]*)$'
+    [[ $DEPLOY_TIMEOUT =~ $seconds && $DEPLOY_POLL =~ $seconds ]] ||
         fail 1 "CASS_DEPLOY_TIMEOUT [$DEPLOY_TIMEOUT] and CASS_DEPLOY_POLL [$DEPLOY_POLL] must be whole seconds"
     local tool
     for tool in curl python3 sudo; do
         command -v "$tool" > /dev/null || fail 1 "$tool is not installed"
     done
 
-    STEP='finding the running app container'
+    # Every app container running now is old, not only the newest: any of them may still be
+    # listed, healthy, while Coolify has the new one queued.
+    STEP='listing the running app containers'
     local listing
     listing=$(containers)
-    OLD=$(app_container_except "$listing" '')
-    OLD=${OLD%%$'\t'*}
-    echo "old container: ${OLD:-none}"
+    OLD_NAMES=$(app_names "$listing")
+    local shown=${OLD_NAMES//$'\n'/ }
+    echo "old containers: ${shown:-none}"
 
     STEP='queueing the deploy'
     local resp
@@ -168,7 +180,7 @@ main() {
     NEW=''
     while [ -z "$NEW" ]; do
         listing=$(containers)
-        cur=$(app_container_except "$listing" "$OLD")
+        cur=$(new_app_container "$listing")
         name=${cur%%$'\t'*}
         state=${cur#*$'\t'}
         # A poll that fails is reported and the wait goes on: the deadline still bounds it.

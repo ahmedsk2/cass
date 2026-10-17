@@ -127,6 +127,11 @@ exec)
     done
     case "$cmd" in
     migrate:status)
+        rc="$(knob status-rc 0)"
+        if [ "$rc" -ne 0 ]; then
+            printf '%s\n' '   Illuminate\Database\QueryException  SQLSTATE[HY000] [2002] Connection refused' >&2
+            exit "$rc"
+        fi
         echo '  Migration name ............................................... Batch / Status'
         echo '  0001_01_01_000000_create_users_table ............................... [1] Ran'
         if [ -f "$FAKE/pending" ]; then
@@ -551,6 +556,81 @@ eq 'exit status' 1 "$RC"
 eq 'one DEPLOY_FAILED line' 1 "$(failed_lines)"
 lacks 'no DEPLOY_DONE' 'DEPLOY_DONE'
 eq 'no API call, no deploy queued' 0 "$(count 'curl ')"
+
+scenario 'S15 two app containers already running: neither is taken for the new one'
+OLDER="app-$APP-070000000000"
+printf '%s\t%s\n' \
+    "$OTHER" 'Up 2 days (healthy)' \
+    "$OLD" 'Up 3 weeks (healthy)' \
+    "$OLDER" 'Up 4 weeks (healthy)' \
+    "$DB" 'Up 3 weeks (healthy)' > "$S/ps.0"
+cp "$S/ps.0" "$S/ps.1"
+cp "$S/ps.0" "$S/ps.2"
+printf '%s\t%s\n' \
+    "$OTHER" 'Up 2 days (healthy)' \
+    "$NEW" 'Up 38 seconds (healthy)' \
+    "$DB" 'Up 3 weeks (healthy)' > "$S/ps.3"
+echo queued > "$S/status.1"
+echo queued > "$S/status.2"
+echo finished > "$S/status.3"
+run_deploy
+eq 'exit status' 0 "$RC"
+has 'prints DEPLOY_DONE' 'DEPLOY_DONE'
+has 'names both as old' "old containers: $OLD $OLDER"
+eq 'waits through the polls that list only those two' 3 "$(count 'curl GET')"
+eq 'nothing ran in either old container' 0 \
+    "$(grep -cF -e "docker exec $OLD " -e "docker exec $OLDER " "$S/calls" || true)"
+eq 'checks the migrations in the new container' 2 "$(count "$ARTISAN migrate:status")"
+
+scenario 'S16 CASS_DEPLOY_TIMEOUT=08: refused before any deploy is queued'
+run_deploy CASS_DEPLOY_TIMEOUT=08
+eq 'exit status' 1 "$RC"
+eq 'one DEPLOY_FAILED line' 1 "$(failed_lines)"
+lacks 'no DEPLOY_DONE' 'DEPLOY_DONE'
+eq 'no deploy queued' 0 "$(count '/deploy?')"
+
+scenario 'S17 no app container running before the deploy: DEPLOY_DONE'
+printf '%s\t%s\n' "$OTHER" 'Up 2 days (healthy)' "$DB" 'Up 3 weeks (healthy)' > "$S/ps.0"
+printf '%s\t%s\n' \
+    "$OTHER" 'Up 2 days (healthy)' \
+    "$NEW" 'Up 4 seconds (health: starting)' \
+    "$DB" 'Up 3 weeks (healthy)' > "$S/ps.1"
+run_deploy
+eq 'exit status' 0 "$RC"
+has 'prints DEPLOY_DONE' 'DEPLOY_DONE'
+eq 'checks the migrations in the new container' 2 "$(count "$ARTISAN migrate:status")"
+
+scenario 'S18 Coolify restarts the old container under its old name: never taken for the new one, exit 2'
+printf '%s\t%s\n' \
+    "$OTHER" 'Up 2 days (healthy)' \
+    "$OLD" 'Up 3 seconds (healthy)' \
+    "$DB" 'Up 3 weeks (healthy)' > "$S/ps.1"
+rm -f "$S/ps.2"
+run_deploy CASS_DEPLOY_TIMEOUT=0
+eq 'exit status' 2 "$RC"
+eq 'one DEPLOY_FAILED line' 1 "$(failed_lines)"
+lacks 'no DEPLOY_DONE' 'DEPLOY_DONE'
+eq 'nothing ran in any container' 0 "$(count 'php artisan')"
+
+scenario 'S19 Coolify reports the deployment cancelled-by-user: exit 3 before any migration'
+nothing_deploys
+echo cancelled-by-user > "$S/status.1"
+run_deploy
+eq 'exit status' 3 "$RC"
+eq 'one DEPLOY_FAILED line' 1 "$(failed_lines)"
+lacks 'no DEPLOY_DONE' 'DEPLOY_DONE'
+has 'names the status' 'cancelled-by-user'
+eq 'nothing ran in any container' 0 "$(count 'php artisan')"
+
+scenario 'S20 migrate:status fails: exit 5, no backup, no migration'
+echo 1 > "$S/status-rc"
+run_deploy
+eq 'exit status' 5 "$RC"
+eq 'one DEPLOY_FAILED line' 1 "$(failed_lines)"
+lacks 'no DEPLOY_DONE' 'DEPLOY_DONE'
+has 'shows the error' 'Connection refused'
+eq 'no backup' 0 "$(count backup)"
+eq 'no migrate --force' 0 "$(count 'migrate --force')"
 
 # ---------------------------------------------------------------------------
 echo
