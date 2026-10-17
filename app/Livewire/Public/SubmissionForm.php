@@ -363,9 +363,12 @@ class SubmissionForm extends Component
         $this->token = $link->token;
 
         // The same token the redirect uses, so the emailed link and the page
-        // the author lands on are one URL.
+        // the author lands on are one URL. Null when a daily cap refused it:
+        // the draft is saved and the flash below says no email was sent.
+        $emailed = true;
+
         try {
-            $sendLink->handle($link->submission, $link->token);
+            $emailed = $sendLink->handleForAuthor($link->submission, $link->token, ClientIp::from(request())) !== null;
         } catch (SubmissionNotAcceptable) {
             // The draft is saved and the redirect below carries the same token,
             // so the author still lands on their abstract; only the email is
@@ -379,7 +382,7 @@ class SubmissionForm extends Component
             return null;
         }
 
-        session()->flash('status', __('submission.flash.draft_saved'));
+        session()->flash('status', $emailed ? __('submission.flash.draft_saved') : __('submission.flash.draft_not_emailed'));
 
         return $this->redirect($link->url() ?? $this->conference->publicUrl(), navigate: false);
     }

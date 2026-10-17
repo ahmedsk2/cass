@@ -19,6 +19,7 @@ use App\Filament\Organizer\Resources\Submissions\SubmissionResource;
 use App\Mail\TemplatedMail;
 use App\Models\Conference;
 use App\Models\ConferenceReviewer;
+use App\Models\EmailLog;
 use App\Models\Organization;
 use App\Models\Review;
 use App\Models\ReviewAnswer;
@@ -539,4 +540,14 @@ it('hides a draft review and hides the whole section while the call is still ope
     get(SubmissionResource::getUrl('view', ['record' => $this->submission], tenant: $this->organization))
         ->assertOk()
         ->assertDontSee(__('reviewer.review.organizer_heading'));
+});
+
+it('resends a status link however many the public form has sent the author today', function () {
+    EmailLog::factory()->count(3)->create(['to_email' => 'sara@example.org', 'template_key' => 'submission_draft_saved']);
+
+    livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
+        ->callAction('resendLink')
+        ->assertHasNoActionErrors();
+
+    Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('sara@example.org'));
 });
