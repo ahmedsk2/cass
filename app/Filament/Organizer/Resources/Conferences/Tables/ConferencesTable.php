@@ -9,7 +9,6 @@ use App\Models\Conference;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -43,7 +42,7 @@ class ConferencesTable
             ])
             ->recordActions([
                 ViewAction::make(),
-                EditAction::make(),
+                ConferenceStatusActions::edit(),
                 ConferenceStatusActions::share(),
                 ConferenceStatusActions::emails(),
                 ConferenceStatusActions::publish(),

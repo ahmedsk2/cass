@@ -6,6 +6,7 @@ namespace App\Filament\Organizer\Resources\Conferences\Schemas;
 
 use App\Enums\ConferenceStatus;
 use App\Enums\ReviewMode;
+use App\Filament\Organizer\Resources\Conferences\Pages\EditConference;
 use App\Models\Conference;
 use App\Models\Organization;
 use Closure;
@@ -175,7 +176,14 @@ class ConferenceForm
                     Section::make()->columns(2)->components([
                         Select::make('review_mode')
                             ->options(ReviewMode::class)->required()->live()
-                            ->default(ReviewMode::OpenPool->value)->columnSpanFull(),
+                            ->default(ReviewMode::OpenPool->value)->columnSpanFull()
+                            ->disabled(fn (object $livewire): bool => $livewire instanceof EditConference && $livewire->reviewSettingsLocked())
+                            // Sent even while disabled (disabled() alone drops it
+                            // from the save), so a change made on a page opened
+                            // before the lock is refused by UpdateConference
+                            // instead of vanishing.
+                            ->dehydrated()
+                            ->helperText(__('organizer.review_settings.locked')),
                         // `options(ReviewMode::class)` registers an
                         // EnumStateCast, so $get() hands back the enum case and
                         // never the backing string (fact 14). Comparing with
@@ -187,7 +195,10 @@ class ConferenceForm
                             ->required(fn (Get $get): bool => $get('review_mode') === ReviewMode::Assigned)
                             ->visible(fn (Get $get): bool => $get('review_mode') === ReviewMode::Assigned),
                         Toggle::make('blind_review')->default(true)
-                            ->label('Hide author names and affiliations from reviewers'),
+                            ->label('Hide author names and affiliations from reviewers')
+                            ->disabled(fn (object $livewire): bool => $livewire instanceof EditConference && $livewire->reviewSettingsLocked())
+                            ->dehydrated()
+                            ->helperText(__('organizer.review_settings.locked')),
                     ]),
                 ]),
             ]),

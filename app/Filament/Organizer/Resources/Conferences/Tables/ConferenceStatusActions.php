@@ -9,15 +9,19 @@ use App\Actions\Conferences\CloseSubmissions;
 use App\Actions\Conferences\MarkDecided;
 use App\Actions\Conferences\PublishConference;
 use App\Actions\Conferences\StartReviewing;
+use App\Actions\Conferences\UpdateConference;
 use App\Actions\Reviews\SendReviewerReminders;
 use App\Enums\ConferenceStatus;
 use App\Enums\ReviewMode;
+use App\Exceptions\ConferenceUpdateRefused;
 use App\Exceptions\ReviewNotAcceptable;
 use App\Filament\Organizer\Resources\Conferences\ConferenceResource;
 use App\Models\Conference;
 use App\Models\User;
 use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
+use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Gate;
 
@@ -307,6 +311,28 @@ class ConferenceStatusActions
 
                 Notification::make()->success()->title(__('decisions.mark.done'))->send();
             });
+    }
+
+    /**
+     * The Edit button of the view page and the table. Drawn as a link to
+     * EditConference, but a hand-made mountAction('edit') still runs Filament's
+     * modal save over the same form, so it saves through UpdateConference too.
+     */
+    public static function edit(): EditAction
+    {
+        return EditAction::make()->using(function (Conference $record, array $data, UpdateConference $update): Conference {
+            /** @var User $actor */
+            $actor = auth()->user();
+
+            try {
+                return $update->handle($record, $data, $actor);
+            } catch (ConferenceUpdateRefused $exception) {
+                Notification::make()->danger()->title(__('organizer.update.refused'))
+                    ->body(e($exception->getMessage()))->persistent()->send();
+
+                throw new Halt;
+            }
+        });
     }
 
     /** @return list<Action> */

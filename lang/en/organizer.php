@@ -41,4 +41,8 @@ return [
         ],
     ],
 
+    'review_settings' => [
+        'locked' => 'Fixed once reviewing starts or the first review is written, so every review is read under the settings it was written under.',
+    ],
+
 ];
