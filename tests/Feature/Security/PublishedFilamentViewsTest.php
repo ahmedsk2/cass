@@ -3,13 +3,16 @@
 declare(strict_types=1);
 
 /**
- * Filament 5.8.1 has no nonce support anywhere (Plan 6 fact 5), so THREE of its
- * Blade views are published into resources/views/vendor with a nonce added.
+ * THREE Filament Blade views are published into resources/views/vendor so that
+ * every inline <script> and <style> they emit carries the CSP nonce. Filament
+ * 5.10.2 nonces its inline scripts only when a nonce is set, and its inline
+ * styles never; the copies put the same unconditional attribute on all of them.
  * Publishing freezes them against an upgrade, and this is the alarm.
  *
  * When a case here fails, the fix is NOT to update the hash. It is:
  *   1. diff the new vendor file against the published copy;
- *   2. re-publish it, re-adding the nonce attributes listed below;
+ *   2. re-publish it, re-adding the nonce attributes listed below (on a tag
+ *      that carries Filament's own conditional nonce, ours takes its place);
  *   3. then update the hash here, in the same commit.
  */
 it('has not drifted from the filament view it was published from', function (string $vendor, string $published, string $sha, array $nonced) {
@@ -35,14 +38,14 @@ it('has not drifted from the filament view it was published from', function (str
     'filament::assets' => [
         'vendor/filament/support/resources/views/assets.blade.php',
         'resources/views/vendor/filament/assets.blade.php',
-        '26bfb0666a21c4456d5ba16d5a4f34e5995b7d470737a0d4969ff95a6d9c8a83',
+        'e2064e91c57f570b47e6a3e9877e32b6cec7e1b5f04b541eb99a4ecc87f290c8',
         // One inline <script> (window.filamentData) and one inline <style>.
         ['{{ $cspNonce }}' => 2],
     ],
     'filament-panels::layout.base' => [
         'vendor/filament/filament/resources/views/components/layout/base.blade.php',
         'resources/views/vendor/filament-panels/components/layout/base.blade.php',
-        'b95a450ddaf68af8b5c71760bcb30a295ec71e7f11fcbd2fe9fc13f25ae26968',
+        'fdce60785520b7265116d9891f83e5b8fd00a9154dd8b9ff06f0e236df895d52',
         // Two <style> and five <script>: [x-cloak], the :root variables, the
         // two theme setters, loadDarkMode()'s definition, the echo bootstrap
         // and the loadDarkMode() call.
@@ -51,7 +54,7 @@ it('has not drifted from the filament view it was published from', function (str
     'filament-panels::livewire.sidebar' => [
         'vendor/filament/filament/resources/views/livewire/sidebar.blade.php',
         'resources/views/vendor/filament-panels/livewire/sidebar.blade.php',
-        '9d53c25551beb97b9642a04d34cd34a33805de3664bf8d17abbf1ad4b8017a6b',
+        '4cf575d981f1af6a8347b7fe385ed10ea80acc3d8ef4c4be6ebc48ae52e9dcb9',
         // One inline <script>: the collapsedGroups localStorage block.
         ['{{ $cspNonce }}' => 1],
     ],

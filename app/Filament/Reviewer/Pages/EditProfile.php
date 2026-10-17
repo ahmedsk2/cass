@@ -36,7 +36,7 @@ use Illuminate\Support\Facades\Gate;
  * this reviewer's removed one, is not a row this page can reach.
  *
  * Not discovered as a page of its own: the parent sets `$isDiscovered = false`
- * (vendor/filament/filament/src/Auth/Pages/EditProfile.php:61), so living in
+ * (BaseEditProfile::$isDiscovered), so living in
  * the discovered Pages directory registers its Livewire component and nothing
  * else. ReviewerPanelProvider names it in `->profile()`.
  */
@@ -46,7 +46,7 @@ class EditProfile extends BaseEditProfile implements HasTable
 
     /**
      * The parent's two components, in the parent's order
-     * (vendor/filament/filament/src/Auth/Pages/EditProfile.php:508-515), and
+     * (BaseEditProfile::content()), and
      * then the affiliations. Restated rather than read back from the parent's
      * schema: Schema::getComponents() configures what it returns, and handing
      * configured components back to components() configures them twice.

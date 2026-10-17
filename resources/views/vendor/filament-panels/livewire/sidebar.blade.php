@@ -1,12 +1,13 @@
 @php
-    // Filament 5.8.1 has no nonce support (Plan 6 fact 5). This file is a
-    // verbatim copy of
-    // vendor/filament/filament/resources/views/livewire/sidebar.blade.php with
-    // ONE nonce attribute added, on the bare inline <script> that writes
-    // `collapsedGroups` into localStorage. It is rendered by
-    // the panel layout's sidebar component on every
-    // authenticated panel page, so without the nonce the navigation-group
-    // collapse state silently stops working.
+    // A copy of
+    // vendor/filament/filament/resources/views/livewire/sidebar.blade.php
+    // (Filament 5.10.2) with the nonce on its one inline <script>, the block
+    // that keeps the navigation groups' collapsed state in localStorage.
+    // Filament nonces it itself, but only when a nonce is set; here the
+    // attribute is unconditional, in place of Filament's own, so the tag
+    // renders as it always has. It is rendered by the panel layout's sidebar
+    // component on every authenticated panel page, so without the nonce the
+    // navigation-group collapse state silently stops working.
     // tests/Feature/Security/PublishedFilamentViewsTest.php fails if the vendor
     // original changes.
     $cspNonce = \Illuminate\Support\Facades\Vite::cspNonce();
@@ -15,6 +16,7 @@
 <div>
     @php
         use Filament\Enums\GlobalSearchPosition;
+        use Illuminate\Support\Facades\Vite;
 
         $navigation = filament()->getNavigation();
         $isRtl = __('filament-panels::layout.direction') === 'rtl';
@@ -24,6 +26,8 @@
         $hasTopbar = filament()->hasTopbar();
         $hasTenantMenu = filament()->hasTenancy() && filament()->hasTenantMenu();
         $hasGlobalSearchInSidebar = filament()->isGlobalSearchEnabled() && filament()->getGlobalSearchPosition() === GlobalSearchPosition::Sidebar;
+
+        $cspNonce = Vite::cspNonce();
     @endphp
 
     {{-- format-ignore-start --}}
@@ -168,16 +172,16 @@
 
             <script nonce="{{ $cspNonce }}">
                 var collapsedGroups = JSON.parse(
-                    localStorage.getItem('collapsedGroups'),
+                    localStorage.getItem('filament:sidebar:collapsed_groups'),
                 )
 
                 if (collapsedGroups === null || collapsedGroups === 'null') {
                     localStorage.setItem(
-                        'collapsedGroups',
+                        'filament:sidebar:collapsed_groups',
                         JSON.stringify(@js(
                         collect($navigation)
                             ->filter(fn (\Filament\Navigation\NavigationGroup $group): bool => $group->isCollapsed())
-                            ->map(fn (\Filament\Navigation\NavigationGroup $group): string => $group->getLabel())
+                            ->map(fn (\Filament\Navigation\NavigationGroup $group): ?string => ($label = $group->getLabel()) instanceof \Illuminate\Contracts\Support\Htmlable ? $label->toHtml() : $label)
                             ->values()
                             ->all()
                     )),
@@ -185,7 +189,7 @@
                 }
 
                 collapsedGroups = JSON.parse(
-                    localStorage.getItem('collapsedGroups'),
+                    localStorage.getItem('filament:sidebar:collapsed_groups'),
                 )
 
                 document

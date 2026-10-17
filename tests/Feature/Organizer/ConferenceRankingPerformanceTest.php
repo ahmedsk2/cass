@@ -155,17 +155,19 @@ it('renders five hundred abstracts without touching the reviews table', function
 
     // A ceiling rather than an exact number: Filament's own boot issues a
     // handful (the user, the tenant, the session) and a Filament upgrade may
-    // move that by one or two without anything being wrong. Thirty is far
+    // move that by one or two without anything being wrong. Forty is far
     // below the 501 a per-row aggregate would produce, which is the failure
     // this bounds.
     //
-    // The measured number on this tree is 20, and every one of them is
-    // bounded: the case drives TWO renders, the mount and the `set()` above,
-    // and each costs the conference, the tenant, the membership checks, the
-    // summary strip's two aggregates, the paginator's count, the page itself
-    // and the track filter's options. Not one is per row - which is what the
-    // assertion above, not this one, actually proves.
-    expect(count($queries))->toBeLessThan(30);
+    // The measured number is 30, and every one of them is bounded: the case
+    // drives TWO renders, the mount and the `set()` above, and each costs the
+    // conference (twice in the second: Livewire restores the record, then
+    // Filament resolves it again through the tenant-scoped route binding, with
+    // its short link), the tenant, the membership checks, the summary strip's
+    // two aggregates, the paginator's count, the page itself and the track
+    // filter's options. Not one is per row - which is what the assertion
+    // above, not this one, actually proves.
+    expect(count($queries))->toBeLessThan(40);
 });
 
 it('renders five hundred notified abstracts without one conference query per row', function () {
@@ -197,7 +199,7 @@ it('renders five hundred notified abstracts without one conference query per row
 
     // The same ceiling as the undecided render, because sending the letters
     // must not change the shape of the page's query plan.
-    expect(count($queries))->toBeLessThan(30);
+    expect(count($queries))->toBeLessThan(40);
 });
 
 it('renders five hundred abstracts inside the one-second budget of spec section 10', function () {

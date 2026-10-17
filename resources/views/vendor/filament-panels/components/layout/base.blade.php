@@ -1,11 +1,14 @@
 @php
-    // Filament 5.8.1 has no nonce support (Plan 6 fact 5). This file is a
-    // verbatim copy of
+    // A copy of
     // vendor/filament/filament/resources/views/components/layout/base.blade.php
-    // with seven nonce attributes added - every <style> and every <script>
-    // that has no src. tests/Feature/Security/PublishedFilamentViewsTest.php
-    // fails if the vendor original changes, so an upgrade is a red suite and a
-    // re-publish rather than a panel that silently stops rendering.
+    // (Filament 5.10.2) with the nonce on all seven inline tags - every <style>
+    // and every <script> that has no src. Filament nonces the five scripts
+    // itself, but only when a nonce is set, and never the two styles; here all
+    // seven carry the attribute unconditionally, in place of Filament's own on
+    // the scripts, so the tags render as they always have.
+    // tests/Feature/Security/PublishedFilamentViewsTest.php fails if the vendor
+    // original changes, so an upgrade is a red suite and a re-publish rather
+    // than a panel that silently stops rendering.
     $cspNonce = \Illuminate\Support\Facades\Vite::cspNonce();
 @endphp
 
@@ -17,8 +20,11 @@
     use Filament\Livewire\Notifications;
     use Filament\Support\Facades\FilamentView;
     use Filament\View\PanelsRenderHook;
+    use Illuminate\Support\Facades\Vite;
 
     $renderHookScopes = $livewire?->getRenderHookScopes();
+
+    $cspNonce = Vite::cspNonce();
 @endphp
 
 <!DOCTYPE html>
@@ -109,16 +115,17 @@
 
         @if (! filament()->hasDarkMode())
             <script nonce="{{ $cspNonce }}">
-                localStorage.setItem('theme', 'light')
+                localStorage.setItem('filament:theme:mode', 'light')
             </script>
         @elseif (filament()->hasDarkModeForced())
             <script nonce="{{ $cspNonce }}">
-                localStorage.setItem('theme', 'dark')
+                localStorage.setItem('filament:theme:mode', 'dark')
             </script>
         @else
             <script nonce="{{ $cspNonce }}">
                 const loadDarkMode = () => {
-                    window.theme = localStorage.getItem('theme') ?? @js(filament()->getDefaultThemeMode()->value)
+                    window.theme =
+                        localStorage.getItem('filament:theme:mode') ?? @js(filament()->getDefaultThemeMode()->value)
 
                     if (
                         window.theme === 'dark' ||
@@ -160,7 +167,10 @@
         @filamentScripts(withCore: true)
 
         @if (filament()->hasBroadcasting() && config('filament.broadcasting.echo'))
-            <script data-navigate-once nonce="{{ $cspNonce }}">
+            <script
+                data-navigate-once
+                nonce="{{ $cspNonce }}"
+            >
                 window.Echo = new window.EchoFactory(@js(config('filament.broadcasting.echo')))
 
                 window.dispatchEvent(new CustomEvent('EchoLoaded'))
