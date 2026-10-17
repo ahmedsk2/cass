@@ -2,7 +2,7 @@
 
 > **Status: DRAFT, reviewed 2026-10-17 (written the same day against `main` at `6256b06`).**
 > Every task was prototyped in a scratch copy of that tree, red then green in plan order; the whole suite, Larastan and Pint ran clean on the result.
-> The six-lens adversarial review (`CLAUDE.md`, "Pipeline per plan") ran on 2026-10-17 and its editor's changes are applied in this text. Next: the owner's approval of the summary below.
+> The six-lens adversarial review (`CLAUDE.md`, "Pipeline per plan") ran on 2026-10-17 and its editor's changes are applied in this text. The owner approved the summary on 2026-10-17 (review point 1), with the go-ahead for the compose-file lines in Task 2; the two open questions were not answered and Task 6 records them in the backlog.
 
 **Goal:** close the three code items of the expert brief's phase B that stand between CASS and real authors. A pending or suspended organisation can no longer send invitations or reviewer reminders (B9). The public draft form stops being a branded mail relay: it emails at most three status links per address and ten per client IP in 24 hours, and past either cap still saves the draft and tells the author the page they land on is their link (B10). Review mode and blind review, the two settings that give a review its meaning, lock once reviewing starts or any review exists; a track abstracts are filed under or a custom field authors answered can no longer be deleted; deadline edits stay logged with the organiser who made them (B11).
 
