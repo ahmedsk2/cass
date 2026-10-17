@@ -33,7 +33,7 @@ real authors, phases C and D after. Each item's "done when" is in the brief.
 | A3 | `.env.example` complete and enforced by `tests/Unit/EnvExampleTest.php`; `MAIL_ENCRYPTION` retired for `MAIL_SCHEME` | Engineer; owner deletes `MAIL_ENCRYPTION` in Coolify | Done (#32). Both Coolify entries (normal and preview) deleted on 2026-10-16 |
 | A4 | `docs/decisions/` and `docs/security-exceptions.md` | Engineer | Done (#32) |
 | A5 | Patch `filament/filament` to 5.8.2+ (CVE-2026-104181) and `league/commonmark` past 2.10.1; re-publish the three nonce'd views with their digests; closes Dependabot #26 | Engineer | Done (#35) |
-| A6 | `tools/claude/deploy.sh` fails loudly (`set -euo pipefail`, no `tail`, exit codes checked), backs up before a pending migration, prints `DEPLOY_DONE` only when clean | Engineer | Not started |
+| A6 | `tools/claude/deploy.sh` fails loudly (`set -euo pipefail`, no `tail`, exit codes checked), backs up before a pending migration, prints `DEPLOY_DONE` only when clean | Engineer | Done (#36) |
 | A7 | Remove the old PC's default paths from the `tools/claude` Workflow scripts | Engineer | Not started |
 | A8 | Deploy `main` (Plan 7 and the launch decisions; no migration), then re-run and tick launch checklist section 3 | Owner deploys, engineer checks | Not started |
 | A9 | Triage Dependabot #25, #27, #28, #30, #31 (green) and #29 (red: base images). #25 moves the compose `mysql` digest to `sha256:6ea90827…`; whichever of #25 and PR #34 (CI minutes) merges second must carry the new digest in all four places (both compose files, both `ci.yml` service images), or `main`'s `scripts` job goes red | Engineer; owner decides any base-image major | Not started |
