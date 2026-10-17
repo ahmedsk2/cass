@@ -12,7 +12,7 @@
 # .github/dependabot.yml raises a weekly pull request when any of these moves.
 # Do not "unpin to get the security fix" - let Dependabot open the PR, so the
 # change is reviewed and the digest stays recorded.
-FROM composer:2@sha256:d8f6343d3fae98107426bc49163ccad46ef85aabd4a27d80a74401fab4aba332 AS vendor
+FROM composer:2@sha256:af98f42dfff7c68ba8d53c2164fd9fde1087b7d449514baa38c418b1f6bc4bac AS vendor
 WORKDIR /build
 COPY composer.json composer.lock ./
 # intl and gd are installed in the runtime stage; the platform check is waived only here.
@@ -39,7 +39,7 @@ COPY app/Livewire ./app/Livewire
 COPY --from=vendor /build/vendor/filament ./vendor/filament
 RUN npm run build
 
-FROM php:8.4-fpm-alpine@sha256:49734670eccf414af884c2a0c2e558401e228615f8028f1c9fca30a0d4fb1bc2 AS runtime
+FROM php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a AS runtime
 RUN apk add --no-cache nginx supervisor su-exec icu-libs libpng libjpeg-turbo freetype libzip mysql-client tzdata \
  && apk add --no-cache --virtual .build icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
  && docker-php-ext-configure gd --with-freetype --with-jpeg \
