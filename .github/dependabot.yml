@@ -20,6 +20,25 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      # A new php or node release line changes what production runs, and the
+      # suite is verified on PHP 8.4 only. #29 offered php 8.5 and node 25 and
+      # did not even build: OPcache is compiled into PHP 8.5, so
+      # `docker-php-ext-install opcache` fails. Closing a grouped PR ignores
+      # nothing, so #29 would have come back every Monday. These upgrades are
+      # planned work instead (docs/decisions/0012-dependabot-base-image-majors.md).
+      #
+      # php needs semver-minor as well: Dependabot reads 8.4-fpm-alpine ->
+      # 8.5-fpm-alpine as a minor update. node's tag carries only the major, so
+      # semver-major covers it, and a minor entry would wrongly hold back
+      # updates within one line if the tag ever gained a minor.
+      #
+      # Digest updates of the current tags still come through, and composer is
+      # not listed at all: those are the security updates this block exists for.
+      - dependency-name: php
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(docker)"
 

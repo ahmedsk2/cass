@@ -87,5 +87,11 @@ tools/claude/workflow-args.test.mjs` (also run by CI's `scripts` job).
 - Base-image majors (`php`, `node`) change what production runs; the suite is verified on PHP 8.4
   only. Treat them as deliberate upgrades with the workflow's `php-version` bumped in the same
   change.
+- The ignore list was extended on 2026-10-17 by owner decision
+  (`docs/decisions/0012-dependabot-base-image-majors.md`): `php` minor and major updates
+  (Dependabot reads `8.4-fpm-alpine` to `8.5-fpm-alpine` as minor) and `node` majors, because
+  closing the grouped #29 ignored nothing and it would have returned every Monday. Digest updates
+  of the current tags still arrive. Any other base-image major that fails the image build is
+  closed with the failing step quoted and a backlog entry.
 - Actions, composer patch/minor and npm patch/minor: merge when CI is green; click through the
   panels after a Vite major.

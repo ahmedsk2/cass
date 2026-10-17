@@ -67,7 +67,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 
 ## Every release
 
-1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying.
+1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying. If the release changes the `mysql` image digest in `docker-compose.production.yml`, run `sudo /usr/local/bin/cass-backup` on the host by hand before deploying: the deploy recreates the database container, and the script backs up only when a migration is pending.
 2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL.
 
    ```bash
