@@ -1,0 +1,6 @@
+# The public draft form caps the status links it emails
+
+- **Context.** A draft save emailed a branded status link to any address typed, which with no Turnstile made the form a mail relay (`docs/reviews/2026-10-16-expert-brief.md`, question 5 point 2, work order B10).
+- **Decision.** Decided by the owner on 2026-10-17 (Plan 8 summary). The public form emails a new draft's link only while the address has had fewer than `CASS_STATUS_LINK_PER_ADDRESS_PER_DAY` (3) status-link emails in 24 hours, counted in `email_logs` over `submission_draft_saved` and `submission_received` whatever their status, so submit receipts and organizer resends count, and only while its client IP has sent fewer than `CASS_STATUS_LINK_PER_IP_PER_DAY` (10) draft links in the 24 hours from its first. Past either cap the draft is saved without an email and the status page says so. The organizer's **Resend status link** is never capped; the submit receipt is not capped yet (backlog, "Submissions").
+- **Consequence.** An author who saves and submits several abstracts in one day may get a later draft's link only as the status page they land on, or in that abstract's submit receipt.
+- **To reverse.** Make `SubmissionForm::saveDraft()` call `SendSubmissionStatusLink::handle()` again; invert `tests/Feature/Public/StatusLinkCapTest.php`.

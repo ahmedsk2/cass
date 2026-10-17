@@ -6,8 +6,10 @@ namespace App\Policies;
 
 use App\Models\CustomField;
 use App\Models\Organization;
+use App\Models\Submission;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\Response;
 
 class CustomFieldPolicy
 {
@@ -23,9 +25,12 @@ class CustomFieldPolicy
         return $this->viewAny($user);
     }
 
+    /** Null-safe for the reason TrackPolicy::view() gives. */
     public function view(User $user, CustomField $customField): bool
     {
-        return $user->roleIn($customField->conference->organization) !== null;
+        $organization = $customField->conference?->organization;
+
+        return $organization !== null && $user->roleIn($organization) !== null;
     }
 
     public function update(User $user, CustomField $customField): bool
@@ -33,17 +38,37 @@ class CustomFieldPolicy
         return $this->view($user, $customField);
     }
 
-    public function delete(User $user, CustomField $customField): bool
+    /**
+     * Not while an abstract of the conference, trashed included, holds an
+     * answer under the key: false counts, null and '' do not. whereNotNull()
+     * on a JSON path skips a JSON null on MySQL and SQLite alike.
+     */
+    public function delete(User $user, CustomField $customField): Response|bool
     {
-        return $this->view($user, $customField);
+        if (! $this->view($user, $customField)) {
+            return false;
+        }
+
+        $path = 'custom_field_values->'.$customField->key;
+
+        if (Submission::withTrashed()
+            ->where('conference_id', $customField->conference_id)
+            ->whereNotNull($path)
+            ->where($path, '!=', '')
+            ->exists()) {
+            return Response::deny(__('organizer.custom_fields.in_use'));
+        }
+
+        return true;
     }
 
     /**
      * Filament checks a bulk action with the record-less `*Any` abilities and
      * treats a policy that does not define one as allowed, so all three are
-     * spelled out even where the answer is always "no". deleteAny mirrors
-     * delete(); custom fields are not soft-deletable, so there is nothing to
-     * restore or force-delete.
+     * spelled out even where the answer is always "no". deleteAny answers by
+     * membership alone, for the reason TrackPolicy::deleteAny() gives. Custom
+     * fields are not soft-deletable, so there is nothing to restore or
+     * force-delete.
      */
     public function deleteAny(User $user): bool
     {

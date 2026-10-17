@@ -66,7 +66,8 @@ class TracksRelationManager extends RelationManager
             ])
             ->recordActions([
                 EditAction::make(),
-                DeleteAction::make(),
+                // A track in use stays: TrackPolicy::delete()'s reason is the tooltip.
+                DeleteAction::make()->authorizationTooltip(),
             ])
             ->emptyStateHeading('No tracks')
             ->emptyStateDescription('Tracks are optional. Add them if authors should pick a theme when they submit.');

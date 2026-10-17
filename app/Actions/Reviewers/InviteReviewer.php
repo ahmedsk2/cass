@@ -6,6 +6,7 @@ namespace App\Actions\Reviewers;
 
 use App\Actions\Mail\SendTemplatedEmail;
 use App\Enums\EmailTemplateKey;
+use App\Enums\OrganizationStatus;
 use App\Enums\ReviewerStatus;
 use App\Exceptions\MemberChangeRefused;
 use App\Models\Conference;
@@ -40,6 +41,8 @@ class InviteReviewer
             $reasons[] = __('reviewer.errors.not_allowed');
         }
 
+        $reasons = [...$reasons, ...$this->organizationBlockers($conference)];
+
         if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
             $reasons[] = __('reviewer.errors.bad_email');
         }
@@ -54,6 +57,22 @@ class InviteReviewer
         }
 
         return array_values(array_unique($reasons));
+    }
+
+    /**
+     * No invitation in the name of an organization that is not approved: the
+     * two reasons PublishConference::blockers() gives. Public so that
+     * InviteReviewerList refuses a pasted list once, not once per line.
+     *
+     * @return list<string>
+     */
+    public function organizationBlockers(Conference $conference): array
+    {
+        return match ($conference->organization?->status) {
+            OrganizationStatus::Pending => [__('reviewer.errors.organization_pending')],
+            OrganizationStatus::Suspended => [__('reviewer.errors.organization_suspended')],
+            default => [],
+        };
     }
 
     public function handle(

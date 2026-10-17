@@ -7,6 +7,7 @@ namespace App\Actions\Reviews;
 use App\Actions\Mail\SendTemplatedEmail;
 use App\Actions\Reviewers\InviteReviewer;
 use App\Enums\ConferenceStatus;
+use App\Enums\OrganizationStatus;
 use App\Enums\ReminderThreshold;
 use App\Enums\ReviewerStatus;
 use App\Enums\ReviewStatus;
@@ -101,6 +102,12 @@ class SendReviewerReminders
             return ['sent' => 0, 'threshold' => null];
         }
 
+        // Skipped, not refused: the hourly pass loops every conference in review,
+        // and a pending, suspended or deleted organization sends no mail.
+        if ($conference->organization?->isApproved() !== true) {
+            return ['sent' => 0, 'threshold' => null];
+        }
+
         if (! ReminderSchedule::isSendHour($conference)) {
             return ['sent' => 0, 'threshold' => null];
         }
@@ -178,7 +185,11 @@ class SendReviewerReminders
     /** @return list<string> empty when the organizer may send one now */
     public function manualBlockers(Conference $conference): array
     {
-        $reasons = [];
+        $reasons = match ($conference->organization?->status) {
+            OrganizationStatus::Pending => [__('reviewer.remind.errors.organization_pending')],
+            OrganizationStatus::Suspended => [__('reviewer.remind.errors.organization_suspended')],
+            default => [],
+        };
 
         if ($conference->status !== ConferenceStatus::Reviewing) {
             $reasons[] = __('reviewer.remind.errors.not_reviewing');
@@ -196,9 +207,8 @@ class SendReviewerReminders
         // render of ViewConference and EditConference, both of which spread
         // ConferenceStatusActions::all() into their header actions. A conference
         // in review with a hundred reviewers would cost a hundred extra queries
-        // per page view. The two reasons above are constant time and already
-        // hide the button, so only ask the expensive question when neither
-        // applies.
+        // per page view. Every reason above is constant time and already hides
+        // the button, so only ask the expensive question when none applies.
         if ($reasons !== []) {
             return $reasons;
         }

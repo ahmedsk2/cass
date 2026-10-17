@@ -86,8 +86,9 @@ class CustomFieldsRelationManager extends RelationManager
             ])
             ->recordActions([
                 EditAction::make(),
-                DeleteAction::make()
-                    ->modalDescription('Answers already given for this field stay in the database but stop being displayed.'),
+                // An answered field stays: CustomFieldPolicy::delete()'s reason is the tooltip,
+                // so the confirmation only ever opens for a field nobody has answered.
+                DeleteAction::make()->authorizationTooltip(),
             ])
             ->emptyStateHeading('No extra fields')
             ->emptyStateDescription('Title, abstract, authors and files are always collected. Add a field here only for something else you need.');

@@ -108,6 +108,8 @@ return [
 
     'flash' => [
         'draft_saved' => 'Your draft is saved. We have emailed you a link so you can come back to it.',
+        'draft_not_emailed' => 'Your draft is saved, but we have not emailed you a link: too many have been sent in the last day. This page is your link, so bookmark it or copy its address to come back to your abstract.',
+        'draft_not_emailed_address' => 'Your draft is saved, but we have not emailed you a link: we cannot send email to the corresponding author\'s address. This page is your link, so bookmark it or copy its address to come back to your abstract.',
         'draft_updated' => 'Your draft is saved.',
         'submitted' => 'Your abstract is submitted. Its reference is :reference.',
     ],

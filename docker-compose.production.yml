@@ -51,6 +51,12 @@ services:
       # header. Deploy with this 'true', walk docs/launch-checklist.md section 4
       # with the browser console open, then set it 'false' and redeploy.
       CASS_CSP_REPORT_ONLY: ${CASS_CSP_REPORT_ONLY:-false}
+      # The public draft form's status-link caps (config/cass.php, status_link).
+      # Optional. Named here because a Coolify variable reaches the container
+      # only through ${...} in this file. Keep the explicit defaults: ${VAR:-}
+      # would hand env() an empty string, which (int) reads as a cap of 0.
+      CASS_STATUS_LINK_PER_ADDRESS_PER_DAY: ${CASS_STATUS_LINK_PER_ADDRESS_PER_DAY:-3}
+      CASS_STATUS_LINK_PER_IP_PER_DAY: ${CASS_STATUS_LINK_PER_IP_PER_DAY:-10}
       TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     volumes:
       - cass-storage:/var/www/html/storage/app

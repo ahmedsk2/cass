@@ -32,4 +32,25 @@ return [
         ],
     ],
 
+    'update' => [
+        'refused' => 'Nothing was saved',
+        'errors' => [
+            'not_allowed' => 'Only a member of this organization can edit its conferences.',
+            'review_mode_locked' => 'The review mode cannot change once reviewing has started or a review has been written.',
+            'blind_review_locked' => 'Blind review cannot be switched on or off once reviewing has started or a review has been written.',
+        ],
+    ],
+
+    'review_settings' => [
+        'locked' => 'Fixed once reviewing starts or the first review is written, so every review is read under the settings it was written under.',
+    ],
+
+    'tracks' => [
+        'in_use' => 'Abstracts are filed under this track, so it cannot be deleted. Rename it instead.',
+    ],
+
+    'custom_fields' => [
+        'in_use' => 'Authors have answered this field, so it cannot be deleted.',
+    ],
+
 ];

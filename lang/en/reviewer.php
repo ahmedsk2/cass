@@ -86,6 +86,8 @@ return [
         'bad_email' => 'That does not look like an email address.',
         'already_reviewing' => ':email is already reviewing this conference.',
         'send_limit' => 'Too many invitations have been sent from this account in the last hour. Try again later.',
+        'organization_pending' => 'Your organization is still waiting for platform approval. You can invite reviewers as soon as it is approved.',
+        'organization_suspended' => 'This organization is suspended, so it cannot invite reviewers.',
         'not_yours' => 'This abstract is not in your queue.',
         'already_submitted' => 'You have already submitted this review. Reopen it if you want to change it.',
         'not_submitted' => 'This review has not been submitted, so there is nothing to reopen.',
@@ -276,6 +278,8 @@ return [
             'not_reviewing' => 'This conference is not open for reviewing.',
             'too_soon' => 'A reminder was sent recently. You can send another after :hours hours.',
             'nobody_behind' => 'Every reviewer has finished, so there is nobody to remind.',
+            'organization_pending' => 'Your organization is still waiting for platform approval, so reviewers cannot be emailed yet.',
+            'organization_suspended' => 'This organization is suspended, so reviewers cannot be emailed.',
         ],
     ],
 

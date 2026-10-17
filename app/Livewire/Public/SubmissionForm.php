@@ -97,6 +97,14 @@ class SubmissionForm extends Component
     #[Locked]
     public ?string $token = null;
 
+    /**
+     * What the first save of a new draft says about its emailed link, kept for
+     * the retry when the upload gate refused that save: the retry takes the
+     * existing-draft branch, whose own flash would drop a not-emailed notice.
+     */
+    #[Locked]
+    public ?string $draftNotice = null;
+
     #[Locked]
     public bool $isPreview = false;
 
@@ -339,7 +347,8 @@ class SubmissionForm extends Component
                 return null;
             }
 
-            session()->flash('status', __('submission.flash.draft_updated'));
+            session()->flash('status', $this->draftNotice ?? __('submission.flash.draft_updated'));
+            $this->draftNotice = null;
 
             // The same guard submit() applies at the end of this class, for the
             // same reason: `token` is nullable, and route() with a null
@@ -363,23 +372,29 @@ class SubmissionForm extends Component
         $this->token = $link->token;
 
         // The same token the redirect uses, so the emailed link and the page
-        // the author lands on are one URL.
+        // the author lands on are one URL. Null when a daily cap refused it:
+        // the draft is saved and the flash below says no email was sent.
         try {
-            $sendLink->handle($link->submission, $link->token);
+            $this->draftNotice = $sendLink->handleForAuthor($link->submission, $link->token, ClientIp::from(request())) !== null
+                ? __('submission.flash.draft_saved')
+                : __('submission.flash.draft_not_emailed');
         } catch (SubmissionNotAcceptable) {
             // The draft is saved and the redirect below carries the same token,
             // so the author still lands on their abstract; only the email is
-            // lost. The corresponding-author rule above is what stops this
-            // happening at all - this catch exists because saveDraft() is a
-            // public, unauthenticated entry point and an uncaught throw here
-            // would be a 500 on top of a row that was written successfully.
+            // lost, and the flash says so. The address passed email:rfc, which
+            // accepts what the send's FILTER_VALIDATE_EMAIL guard refuses (an
+            // internationalised domain, for one). This catch exists because
+            // saveDraft() is a public, unauthenticated entry point and an
+            // uncaught throw here would be a 500 on top of a row that was
+            // written successfully.
+            $this->draftNotice = __('submission.flash.draft_not_emailed_address');
         }
 
         if (! $this->storeUploads($link->submission, $store)) {
             return null;
         }
 
-        session()->flash('status', __('submission.flash.draft_saved'));
+        session()->flash('status', $this->draftNotice);
 
         return $this->redirect($link->url() ?? $this->conference->publicUrl(), navigate: false);
     }

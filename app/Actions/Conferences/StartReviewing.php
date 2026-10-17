@@ -12,6 +12,7 @@ use App\Exceptions\ConferenceNotPublishable;
 use App\Models\Conference;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The `Closed -> Reviewing` half of the lifecycle ConferenceStatus has declared
@@ -72,15 +73,25 @@ class StartReviewing
 
     public function handle(Conference $conference, User $actor): Conference
     {
-        $reasons = $this->blockers($conference);
+        DB::transaction(function () use ($conference, $actor): void {
+            // The lock UpdateConference takes, and the row as stored: an edit
+            // to assigned mode committed after this instance was loaded must
+            // still meet the unassigned check below, and an edit that waits on
+            // this lock then finds the conference in review. SQLite ignores the
+            // lock clause; the stale-instance half is what a local test can show.
+            $stored = Conference::query()->whereKey($conference->getKey())->lockForUpdate()->firstOrFail();
+            $conference->setRawAttributes($stored->getAttributes(), sync: true);
 
-        if ($reasons !== []) {
-            throw new ConferenceNotPublishable($reasons);
-        }
+            $reasons = $this->blockers($conference);
 
-        $conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+            if ($reasons !== []) {
+                throw new ConferenceNotPublishable($reasons);
+            }
 
-        activity()->performedOn($conference)->causedBy($actor)->log('conference.reviewing');
+            $conference->forceFill(['status' => ConferenceStatus::Reviewing])->save();
+
+            activity()->performedOn($conference)->causedBy($actor)->log('conference.reviewing');
+        });
 
         return $conference->refresh();
     }

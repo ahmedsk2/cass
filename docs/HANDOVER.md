@@ -14,8 +14,8 @@ real authors, phases C and D after. Each item's "done when" is in the brief.
 | What | State |
 |---|---|
 | Production | https://cass.towardpcc.com runs commit `c32bb30` (deployed 2026-09-13 22:23 UTC): Plans 1–6, the demo commands, the backup-script fix. Container healthy for 3 weeks; `cass:health` all OK on 2026-10-16; 36 migrations applied, none pending. |
-| `main` | `39fad5c` (2026-10-17). Ahead of production by Plan 7 (PR #23: the one Vite-built theme for all three panels, platform-admin writes, failed-notification logging, encrypted queued notifications, the hourly temporary-upload sweep, reviewer-corrected affiliation, the language sweep), the owner's eight launch decisions (PR #21), the registration-email fix (PR #22), three Dependabot bumps (#17 laravel/framework 13.32, #18 actions, #19 a mysql digest), PRs #10, #13, #15, #32 to #34, #36 and #37 and four docs/tools commits of 2026-10-16 (actions, the MySQL-major ignore, a test fix, rule book, handover, CI, the deploy and Workflow scripts; no runtime effect), the A5 dependency bump (#35: Filament 5.10.2, Laravel 13.37, commonmark 2.10.3) and the four A9 Dependabot merges (#27 dev tooling, #30 action SHAs, #25 the MySQL 8.4 digest, #31 the npm group with Vite 8). A5 and the npm group change the app image and #19 and #25 the MySQL image (`85b9bf2e…` → `24989179…`), so A8 needs a full build and the deploy notes at the end of this row apply. **Not deployed.** Plan 7 adds no migration and no environment variable; it changes the `Dockerfile` (assets stage order) and both compose files, so it needs a full Coolify build, then the runbook's "Every release" step 4 checks (the panels now load a Vite-built stylesheet, not `/css/filament/filament/app.css`). The same release carries A5 (Filament 5.10.2), which users notice once: Filament renamed its theme and collapsed-navigation-group storage keys, so each user's saved theme and collapsed groups reset once. The MySQL image digest changed since production (#19, #25), so the A8 deploy recreates the production MySQL container: run `cass-backup` by hand before starting the deploy, because the deploy script's own backup runs only when a migration is pending. |
-| Open pull requests | #38 (the A9 record; docs only). The Dependabot queue is empty, and the next Monday run (2026-10-19) is the first under the rules in "Dependabot" in `tools/claude/README.md`; the ignore rule of decision 0012 limits the docker group's `php` and `node` images to digest updates. |
+| `main` | `6256b06` (2026-10-17). Ahead of production by Plan 7 (PR #23: the one Vite-built theme for all three panels, platform-admin writes, failed-notification logging, encrypted queued notifications, the hourly temporary-upload sweep, reviewer-corrected affiliation, the language sweep), the owner's eight launch decisions (PR #21), the registration-email fix (PR #22), three Dependabot bumps (#17 laravel/framework 13.32, #18 actions, #19 a mysql digest), PRs #10, #13, #15, #32 to #34, #36 and #37 and four docs/tools commits of 2026-10-16 (actions, the MySQL-major ignore, a test fix, rule book, handover, CI, the deploy and Workflow scripts; no runtime effect), the A5 dependency bump (#35: Filament 5.10.2, Laravel 13.37, commonmark 2.10.3) and the four A9 Dependabot merges (#27 dev tooling, #30 action SHAs, #25 the MySQL 8.4 digest, #31 the npm group with Vite 8) and #38, the A9 record (docs only). Plan 8 (#41, the phase-B guards B9 to B11) adds no migration and two optional environment variables, `CASS_STATUS_LINK_PER_ADDRESS_PER_DAY` (3) and `CASS_STATUS_LINK_PER_IP_PER_DAY` (10), whose defaults need nothing set in production. A5 and the npm group change the app image and #19 and #25 the MySQL image (`85b9bf2e…` → `24989179…`), so A8 needs a full build and the deploy notes at the end of this row apply. **Not deployed.** Plan 7 adds no migration and no environment variable; it changes the `Dockerfile` (assets stage order) and both compose files, so it needs a full Coolify build, then the runbook's "Every release" step 4 checks (the panels now load a Vite-built stylesheet, not `/css/filament/filament/app.css`). The same release carries A5 (Filament 5.10.2), which users notice once: Filament renamed its theme and collapsed-navigation-group storage keys, so each user's saved theme and collapsed groups reset once. The MySQL image digest changed since production (#19, #25), so the A8 deploy recreates the production MySQL container: run `cass-backup` by hand before starting the deploy, because the deploy script's own backup runs only when a migration is pending. |
+| Open pull requests | #41 (Plan 8, the phase-B guards B9 to B11; awaiting the owner's merge). Dependabot opened #39 (docker group: the `composer:2` and `php:8.4-fpm-alpine` digests) and #40 (npm group: playwright 1.64.1) on 2026-10-17, both CI-green, for triage under the rules in "Dependabot" in `tools/claude/README.md`; the ignore rule of decision 0012 limits the docker group's `php` and `node` images to digest updates. |
 | CI | One run per push (`push` on `main`, `pull_request` elsewhere), plus the Monday schedule and a manual `workflow_dispatch`; a newer push cancels the stale run on pull requests only, and on `main` it never cancels the run in progress (GitHub still drops an older waiting run when a newer one joins the group). Jobs, all on `ubuntu-24.04` and each with a timeout: changes, test (SQLite + MySQL), scripts, browser (Playwright), smoke, and image (arm64 under QEMU), which runs only on the Monday schedule, a manual dispatch, or a change to `Dockerfile`, `.dockerignore`, `docker/`, the compose files, `package.json`, `package-lock.json` or the workflow; test and browser cache Composer downloads, and the MySQL service is pinned to the compose files' digest with a drift check in `scripts`. Before: run 38900953920 (2026-10-16 12:30 UTC) took 38 min wall-clock (test 5, browser 1, smoke 4, image 33). After: run 38999242693 (PR #35, 2026-10-17 03:33 UTC) took 7.5 min wall-clock (changes 0.1, scripts 0.1, test 4.6, browser 0.8, smoke 2.8); `image` was skipped because the PR changes no Docker input (`changes` reported `docker=false`). |
 | Dependabot | A compose `mysql` digest PR needs one commit moving `ci.yml`'s two service digests, which also stops Dependabot rebasing it; see `tools/claude/README.md`, "Dependabot". |
 | Repository | Public since 2026-10-16 (`docs/decisions/0011-repository-public-for-ci.md`): GitHub Actions refused to start jobs on the private repository and the owner chose not to change billing. The tree and every commit on every ref (192) were scanned for secrets before the flip. The owner decides at the end of the phase-A work order whether to make it private again. |
@@ -44,23 +44,23 @@ A1 to A7 and A9 are done and only A8, the owner's deploy, remains: its notes are
 
 ## Open — phase B, before real conferences and real authors
 
-| # | Item | Who |
-|---|---|---|
-| B1 | Turnstile keys in Coolify | Owner |
-| B2 | Platform-admin second factor enrolled, and enforced on the admin panel | Owner and engineer |
-| B3 | Origin lockdown: 80/443 to Cloudflare only, 22 to known addresses | Owner |
-| B4 | Cloudflare settings (checklist section 2) | Owner |
-| B5 | External uptime monitor on `/up`, runbook "Monitoring" | Owner; engineer documents |
-| B6 | Dead-man heartbeats: hourly `cass:health`, both backup crons | Engineer; owner creates the checks |
-| B7 | Error tracking | Engineer; owner picks the service |
-| B8 | Off-host encrypted backups and a restore drill from the off-host copy | Owner, with the engineer |
-| B9 | Suspended organisations cannot send invitations or reminders | Engineer |
-| B10 | Cap status-link emails per address and per IP | Engineer |
-| B11 | Lock `review_mode` and `blind_review` from `reviewing`; no deleting referenced tracks or custom fields; log deadline edits | Engineer |
-| B12 | CSP enforcing after the walk-through | Owner |
-| B13 | Launch checklist closed (walk-through, data, sign-off, memory readings) | Owner and engineer |
+| # | Item | Who | Status |
+|---|---|---|---|
+| B1 | Turnstile keys in Coolify | Owner | Not started |
+| B2 | Platform-admin second factor enrolled, and enforced on the admin panel | Owner and engineer | Not started |
+| B3 | Origin lockdown: 80/443 to Cloudflare only, 22 to known addresses | Owner | Not started |
+| B4 | Cloudflare settings (checklist section 2) | Owner | Not started |
+| B5 | External uptime monitor on `/up`, runbook "Monitoring" | Owner; engineer documents | Not started |
+| B6 | Dead-man heartbeats: hourly `cass:health`, both backup crons | Engineer; owner creates the checks | Not started |
+| B7 | Error tracking | Engineer; owner picks the service | Not started |
+| B8 | Off-host encrypted backups and a restore drill from the off-host copy | Owner, with the engineer | Not started |
+| B9 | Suspended organisations cannot send invitations or reminders | Engineer | Done (#41) |
+| B10 | Cap status-link emails per address and per IP | Engineer | Done (#41) |
+| B11 | Lock `review_mode` and `blind_review` from `reviewing`; no deleting referenced tracks or custom fields; log deadline edits | Engineer | Done (#41) |
+| B12 | CSP enforcing after the walk-through | Owner | Not started |
+| B13 | Launch checklist closed (walk-through, data, sign-off, memory readings) | Owner and engineer | Not started |
 
-Also open for the owner: the six questions Plan 7 raised (`backlog.md`, "Open questions for the
+Also open for the owner: the questions Plans 7 and 8 raised (`backlog.md`, "Open questions for the
 owner"), and, after A8, whether the repository goes private again (decision 0011): forks taken
 while it is public persist (GitHub counted none on 2026-10-17), and branch protection is free only
 while it is public (`main` has none today). Phases C (CI audits, build once and deploy that image,
@@ -76,7 +76,7 @@ again over the whole branch, merged through a pull request the owner approves, a
 the owner through the deploy script, which backs up and runs any pending migration in the new
 container.
 
-Plans 1–7 and the backlog are in `docs/superpowers/plans/`; the design is
+Plans 1–8 and the backlog are in `docs/superpowers/plans/`; the design is
 `docs/superpowers/specs/2026-09-10-cass-v2-design.md`; the runbook is
 `docs/runbooks/deploy-production.md`.
 

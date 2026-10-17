@@ -177,6 +177,20 @@ it('needs only a title and a corresponding address to save a draft', function ()
     expect(Submission::query()->count())->toBe(1);
 });
 
+it('saves a draft for an address it cannot email and does not say a link was emailed', function () {
+    // email:rfc accepts an internationalised domain; the send's FILTER_VALIDATE_EMAIL guard does not.
+    livewire(SubmissionForm::class, ['organization' => $this->organization, 'conference' => $this->conference])
+        ->set('title', 'A work in progress')
+        ->set('authors.0.email', 'name@bücher.example')
+        ->call('saveDraft')
+        ->assertHasNoErrors()
+        ->assertRedirectContains('/s/');
+
+    expect(Submission::query()->count())->toBe(1)
+        ->and(session('status'))->toBe(__('submission.flash.draft_not_emailed_address'));
+    Mail::assertNothingQueued();
+});
+
 it('submits, assigns a reference and redirects with a success flash', function () {
     // The notice goes to members whose organization_members.notify_on_submission
     // is true (the column's default). OrganizationFactory creates none, and

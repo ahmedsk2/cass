@@ -60,6 +60,15 @@ return [
     // that reads it is registered in this task, alongside the route.
     'status_page_rate_limit' => (int) env('CASS_STATUS_PAGE_RATE_LIMIT', 20),
 
+    // The public draft form emails its status link to any address typed, so it
+    // is capped; the organizer's "Resend status link" never is.
+    'status_link' => [
+        // Per address in 24 hours, from email_logs: every status-link row counts.
+        'per_address_per_day' => (int) env('CASS_STATUS_LINK_PER_ADDRESS_PER_DAY', 3),
+        // Per client IP (App\Support\ClientIp), for 24 hours from its first link.
+        'per_ip_per_day' => (int) env('CASS_STATUS_LINK_PER_IP_PER_DAY', 10),
+    ],
+
     // Spec 5.4 step 1 and spec section 9: a 14-day hashed-token invitation,
     // and the invitation-accept rate limit of 10 per minute per address.
     'invitations' => [

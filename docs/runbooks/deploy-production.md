@@ -219,6 +219,8 @@ strips it, and never paste a `/s/...` URL into a ticket. To take a leaked link
 out of circulation, open the submission in the organizer panel and use **Resend
 status link**, which rotates the token and kills the old one.
 
+**Caps on the public form.** Saving a new draft emails its status link at most `CASS_STATUS_LINK_PER_ADDRESS_PER_DAY` times (default 3) to one address in 24 hours, counted in `email_logs` (every `submission_draft_saved` and `submission_received` row to that address, whatever its status, organizer resends included), and at most `CASS_STATUS_LINK_PER_IP_PER_DAY` times (default 10) for one client IP, counted in the cache under `status-link:<ip>` for the 24 hours after that IP's first link (to lift one client IP's cap early: `C=$(cass_container app)`, then `sudo docker exec "$C" su-exec app php artisan tinker --execute="Illuminate\Support\Facades\RateLimiter::clear('status-link:203.0.113.7');"`, with that IP in place of 203.0.113.7. Never `cache:clear`: with the database cache store it empties the whole cache table, including the scheduler heartbeat `cass:health` reads and every other rate limit. The per-address count lives in `email_logs` and is not reset this way; **Resend status link** answers that author). Past either cap the draft is still saved and the author lands on its status page, which says no email was sent and that the page is their link. **Resend status link** is never capped: it is the answer when an author says the link did not come. Both variables are optional; set one in the application's environment and redeploy to change it. A submit still emails its link without a cap (backlog, "Submissions").
+
 **One residual the redaction cannot cover: the error log.** `error_log
 /dev/stderr warn` has no configurable format — nginx writes its own, and it
 includes `request: "GET /s/<token> HTTP/1.1"` verbatim. Any status-page request
@@ -365,7 +367,7 @@ conference it sent for and a total.
    `ReviewerScope` still give them outstanding work? A reviewer who has
    submitted every review in their queue is deliberately not reminded.
 3. Still nothing: is the conference `reviewing`, and is its `review_deadline`
-   set? A conference in `closed` sends nothing.
+   set? A conference in `closed` sends nothing. Nor does one whose organization is pending or suspended: the hourly pass skips it, and **Remind reviewers** stays hidden until the platform admin approves or reinstates the organization.
 
 To re-send one threshold deliberately, delete that one row and wait for the next
 hourly run — do not edit `sent_at`.

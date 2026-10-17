@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Organizations;
 
 use App\Enums\OrganizationRole;
+use App\Enums\OrganizationStatus;
 use App\Exceptions\MemberChangeRefused;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
@@ -40,6 +41,13 @@ class InviteMember
         if ($role === OrganizationRole::Owner && $actorRole !== OrganizationRole::Owner) {
             $reasons[] = __('members.errors.owner_grants_owner');
         }
+
+        // No invitation in the organization's name before approval or while suspended.
+        $reasons = [...$reasons, ...match ($organization->status) {
+            OrganizationStatus::Pending => [__('members.errors.organization_pending')],
+            OrganizationStatus::Suspended => [__('members.errors.organization_suspended')],
+            default => [],
+        }];
 
         if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
             $reasons[] = __('members.errors.bad_email');

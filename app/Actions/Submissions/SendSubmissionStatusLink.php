@@ -11,6 +11,7 @@ use App\Exceptions\SubmissionNotAcceptable;
 use App\Models\EmailLog;
 use App\Models\Submission;
 use App\Support\Tokens\SubmissionToken;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Two jobs, one class: the email an author gets when a draft is first saved,
@@ -69,5 +70,35 @@ class SendSubmissionStatusLink
             SubmitAbstract::placeholderValues($submission, (string) $author->name, $token),
             $submission,
         );
+    }
+
+    /**
+     * The public draft form's send; handle() is the organizer's resend and is
+     * never capped. Null, with nothing written, once the address has had its
+     * day's links (counted in email_logs, which survive a deploy) or the client
+     * IP has sent its day's worth (counted in the rate limiter, sends only).
+     */
+    public function handleForAuthor(Submission $submission, ?string $plainToken, string $clientIp): ?EmailLog
+    {
+        $ipKey = 'status-link:'.$clientIp;
+        $sentToAddress = EmailLog::query()
+            ->where('to_email', (string) $submission->correspondingAuthor()?->email)
+            ->whereIn('template_key', [EmailTemplateKey::SubmissionDraftSaved->value, EmailTemplateKey::SubmissionReceived->value])
+            ->where('created_at', '>', now()->subDay())
+            ->count();
+
+        if ($sentToAddress >= (int) config('cass.status_link.per_address_per_day')
+            || RateLimiter::tooManyAttempts($ipKey, (int) config('cass.status_link.per_ip_per_day'))) {
+            return null;
+        }
+
+        $log = $this->handle($submission, $plainToken);
+
+        // After the send, so a refusal or a throw spends nothing. hit() sets the
+        // decay on the first hit only (cache->add in RateLimiter::increment()):
+        // the window is the 24 hours after this IP's first link, not a sliding day.
+        RateLimiter::hit($ipKey, 86400);
+
+        return $log;
     }
 }
