@@ -68,7 +68,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 ## Every release
 
 1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying. If the release changes the `mysql` image digest in `docker-compose.production.yml`, run `sudo /usr/local/bin/cass-backup` on the host by hand before deploying: the deploy recreates the database container, and the script backs up only when a migration is pending.
-2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL.
+2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL. Coolify clones and builds the branch's HEAD at that moment, not your checkout: run `git fetch origin main` and compare `origin/main` with the commit you announced immediately before the command below, and merge nothing to `main` while the deploy runs. On 2026-10-17 a merge sixteen minutes before the start shipped Plan 8 together with Plan 7.
 
    ```bash
    ssh -i <ssh-key> <ssh-user>@<origin-ip> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh
@@ -1369,7 +1369,9 @@ The poster render is the heaviest single request this application has — dompdf
 - **Poster peak comfortably under 256 MiB and the app container's steady state well under 768 MiB: change nothing.** Record the two numbers and the date here.
 - **Poster peak near 256 MiB:** raise `memory_limit` in `docker/php.ini` *and* lower `pm.max_children` to 3 in the `Dockerfile` **in the same commit**. Those two numbers only mean anything together; raising one alone moves the OOM from php-fpm to the container.
 
-Measurements taken so far: *(none yet — the first production peak goes here.)*
+Measurements taken so far:
+
+- 2026-10-17 23:59 UTC, commit `57a8c4f`, two minutes after the A8 deploy, demo data only (15 abstracts): poster A3 render 94.7 MiB peak (`demo-2027`); `docker stats` app 184–186 MiB of 768 MiB, MySQL 208–215 MiB of 512 MiB. Change nothing. Repeat under the first real conference's load.
 
 ## Known quirk: healthcheck Host header
 

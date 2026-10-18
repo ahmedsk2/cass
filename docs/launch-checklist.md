@@ -143,48 +143,54 @@ answer a plan author happened to choose.
 
 Each line is a command and the answer it must give.
 
-- [ ] `curl -sI https://cass.towardpcc.com/up` → `200`.
+Run on 2026-10-17 23:58 UTC against commit `57a8c4f`, two minutes after the A8 deploy; the ticks
+below are from that run (the numbers are in `docs/HANDOVER.md`, Production row, and the runbook's
+"Resource limits"). Still open: the enforcing CSP (after the section 4 walk-through), HSTS
+(Cloudflare, phase B item B4), the restore drill (last done 2026-09-13; B8) and the ranking timing,
+which ran in 0.002 s but against 12 abstracts, not a few hundred.
+
+- [x] `curl -sI https://cass.towardpcc.com/up` → `200`.
 - [ ] `curl -sI https://cass.towardpcc.com/ | grep -i content-security-policy`
       → an **enforcing** header, not `-Report-Only`. Deploy with
       `CASS_CSP_REPORT_ONLY=true` first, walk section 4 with the browser
       console open, then set it false and redeploy.
-- [ ] `curl -sI https://cass.towardpcc.com/ | grep -iE 'x-frame-options|referrer-policy|permissions-policy|cross-origin-opener|x-content-type'`
+- [x] `curl -sI https://cass.towardpcc.com/ | grep -iE 'x-frame-options|referrer-policy|permissions-policy|cross-origin-opener|x-content-type'`
       → five headers.
 - [ ] `curl -sI https://cass.towardpcc.com/ | grep -i strict-transport-security`
       → present, and served by Cloudflare rather than by the app.
-- [ ] `docker exec <app> su-exec app php artisan cass:health` → every row OK,
+- [x] `docker exec <app> su-exec app php artisan cass:health` → every row OK,
       exit 0.
-- [ ] `docker exec <app> su-exec app php artisan migrate:status` → nothing
+- [x] `docker exec <app> su-exec app php artisan migrate:status` → nothing
       Pending.
-- [ ] `docker exec <app> su-exec app php artisan about` → `APP_ENV=production`,
+- [x] `docker exec <app> su-exec app php artisan about` → `APP_ENV=production`,
       `APP_DEBUG=false`, config **cached**, routes **cached**, events cached.
-- [ ] `docker exec <app> supervisorctl status` → four programs (`nginx`,
+- [x] `docker exec <app> supervisorctl status` → four programs (`nginx`,
       `php-fpm`, `queue`, `scheduler`) all RUNNING. If this errors with *".ini
       file does not include supervisorctl section"* the image predates the
       `[unix_http_server]`/`[rpcinterface:supervisor]`/`[supervisorctl]` sections
       in `docker/supervisord.conf`; redeploy, or fall back to
       `docker exec <app> sh -c 'ps -o pid,user,args' | grep -E 'nginx: master|php-fpm: master|queue:work|schedule:work'`
       → four lines.
-- [ ] Run `/usr/local/bin/cass-backup` by hand once. Its first line names the
+- [x] Run `/usr/local/bin/cass-backup` by hand once. Its first line names the
       mysql container it detected — check it is this stack's. A `.sql.gz`
       appears and the printed size is plausible for the live database — not the
       20-byte gzip of an empty stream; then `gunzip -c` it and confirm the last
       line is `-- Dump completed`.
-- [ ] Run `/usr/local/bin/cass-storage-backup` by hand once. It names the app
+- [x] Run `/usr/local/bin/cass-storage-backup` by hand once. It names the app
       container **and the resolved volume** — the volume must be Coolify's
       prefixed `..._cass-storage`, never a bare `cass-storage`, which would be a
       brand-new empty one. Then `tar tzf` the archive and see the uploaded files.
-- [ ] Neither script is installed by name matching. Confirm the fallbacks are
+- [x] Neither script is installed by name matching. Confirm the fallbacks are
       documented and unused: nothing in production sets `CASS_MYSQL_CONTAINER`
       or `CASS_APP_CONTAINER` in the crontab.
-- [ ] `ls -ld /srv/backups/cass` → `drwx------`, and `ls -l` shows every dump
+- [x] `ls -ld /srv/backups/cass` → `drwx------`, and `ls -l` shows every dump
       `-rw-------`. The script sets both every run; a dump readable by any
       local account is a copy of every author's address and every password
       hash.
 - [ ] Restore that dump into a scratch database and count rows against
       production (the procedure is in the runbook under **Backups**). **A
       backup nobody has restored is not a backup.**
-- [ ] `APP=$(cass_container app)`,
+- [x] `APP=$(cass_container app)`,
       `DB=$(cass_container mysql)`,
       then `docker stats --no-stream "$APP" "$DB"` → the app container's steady
       state well under 768 MiB and MySQL's under 512 MiB. Record both in the
@@ -193,12 +199,12 @@ Each line is a command and the answer it must give.
       The names are Coolify's, not `cass-app`/`cass-mysql`; neither compose file
       sets `container_name`, and neither the names nor the labels contain
       "cass", which is why the lookup goes through the container's environment.)
-- [ ] Time the public conference page and the submit page five times each
+- [x] Time the public conference page and the submit page five times each
       (the loop is in the runbook's "Every release" step 5) → a 0.300 s median.
 - [ ] Time `RankedSubmissions::query()` once against a conference with a few
       hundred abstracts (the `tinker` snippet is in the runbook under
       **Scoring, ranking and decisions**) → far under one second.
-- [ ] `docker exec <app> su-exec app php artisan queue:failed` → empty.
+- [x] `docker exec <app> su-exec app php artisan queue:failed` → empty.
 
 ## 4. The manual walk-through
 
