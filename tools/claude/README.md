@@ -95,3 +95,9 @@ tools/claude/workflow-args.test.mjs` (also run by CI's `scripts` job).
   closed with the failing step quoted and a backlog entry.
 - Actions, composer patch/minor and npm patch/minor: merge when CI is green; click through the
   panels after a Vite major.
+- A PR whose base is behind `main` gets `@dependabot rebase` and a fresh green run before it
+  merges; when two are open, merge one, then rebase the other, since each merge moves `main`.
+  A grouped PR whose group has changed since it was opened (another member gained an update) is
+  not rebased: Dependabot answers "these dependencies are updatable in another way", closes it
+  and opens a replacement within the minute (#39, two digests, became #43 with the `node` digest
+  added, 2026-10-18). Triage the replacement as the same PR.
