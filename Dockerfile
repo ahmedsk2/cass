@@ -12,7 +12,7 @@
 # .github/dependabot.yml raises a weekly pull request when any of these moves.
 # Do not "unpin to get the security fix" - let Dependabot open the PR, so the
 # change is reviewed and the digest stays recorded.
-FROM composer:2@sha256:af98f42dfff7c68ba8d53c2164fd9fde1087b7d449514baa38c418b1f6bc4bac AS vendor
+FROM composer:2@sha256:b6dcd72ca98fa19d0e5b8476de179859704891fad06dd9e0b96833d4c430a5fc AS vendor
 WORKDIR /build
 COPY composer.json composer.lock ./
 # intl and gd are installed in the runtime stage; the platform check is waived only here.
@@ -28,7 +28,7 @@ RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-p
 # resources/css/app.css, app/Filament for the theme.
 # tests/Unit/DockerAssetsStageTest.php holds this list to the @source lines.
 # npm ci runs before any of it, so its layer survives a PHP-only change.
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS assets
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS assets
 WORKDIR /build
 COPY package*.json vite.config.js ./
 RUN npm ci
