@@ -2,7 +2,7 @@ services:
   mysql:
     # Same multi-architecture index digest as docker-compose.production.yml, so
     # the local MySQL suite runs against the image production runs.
-    image: mysql:8.4@sha256:24989179f58856db763f418010c1169fecc944e3ec1ea7e921572d83eb070f70
+    image: mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: cass
@@ -22,7 +22,7 @@ services:
     # latest as of 2026-09-12, pinned by index digest. A floating `latest` in a
     # development compose file is how two developers end up with different
     # Mailpits and one of them cannot reproduce a bug.
-    image: axllent/mailpit:latest@sha256:98b916bd3c8d61f7633a52d3ea2f58d00620cb01ca57ab59edde68c347a95365
+    image: axllent/mailpit:latest@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
     ports:
       - "1025:1025"
       - "8025:8025"
