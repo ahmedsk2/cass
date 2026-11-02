@@ -28,7 +28,7 @@ RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-p
 # resources/css/app.css, app/Filament for the theme.
 # tests/Unit/DockerAssetsStageTest.php holds this list to the @source lines.
 # npm ci runs before any of it, so its layer survives a PHP-only change.
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS assets
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS assets
 WORKDIR /build
 COPY package*.json vite.config.js ./
 RUN npm ci
@@ -39,7 +39,7 @@ COPY app/Livewire ./app/Livewire
 COPY --from=vendor /build/vendor/filament ./vendor/filament
 RUN npm run build
 
-FROM php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a AS runtime
+FROM php:8.4-fpm-alpine@sha256:93aa3f61216b73cc6f878235c9772849449f4efc18dfe3d6678eed645076c00d AS runtime
 RUN apk add --no-cache nginx supervisor su-exec icu-libs libpng libjpeg-turbo freetype libzip mysql-client tzdata \
  && apk add --no-cache --virtual .build icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
  && docker-php-ext-configure gd --with-freetype --with-jpeg \
