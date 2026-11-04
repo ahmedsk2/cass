@@ -30,6 +30,10 @@ return [
      * Pruned nightly by model:prune (routes/console.php).
      */
     'email_log_retention_days' => (int) env('CASS_EMAIL_LOG_RETENTION_DAYS', 365),
+
+    // The dead-man heartbeat: `cass:health --ping`, hourly, GETs this URL only when every check passed and
+    // the service alerts when the GETs stop. A secret, only in the deployment's environment. Unset or empty: no ping.
+    'heartbeat_url' => env('CASS_HEARTBEAT_URL'),
     'qr' => [
         // The PNG is rendered at whole-module scale, so the real width is the
         // smallest multiple of the module count that reaches this size.

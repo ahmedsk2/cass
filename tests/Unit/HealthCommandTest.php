@@ -5,9 +5,15 @@ declare(strict_types=1);
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 
 use function Pest\Laravel\artisan;
 
@@ -141,4 +147,73 @@ it('warns rather than fails on a queue with a backlog', function () {
     artisan('cass:health')
         ->expectsOutputToContain('queue')
         ->assertExitCode(1);
+});
+
+it('pings the heartbeat URL once, with a GET, when every check passed, and prints one JSON line', function () {
+    Http::fake();
+    config()->set('cass.heartbeat_url', 'https://hc-ping.example/test-check');
+
+    expect(Artisan::call('cass:health', ['--json' => true, '--ping' => true]))->toBe(0);
+    $lines = preg_split('/\R/', trim(Artisan::output())) ?: [];
+    // The scheduled run is `--json --ping`: the ping adds nothing to stdout.
+    expect($lines)->toHaveCount(1)
+        ->and(json_decode($lines[0], true))->toBeArray()->toHaveCount(6);
+    Http::assertSentCount(1);
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'GET' && $request->url() === 'https://hc-ping.example/test-check');
+});
+
+it('pings nothing without --ping or without a URL', function (array $options, ?string $url) {
+    Http::fake();
+    config()->set('cass.heartbeat_url', $url);
+
+    artisan('cass:health', $options)->assertExitCode(0);
+    Http::assertNothingSent();
+})->with([
+    'without --ping' => [[], 'https://hc-ping.example/test-check'],
+    'without a URL' => [['--ping' => true], null],
+    'with an empty URL, as the compose file passes it unset' => [['--ping' => true], ''],
+]);
+
+it('pings nothing when a check failed', function () {
+    // The point of a dead-man heartbeat: a red row is silence, which the service turns into an alert.
+    Http::fake();
+    config()->set('cass.heartbeat_url', 'https://hc-ping.example/test-check');
+    Cache::put('cass:scheduler-heartbeat', now()->subHour()->toIso8601String(), 3600);
+
+    artisan('cass:health', ['--ping' => true])->assertExitCode(1);
+    Http::assertNothingSent();
+});
+
+it('keeps the exit code when the ping fails, and logs a warning without the URL', function () {
+    // Http::fake() merges stub sets, so only the failure is faked, in Guzzle's words (its URL has no query).
+    Http::fake(fn () => throw new ConnectionException('cURL error 6: Could not resolve host: hc-ping.example (see https://curl.se/libcurl/c/libcurl-errors.html) for https://hc-ping.example/test-check'));
+    Sleep::fake();
+    Log::spy();
+    config()->set('cass.heartbeat_url', 'https://hc-ping.example/test-check?rid=1');
+
+    artisan('cass:health', ['--ping' => true])->assertExitCode(0);
+    // Exact: json_encode() escapes '/', so a substring search of it finds no URL even when one leaks.
+    Log::shouldHaveReceived('warning')->once()->withArgs(
+        fn (string $message, array $context): bool => $context === ['error' => 'cURL error 6: Could not resolve host: hc-ping.example (see [url]) for [url]']
+            && ! str_contains($message, 'test-check'),
+    );
+});
+
+it('keeps the exit code when the heartbeat service answers with an error', function () {
+    // retry() throws a RequestException after the last 503; the catch takes every Throwable.
+    Http::fake(fn () => Http::response('', 503));
+    Sleep::fake();
+    Log::spy();
+    config()->set('cass.heartbeat_url', 'https://hc-ping.example/test-check');
+    artisan('cass:health', ['--ping' => true])->assertExitCode(0);
+    Log::shouldHaveReceived('warning')->once();
+});
+
+it('schedules cass:health --json --ping every hour, its output appended to a log file', function () {
+    $event = collect(app(Schedule::class)->events())
+        ->first(fn (Event $event): bool => str_contains((string) $event->command, 'cass:health'));
+    expect($event)->not->toBeNull()
+        ->and((string) $event?->command)->toContain('--json')->toContain('--ping')
+        ->and($event?->expression)->toBe('0 * * * *')
+        ->and($event?->output)->toBe(storage_path('logs/cass-health.log'))->and($event?->shouldAppendOutput)->toBeTrue();
 });

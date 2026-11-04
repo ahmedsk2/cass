@@ -9,6 +9,8 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
@@ -30,8 +32,8 @@ use Throwable;
  *     touching a new column;
  *   - a misconfigured mailer queues perfectly and delivers nothing.
  *
- * For a human at a terminal, and for a host cron through `--json`. Nothing in
- * the application calls it.
+ * For a human at a terminal, for a host cron through `--json`, and hourly
+ * from routes/console.php as `--json --ping`, the dead-man heartbeat.
  */
 class HealthCommand extends Command
 {
@@ -44,7 +46,9 @@ class HealthCommand extends Command
      */
     private const int STALE_SECONDS = 900;
 
-    protected $signature = 'cass:health {--json : Machine-readable output}';
+    protected $signature = 'cass:health
+        {--json : Machine-readable output}
+        {--ping : GET the heartbeat URL (CASS_HEARTBEAT_URL) when every check passed}';
 
     protected $description = 'Check the things /up deliberately does not: the queue, the scheduler, the private disk and pending migrations';
 
@@ -73,7 +77,34 @@ class HealthCommand extends Command
             );
         }
 
+        if ($failed === [] && $this->option('ping') === true) {
+            $this->ping();
+        }
+
         return $failed === [] ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * A failed ping is a warning, which the scheduled run appends to storage/logs/cass-health.log, and
+     * never changes the exit code: the rows decide that. The URL is a secret (anyone holding it can mark
+     * the check healthy), so the log never shows it. Here, not in a class: this is its only caller.
+     */
+    private function ping(): void
+    {
+        $url = (string) config('cass.heartbeat_url');
+
+        if ($url === '') {
+            return;
+        }
+
+        try {
+            Http::timeout(10)->retry(2, 500)->get($url);
+        } catch (Throwable $e) {
+            Log::warning('The heartbeat ping failed; the heartbeat service alerts if the next one fails too.', [
+                // Every URL, not the configured string: Guzzle writes its own form of it.
+                'error' => (string) preg_replace('~https?://[^\s)]+~i', '[url]', $e->getMessage()),
+            ]);
+        }
     }
 
     /**
