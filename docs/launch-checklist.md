@@ -92,10 +92,10 @@ answer a plan author happened to choose.
       Coolify, redeploy. Confirm the widget renders on
       `/c/{org}/{conference}/submit` — with no keys it is silently absent and
       the form is protected only by the honeypot and the throttle.
-- [ ] **Two-factor authentication on the platform admin account.** All three
-      panels have `AppAuthentication::make()->recoverable()` enabled. Enrol at
-      `/admin` → Profile, and **store the recovery codes somewhere that is not
-      this platform**.
+- [ ] **Two-factor authentication on the platform admin account.** The admin
+      panel requires `AppAuthentication::make()->recoverable()` (the others
+      offer it): enrol on the page the first sign-in opens, **store the recovery
+      codes off this platform**, then change the admin password under Profile.
 - [ ] **SPF and DKIM for the sending domain.** Send one real email from the
       platform (register a throwaway organization) and check the received
       headers show `spf=pass` and `dkim=pass`. Spec section 15 names

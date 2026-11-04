@@ -23,6 +23,7 @@ real authors, phases C and D after. Each item's "done when" is in the brief.
 | Email | Production SMTP authenticates (mail.towardpicu.com:587, STARTTLS). `email_logs` is empty: no real message has left the platform yet. |
 | CSP | `Content-Security-Policy-Report-Only` is what the site sends (`CASS_CSP_REPORT_ONLY=true` in Coolify). Flip to `false` after one walk-through with a clean browser console. |
 | Backups | Nightly database dump 03:17 and weekly storage archive Sunday 03:47, from root's crontab on the host, into `/srv/backups/cass` (0700). Latest dumps 2026-10-17 23:53 and 23:58 UTC, taken by hand around the A8 deploy (28.9 and 33.7 KB, 33 tables, both ending in `-- Dump completed`), plus a hand storage archive of the same night. A restore into a scratch database matched production row counts on 2026-09-13. |
+| Monitoring | Not wired yet; the code is in #NN and idle until configured: `cass:health --json --ping` runs hourly and pings once `CASS_HEARTBEAT_URL` is set, and reported exceptions reach the tracker once `SENTRY_LARAVEL_DSN` is set. Owner steps in runbook "Monitoring": the uptime monitor, the three heartbeat checks (hourly health, nightly dump, weekly storage archive), the two ping files and cron lines, the DSN. |
 | Turnstile | Keys still empty in Coolify; the submit form fails open (no bot challenge) until they are set. |
 
 ## Open — phase A, before any other code change
@@ -47,12 +48,12 @@ Production row above and the A8 row below; the launch checklist's section 3 carr
 | # | Item | Who | Status |
 |---|---|---|---|
 | B1 | Turnstile keys in Coolify | Owner | Not started |
-| B2 | Platform-admin second factor enrolled, and enforced on the admin panel | Owner and engineer | Not started |
+| B2 | Platform-admin second factor enrolled, and enforced on the admin panel | Owner and engineer | Engineer part done (#NN): the admin panel requires a second factor. Owner next, in the deploy session: sign in at `/admin`, set up the authenticator app on the page that opens, keep the recovery codes off the platform, then change the admin password under Profile, which signs out every session opened before enrolment (runbook "Platform admin second factor") |
 | B3 | Origin lockdown: 80/443 to Cloudflare only, 22 to known addresses | Owner | Not started |
 | B4 | Cloudflare settings (checklist section 2) | Owner | Not started |
-| B5 | External uptime monitor on `/up`, runbook "Monitoring" | Owner; engineer documents | Not started |
-| B6 | Dead-man heartbeats: hourly `cass:health`, both backup crons | Engineer; owner creates the checks | Not started |
-| B7 | Error tracking | Engineer; owner picks the service | Not started |
+| B5 | External uptime monitor on `/up`, runbook "Monitoring" | Owner; engineer documents | Runbook "Monitoring" written (#NN). Owner next: an uptime monitor on `/up`, then its test alert |
+| B6 | Dead-man heartbeats: hourly `cass:health`, both backup crons | Engineer; owner creates the checks | Engineer part done (#NN): `cass:health --json --ping` hourly; the cron pings are in runbook "Backups". Owner next: the three checks (hourly health, nightly dump, weekly storage archive), `CASS_HEARTBEAT_URL` set and redeployed, the two ping files written and the two cron lines edited, a `/fail` ping sent to hourly health to see it alert |
+| B7 | Error tracking | Engineer; owner picks the service | Engineer part done (#NN): the Sentry SDK, scrubbed. Owner next: sign up for Sentry's hosted free plan, picking its data region (the EU is the recommendation); before the DSN is set, check that transfer against the PDPL's cross-border rules and ship a release whose privacy page says where events are kept (`privacy.hosting_body` in `lang/en/public.php`; decision 0015); then set `SENTRY_LARAVEL_DSN`, redeploy, turn on its new-issue alert, run the runbook's tracker test and see its email arrive |
 | B8 | Off-host encrypted backups and a restore drill from the off-host copy | Owner, with the engineer | Not started |
 | B9 | Suspended organisations cannot send invitations or reminders | Engineer | Done (#41) |
 | B10 | Cap status-link emails per address and per IP | Engineer | Done (#41) |
@@ -76,7 +77,7 @@ again over the whole branch, merged through a pull request the owner approves, a
 the owner through the deploy script, which backs up and runs any pending migration in the new
 container.
 
-Plans 1–8 and the backlog are in `docs/superpowers/plans/`; the design is
+Plans 1–9 and the backlog are in `docs/superpowers/plans/`; the design is
 `docs/superpowers/specs/2026-09-10-cass-v2-design.md`; the runbook is
 `docs/runbooks/deploy-production.md`.
 
