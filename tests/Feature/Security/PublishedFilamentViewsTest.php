@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * THREE Filament Blade views are published into resources/views/vendor so that
  * every inline <script> and <style> they emit carries the CSP nonce. Filament
- * 5.10.2 nonces its inline scripts only when a nonce is set, and its inline
+ * 5.11.0 nonces its inline scripts only when a nonce is set, and its inline
  * styles never; the copies put the same unconditional attribute on all of them.
  * Publishing freezes them against an upgrade, and this is the alarm.
  *
@@ -54,7 +54,7 @@ it('has not drifted from the filament view it was published from', function (str
     'filament-panels::livewire.sidebar' => [
         'vendor/filament/filament/resources/views/livewire/sidebar.blade.php',
         'resources/views/vendor/filament-panels/livewire/sidebar.blade.php',
-        '4cf575d981f1af6a8347b7fe385ed10ea80acc3d8ef4c4be6ebc48ae52e9dcb9',
+        'c873d8b939e4159aba6789dec9c278a748e9c1522fdb238fa9a7c689587f0b3f',
         // One inline <script>: the collapsedGroups localStorage block.
         ['{{ $cspNonce }}' => 1],
     ],
