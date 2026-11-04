@@ -145,7 +145,23 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
       - run: composer install --no-interaction --prefer-dist --no-progress
+      # The two advisory gates of CLAUDE.md "Dependencies": a high or critical
+      # advisory fails the job unless docs/security-exceptions.md has a row for
+      # it and, for Composer, composer.json's config.audit.ignore names the same
+      # advisory, which is what makes this step pass. Low and medium advisories
+      # are printed as ignored and do not fail the job; Dependabot's weekly
+      # groups carry those fixes. An advisory Packagist has not rated yet is
+      # neither and fails the job until someone has looked at it: Symfony's
+      # security releases arrive unrated. Abandoned packages are not advisories
+      # and are left to Dependabot.
+      - name: Composer audit
+        run: composer audit --abandoned=ignore --ignore-severity=low --ignore-severity=medium
       - run: npm ci
+      # Production dependencies only: the dev tree (vite, playwright, axios) is
+      # build-time and never ships. npm has no ignore list, so an accepted npm
+      # advisory is handled as docs/security-exceptions.md describes.
+      - name: npm audit
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run build
       - run: cp .env.example .env && php artisan key:generate
       - name: Pint
