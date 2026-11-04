@@ -16,6 +16,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
+use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -118,5 +119,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(fn (): string => route('filament.organizer.auth.login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Every exception Laravel reports also goes to the error tracker (config/sentry.php); with no
+        // DSN the SDK drops it. The handler's dontReport list (validation, authentication, every HTTP
+        // exception such as a 404 or a 429) still applies first.
+        Integration::handles($exceptions);
     })->create();

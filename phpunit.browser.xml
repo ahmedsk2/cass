@@ -53,6 +53,11 @@
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="TURNSTILE_SITE_KEY" value=""/>
         <env name="TURNSTILE_SECRET_KEY" value=""/>
+        <!-- No DSN, whatever .env or the shell holds, so no test reports to a real
+             tracker. Both lines: env() reads $_SERVER first, where the shell's own
+             value sits. tests/Feature/Security/ErrorTracking*Test.php set their own. -->
+        <server name="SENTRY_LARAVEL_DSN" value=""/>
+        <env name="SENTRY_LARAVEL_DSN" value="" force="true"/>
         <!-- The same line phpunit.xml carries, for the same reason: openedAt is
              stamped in mount() and is #[Locked], and Playwright fills a form in
              well under four seconds. -->
