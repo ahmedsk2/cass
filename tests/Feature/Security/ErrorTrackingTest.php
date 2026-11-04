@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Support\Monitoring\ScrubTrackerEvent;
 use GuzzleHttp\Psr7\Request as PsrRequest;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Sentry\Breadcrumb;
 use Sentry\ClientBuilder;
@@ -52,7 +54,7 @@ it('pins the privacy settings, and reports quietly without a DSN', function () {
     expect(config('sentry.send_default_pii'))->toBeFalse()
         ->and(config('sentry.max_request_body_size'))->toBe('never')
         ->and(config('sentry.traces_sample_rate'))->toBeNull()
-        ->and(config('sentry.breadcrumbs'))->toBe(['livewire' => false, 'cache' => false, 'http_client_requests' => false, 'sql_bindings' => false]);
+        ->and(config('sentry.breadcrumbs'))->toBe(['livewire' => false, 'cache' => false, 'http_client_requests' => false, 'sql_bindings' => false, 'command_info' => false]);
 
     // No DSN in the test environment (phpunit.xml), so this is dropped by the SDK.
     report(new RuntimeException('tracker test'));
@@ -134,3 +136,29 @@ it('keeps only the method and the tokenless path of a request', function (string
     'status page' => ['https://cass.towardpcc.com/s/a-plain-status-token?email=sara@example.org', 'https://cass.towardpcc.com/s/[token]'],
     'invitation' => ['https://cass.towardpcc.com/invite/a-plain-invitation-token#accept', 'https://cass.towardpcc.com/invite/[token]'],
 ]);
+
+it('drops the metadata of log and command breadcrumbs, and masks addresses in the rest', function () {
+    $event = Event::createEvent();
+    $event->setBreadcrumb([
+        new Breadcrumb(Breadcrumb::LEVEL_ERROR, Breadcrumb::TYPE_DEFAULT, 'log.error', 'Mail to sara@example.org failed', ['userId' => 7]),
+        new Breadcrumb(Breadcrumb::LEVEL_INFO, Breadcrumb::TYPE_DEFAULT, 'artisan.command', 'Starting Artisan command: cass:demo-seed', ['input' => 'cass:demo-seed --owner-email=sara@example.org --reviewer-password=a-demo-password']),
+        new Breadcrumb(Breadcrumb::LEVEL_INFO, Breadcrumb::TYPE_DEFAULT, 'notification.sent', 'Sent notification', ['notifiable' => 'sara@example.org', 'attempts' => 2]),
+    ]);
+    $crumbs = ScrubTrackerEvent::beforeSend($event)->getBreadcrumbs();
+    expect($crumbs[0]->getMessage())->toBe('Mail to [email] failed')
+        ->and($crumbs[0]->getMetadata())->toBe([])
+        ->and($crumbs[1]->getMetadata())->toBe([])
+        ->and($crumbs[2]->getMetadata())->toBe(['notifiable' => '[email]', 'attempts' => 2]);
+});
+
+it('leaves query bindings out of a database error message', function () {
+    $message = '';
+    try {
+        // users.email is NOT NULL: an insert that fails, with a name among its bindings.
+        DB::table('users')->insert(['name' => 'Sara Ahmed', 'email' => null, 'password' => 'unused']);
+    } catch (QueryException $exception) {
+        $message = $exception->getMessage();
+    }
+
+    expect($message)->toContain('insert into')->not->toContain('Sara Ahmed');
+});

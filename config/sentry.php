@@ -65,6 +65,8 @@ return [
         // Outgoing requests include the heartbeat URL, which is a secret.
         'http_client_requests' => false,
         'sql_bindings' => false,
+        // An Artisan command's whole command line: cass:demo-seed takes an address and a password.
+        'command_info' => false,
     ],
 
 ];

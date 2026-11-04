@@ -18,6 +18,8 @@ use Sentry\Stacktrace;
  *   sends them: an Action's $data would arrive whole, abstract and authors included.
  * - Email addresses in exception messages and breadcrumbs: a mail server names the address it refused, and
  *   MySQL quotes a duplicate value.
+ * - Breadcrumb metadata a caller supplied: a log line's context (Laravel adds the signed-in
+ *   user's id to every reported exception's) and an Artisan command's arguments.
  * - The request beyond its method and path: headers (CF-Connecting-IP and Referer among them), the query
  *   string (a password-reset link carries an address) and the bearer token in /s/{token} and /invite/{token}.
  */
@@ -34,10 +36,19 @@ final class ScrubTrackerEvent
 
         self::dropArguments($event->getStacktrace());
 
+        // The metadata of a log line (its context) and of an Artisan command (its whole command
+        // line; config/sentry.php also turns those off) goes; any other keeps its own, addresses masked.
         $event->setBreadcrumb(array_map(
-            static fn (Breadcrumb $crumb): Breadcrumb => $crumb->getMessage() === null
-                ? $crumb
-                : $crumb->withMessage(self::maskAddresses($crumb->getMessage())),
+            static fn (Breadcrumb $crumb): Breadcrumb => new Breadcrumb(
+                $crumb->getLevel(),
+                $crumb->getType(),
+                $crumb->getCategory(),
+                $crumb->getMessage() === null ? null : self::maskAddresses($crumb->getMessage()),
+                str_starts_with($crumb->getCategory(), 'log.') || $crumb->getCategory() === 'artisan.command'
+                    ? []
+                    : self::maskAll($crumb->getMetadata()),
+                $crumb->getTimestamp(),
+            ),
             $event->getBreadcrumbs(),
         ));
 
@@ -57,6 +68,21 @@ final class ScrubTrackerEvent
     private static function maskAddresses(string $text): string
     {
         return (string) preg_replace(self::ADDRESS, '[email]', $text);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function maskAll(array $data): array
+    {
+        array_walk_recursive($data, static function (mixed &$value): void {
+            if (is_string($value)) {
+                $value = self::maskAddresses($value);
+            }
+        });
+
+        return $data;
     }
 
     private static function dropArguments(?Stacktrace $stacktrace): void
