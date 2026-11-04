@@ -2,13 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Support\Monitoring\ScrubTrackerEvent;
+
 /*
  * Error tracking through the Sentry SDK, whose protocol Sentry, GlitchTip and Bugsink all accept
  * (docs/decisions/0015-error-tracking-and-heartbeats.md). A key left out keeps the package's default
  * (vendor/sentry/sentry-laravel/config/sentry.php): the merge is by top-level key,
  * so `breadcrumbs` and `tracing` below replace those lists.
  * Authors' abstracts, names and email addresses must never reach the tracker: no request bodies, no
- * personal data (IP address, signed-in user, cookies), no SQL bindings, and none of the breadcrumbs that carry them.
+ * personal data (IP address, signed-in user, cookies), no SQL bindings, and none of the breadcrumbs that carry them. before_send removes the rest: frame arguments, addresses, headers and link tokens.
  */
 return [
 
@@ -23,6 +25,8 @@ return [
 
     'send_default_pii' => false,
     'max_request_body_size' => 'never',
+
+    'before_send' => [ScrubTrackerEvent::class, 'beforeSend'],
 
     // Errors only: no performance traces, profiles, logs or metrics.
     'traces_sample_rate' => null,

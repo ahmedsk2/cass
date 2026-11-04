@@ -2,11 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Support\Monitoring\ScrubTrackerEvent;
 use GuzzleHttp\Psr7\Request as PsrRequest;
 use Illuminate\Validation\ValidationException;
+use Sentry\Breadcrumb;
 use Sentry\ClientBuilder;
 use Sentry\Event;
+use Sentry\ExceptionDataBag;
+use Sentry\Frame;
 use Sentry\Laravel\Features\HttpClientIntegration;
+use Sentry\Stacktrace;
 use Sentry\State\HubInterface;
 use Sentry\Transport\Result;
 use Sentry\Transport\ResultStatus;
@@ -81,3 +86,51 @@ it('adds no trace headers to outgoing requests or queued jobs, and gives up on a
         ->and(config('sentry.http_connect_timeout'))->toBe(1)
         ->and(config('sentry.http_timeout'))->toBe(2);
 });
+
+it('scrubs an event: frame arguments, addresses, headers, the query string and link tokens', function () {
+    $frame = new Frame('App\Actions\Submissions\SubmitAbstract::handle', 'app/Actions/Submissions/SubmitAbstract.php', 40, null, null, ['data' => ['title' => 'A study of night shifts']]);
+    $event = Event::createEvent();
+    $event->setExceptions([new ExceptionDataBag(new RuntimeException('550 5.1.1 <sara@example.org>: Recipient address rejected'), new Stacktrace([$frame]))]);
+    $event->setBreadcrumb([new Breadcrumb(Breadcrumb::LEVEL_ERROR, Breadcrumb::TYPE_DEFAULT, 'log.error', 'Mail to sara@example.org failed')]);
+    $event->setRequest([
+        'method' => 'GET', 'url' => 'https://cass.towardpcc.com/s/a-plain-status-token?email=sara@example.org', 'query_string' => 'email=sara@example.org',
+        'headers' => ['cf-connecting-ip' => ['203.0.113.7'], 'referer' => ['https://cass.towardpcc.com/invite/a-plain-invitation-token']],
+    ]);
+
+    $scrubbed = ScrubTrackerEvent::beforeSend($event);
+    expect($scrubbed->getExceptions()[0]->getValue())->toBe('550 5.1.1 <[email]>: Recipient address rejected')
+        ->and($scrubbed->getExceptions()[0]->getStacktrace()?->getFrames()[0]->getVars())->toBe([])
+        ->and($scrubbed->getBreadcrumbs()[0]->getMessage())->toBe('Mail to [email] failed')
+        ->and($scrubbed->getRequest())->toBe(['method' => 'GET', 'url' => 'https://cass.towardpcc.com/s/[token]']);
+});
+
+it('sends a reported exception without frame arguments or addresses', function () {
+    ($this->track)();
+    $deliver = static function (array $author): void {
+        throw new RuntimeException('Could not deliver to '.$author['email']);
+    };
+    try {
+        $deliver(['email' => 'sara@example.org', 'name' => 'Sara Ahmed']);
+    } catch (RuntimeException $exception) {
+        report($exception);
+    }
+
+    $sent = $this->transport->events[0]->getExceptions()[0];
+    $frames = $sent->getStacktrace()?->getFrames() ?? [];
+    expect($sent->getValue())->toBe('Could not deliver to [email]')
+        ->and($frames)->not->toBeEmpty()
+        ->and(array_merge(...array_map(fn (Frame $frame): array => $frame->getVars(), $frames)))->toBe([]);
+});
+
+it('keeps only the method and the tokenless path of a request', function (string $url, string $expected) {
+    $event = Event::createEvent();
+    $event->setRequest([
+        'method' => 'POST', 'url' => $url, 'query_string' => 'email=sara@example.org',
+        'cookies' => ['cass_session' => 'a-session-id'], 'env' => ['REMOTE_ADDR' => '203.0.113.7'],
+        'data' => ['title' => 'A study of night shifts'],
+    ]);
+    expect(ScrubTrackerEvent::beforeSend($event)->getRequest())->toBe(['method' => 'POST', 'url' => $expected]);
+})->with([
+    'status page' => ['https://cass.towardpcc.com/s/a-plain-status-token?email=sara@example.org', 'https://cass.towardpcc.com/s/[token]'],
+    'invitation' => ['https://cass.towardpcc.com/invite/a-plain-invitation-token#accept', 'https://cass.towardpcc.com/invite/[token]'],
+]);
