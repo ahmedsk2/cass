@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use GuzzleHttp\Psr7\Request as PsrRequest;
 use Illuminate\Validation\ValidationException;
 use Sentry\ClientBuilder;
 use Sentry\Event;
+use Sentry\Laravel\Features\HttpClientIntegration;
 use Sentry\State\HubInterface;
 use Sentry\Transport\Result;
 use Sentry\Transport\ResultStatus;
@@ -61,4 +63,21 @@ it('sends a reported exception once a DSN is set, and none of Laravel\'s unrepor
 
     expect($this->transport->events)->toHaveCount(1)
         ->and($this->transport->events[0]->getExceptions()[0]->getValue())->toBe('tracker test');
+});
+
+it('adds no trace headers to outgoing requests or queued jobs, and gives up on a slow tracker quickly', function () {
+    // With a DSN at boot the package makes this method global Http middleware; tests boot without one.
+    ($this->track)();
+    $request = app(HttpClientIntegration::class)
+        ->attachTracingHeadersToRequest(new PsrRequest('GET', 'https://hc-ping.example/test-check'));
+
+    expect($request->hasHeader('baggage'))->toBeFalse()
+        ->and($request->hasHeader('sentry-trace'))->toBeFalse()
+        ->and(config('sentry.trace_propagation_targets'))->toBe([])
+        // Off, so neither the Http middleware nor the queue payload hook is registered at boot.
+        ->and(config('sentry.tracing.http_client_requests'))->toBeFalse()
+        ->and(config('sentry.tracing.queue_jobs'))->toBeFalse()
+        ->and(config('sentry.tracing.queue_job_transactions'))->toBeFalse()
+        ->and(config('sentry.http_connect_timeout'))->toBe(1)
+        ->and(config('sentry.http_timeout'))->toBe(2);
 });
