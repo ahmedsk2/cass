@@ -53,8 +53,9 @@ class ReviewerPanelProvider extends PanelProvider
             // conference (Plan 7 Task 6). The organizer and admin panels keep
             // Filament's page unchanged.
             ->profile(EditProfile::class)
+            // The admin panel's window: a platform admin's session from this sign-in opens /admin too.
             ->multiFactorAuthentication([
-                AppAuthentication::make()->recoverable(),
+                AppAuthentication::make()->recoverable()->codeWindow(1),
             ])
             ->brandName('CASS Review')
             ->brandLogo(fn () => view('brand.logo'))

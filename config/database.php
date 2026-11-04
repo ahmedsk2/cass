@@ -44,6 +44,9 @@ return [
             'journal_mode' => null,
             'synchronous' => null,
             'transaction_mode' => 'DEFERRED',
+            // A failed query's message otherwise carries its bindings (an abstract's title, an author's
+            // address) into the log and the error tracker; QueryException::getBindings() still has them.
+            'mask_bindings_in_exception_messages' => true,
         ],
 
         'mysql' => [
@@ -64,6 +67,8 @@ return [
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? Mysql::ATTR_SSL_CA : PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
+            // As on sqlite above.
+            'mask_bindings_in_exception_messages' => true,
         ],
 
         'mariadb' => [

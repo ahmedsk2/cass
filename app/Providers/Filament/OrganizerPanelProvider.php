@@ -40,8 +40,9 @@ class OrganizerPanelProvider extends PanelProvider
             ->passwordReset()
             ->emailVerification()
             ->profile()
+            // The admin panel's window: a platform admin's session from this sign-in opens /admin too.
             ->multiFactorAuthentication([
-                AppAuthentication::make()->recoverable(),
+                AppAuthentication::make()->recoverable()->codeWindow(1),
             ])
             ->tenant(Organization::class, slugAttribute: 'slug')
             ->tenantProfile(EditOrganizationProfile::class)

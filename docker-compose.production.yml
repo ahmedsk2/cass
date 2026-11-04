@@ -47,6 +47,10 @@ services:
       CASS_ADMIN_PASSWORD: ${CASS_ADMIN_PASSWORD}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # Optional. The hourly cass:health --ping heartbeat URL, a secret. Empty, unlike the caps below, means no ping.
+      CASS_HEARTBEAT_URL: ${CASS_HEARTBEAT_URL:-}
+      # Optional. The error tracker's DSN (config/sentry.php), a secret. Empty: nothing is reported.
+      SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
       # Send Content-Security-Policy-Report-Only instead of the enforcing
       # header. Deploy with this 'true', walk docs/launch-checklist.md section 4
       # with the browser console open, then set it 'false' and redeploy.

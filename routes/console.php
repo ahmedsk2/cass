@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\HealthCommand;
 use App\Console\Commands\SendReviewerRemindersCommand;
 use App\Console\Commands\SweepTemporaryUploadsCommand;
 use Carbon\CarbonImmutable;
@@ -60,3 +61,12 @@ Schedule::command(SweepTemporaryUploadsCommand::class)->hourly();
 Schedule::call(static function (): void {
     Cache::put('cass:scheduler-heartbeat', CarbonImmutable::now()->toIso8601String(), 3600);
 })->everyFiveMinutes()->name('cass-scheduler-heartbeat')->withoutOverlapping();
+
+// The dead-man heartbeat (runbook "Monitoring"): --ping is sent only when every row is OK, so a red
+// row and a dead scheduler look the same from outside. Not ->pingOnSuccess(), which pings with its own
+// Guzzle client after a subprocess no test can drive. The scheduler sends a command's output to
+// /dev/null and production logs to stderr, so the rows and a failed ping's warning go to this file,
+// appended: an overwrite would lose the warning 40 minutes after the service's 20-minute alert.
+Schedule::command(HealthCommand::class, ['--json', '--ping'])
+    ->hourly()
+    ->appendOutputTo(storage_path('logs/cass-health.log'));

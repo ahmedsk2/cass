@@ -51,7 +51,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 1. DNS (Cloudflare, owner): A record `cass` -> `<origin-ip>`, proxied (orange cloud).
 2. Coolify: New resource -> Private Repository (with deploy key) -> `git@github.com:ahmedsk2/cass.git`, branch `main`, compose file `docker-compose.production.yml`, build pack Docker Compose. The repository is private, so Coolify clones it with the private key `cass-deploy-key` (Keys & Tokens, id 9); its public half is the repository's read-only deploy key "coolify cass (read-only)" on GitHub. To rotate it: generate a new pair, add the public half on GitHub, store the private half in Coolify, attach it on the application's Source screen ("Select another Private Key"), check `git ls-remote` with it, then delete the old key on both sides. The application ran from the public source until 2026-10-16, when the repository went private and was switched to this key.
 3. Coolify domain for the `app` service: `https://cass.towardpcc.com:8080`.
-4. Environment variables in Coolify (all required unless marked optional): `APP_KEY` (generate locally with `php artisan key:generate --show`), `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, optional `MAIL_SCHEME` (`smtps` for implicit TLS on port 465; leave it unset on 587, where the connection upgrades with STARTTLS when the server offers it; `MAIL_ENCRYPTION` is not read by Laravel 13 and should be deleted from Coolify), `MAIL_FROM_ADDRESS`, `CASS_CONTACT_EMAIL`, `CASS_ADMIN_EMAIL`, `CASS_ADMIN_PASSWORD` (12+ characters), optional `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`.
+4. Environment variables in Coolify (all required unless marked optional): `APP_KEY` (generate locally with `php artisan key:generate --show`), `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, optional `MAIL_SCHEME` (`smtps` for implicit TLS on port 465; leave it unset on 587, where the connection upgrades with STARTTLS when the server offers it; `MAIL_ENCRYPTION` is not read by Laravel 13 and should be deleted from Coolify), `MAIL_FROM_ADDRESS`, `CASS_CONTACT_EMAIL`, `CASS_ADMIN_EMAIL`, `CASS_ADMIN_PASSWORD` (12+ characters), optional `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, optional `CASS_HEARTBEAT_URL` and `SENTRY_LARAVEL_DSN` (both secrets, see **Monitoring**).
 5. Deploy from the Coolify UI. Wait for the `app` container to report healthy.
 6. First migration and admin user (owner runs, never at boot):
    ```bash
@@ -61,7 +61,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
    sudo docker exec -it "$C" su-exec app php artisan db:seed --force
    ```
    If `$C` is empty, use the Coolify UI terminal for the `app` service instead.
-7. Log in at https://cass.towardpcc.com/admin/login, change the admin password under Profile, enable two-factor authentication.
+7. Log in at https://cass.towardpcc.com/admin/login. The panel opens "Set up two-factor authentication" first: set up the authenticator app and keep the recovery codes off the platform (see **Platform admin second factor**), then change the admin password under Profile.
 8. Install the backup cron (see **Backups**) and run it once by hand.
 9. Work through `docs/launch-checklist.md` before announcing the address.
 
@@ -1065,6 +1065,58 @@ you next touch it. Leaving it is harmless — a host with no verified
 organization behind it gets a 404 from the application — but it leaves Traefik
 renewing a certificate for a name nobody uses.
 
+## Monitoring
+
+Three outside signals: an uptime monitor on `/up`, three dead-man heartbeats and an error tracker. The services, UptimeRobot, Healthchecks.io and Sentry, are the owner's accounts. Every ping URL and the DSN is a secret, held by the service and by the application's environment in Coolify or root-only files on the host, never by this repository; `docs/HANDOVER.md` names the checks only.
+
+### Uptime
+
+UptimeRobot (free plan) requests `https://cass.towardpcc.com/up` every 5 minutes and alerts by email and by its phone app. A 200 proves PHP answers behind Cloudflare and Traefik. It proves nothing about the queue, the scheduler, the disk, pending migrations or mail: that is `cass:health`, reported by the hourly heartbeat. Test it with UptimeRobot's test alert, or point the monitor at `/up-missing` for one check.
+
+### Heartbeats
+
+Healthchecks.io (free plan, up to 20 checks) alerts when a ping is later than its period plus its grace time. Create three checks:
+
+| Check | Period | Grace | Pinged when this succeeded | Its URL lives in |
+|---|---|---|---|---|
+| hourly health | 1 hour | 20 minutes | the scheduler's `cass:health --json --ping`, every row OK | `CASS_HEARTBEAT_URL`, the application's environment (redeploy after setting it) |
+| nightly dump | 1 day | 1 hour | the 03:17 `cass-backup` cron line | `/root/.cass-ping-nightly` (**Backups**) |
+| weekly storage archive | 7 days | 2 hours | the Sunday 03:47 `cass-storage-backup` cron line | `/root/.cass-ping-weekly` (**Backups**) |
+
+"hourly health" goes quiet on a red `cass:health` row, a dead scheduler, a stopped container or a dead host: all look the same from outside. A failed ping leaves the exit code alone and the next hour tries again. Each hourly run appends its rows to `storage/logs/cass-health.log` in the container, plus a timestamped `WARNING` line when its ping failed; a deploy starts the file afresh. `docker logs` shows each run as `DONE` (every row OK) or `FAIL` (a row red, which with a DSN is also a tracker event). First:
+
+```bash
+C=$(cass_container app)
+sudo docker exec "$C" su-exec app php artisan cass:health
+sudo docker exec "$C" supervisorctl status
+sudo docker exec "$C" grep WARNING storage/logs/cass-health.log | tail -n 5
+sudo docker logs --since 3h "$C" 2>&1 | grep 'cass:health'
+```
+
+then the **Health** row that is red. A quiet backup check: `sudo tail -n 40 /var/log/cass-backup.log`, then the script by hand (**Backups**). To prove the alerts reach you, send hourly health a failure from your own machine: `curl -fsS -m 10 -o /dev/null <its ping URL>/fail`. Healthchecks.io reads `/fail` as a failed run: the check goes down and alerts within a minute or two, and the next hourly run brings it back up. Pausing proves nothing (a paused check is not monitored, and a resumed one waits as new for its next ping), and neither does cutting the period in the web UI, which marks an already-late check down without an alert.
+
+### Error tracker
+
+Exceptions Laravel reports go to Sentry, on its hosted free plan, to the project whose DSN is `SENTRY_LARAVEL_DSN`: set it in the application's environment and redeploy. Sentry keeps events outside Saudi Arabia, in the data region picked at sign-up (the EU is the recommendation), so before the DSN is set, check that transfer against the PDPL's cross-border rules and ship a release whose privacy page says so (`privacy.hosting_body` and `privacy.updated` in `lang/en/public.php`). An event carries the exception, its stack trace without arguments, the route, the request's method and path, and breadcrumbs (SQL without values, log lines without their context, queue jobs). It never carries a request body, an IP address, the signed-in user, cookies, headers, a query string, form fields, cache keys, a link token, an email address or a command line, and no outgoing request or queued job carries a trace header (`config/sentry.php`, among its settings `trace_propagation_targets` and `tracing`; `App\Support\Monitoring\ScrubTrackerEvent`). Laravel's unreported exceptions stay out: validation, authentication and authorization failures, 404s, 429s and every other HTTP exception, and the ones Livewire throws for a malformed update request, which anyone can send. Laravel reports at most ten exceptions of one class an hour, to the server log and the tracker alike (`bootstrap/app.php`), so an error raised on every request shows ten times an hour in both. After the redeploy:
+
+```bash
+C=$(cass_container app)
+sudo docker exec "$C" su-exec app php artisan tinker --execute='report(new RuntimeException("tracker test"));'
+```
+
+The event appears in Sentry within a minute. Then make sure a new issue reaches you by email: Sentry creates that alert with the project. The tracker test must arrive as an email; if it does not, nobody is told. Sentry's free plan has one user, 5,000 errors a month and 30 days of history, so turn on its usage alert. Laravel's ten an hour are per exception class, so cap the total in Sentry as well: give the project's DSN a rate limit (project settings, Client Keys, the key's Configure page; 500 errors a day spends at most a tenth of the month in a day) and keep Spike Protection on. If the plan offers no key rate limit, the usage alert is what tells you.
+
+`SENTRY_RELEASE` and `SENTRY_ENVIRONMENT` (optional, in `.env.example`) name the release and the environment events are grouped by. The compose file does not pass them, so setting them in Coolify changes nothing: production events carry no release and `APP_ENV` as their environment (backlog, "Monitoring").
+
+### When an alert fires
+
+| Alert | First look | Then |
+|---|---|---|
+| `/up` down | `sudo docker ps`, the deployment list in Coolify | **Rollback** if a release did it; otherwise the host |
+| hourly health late | `cass:health`, `supervisorctl status`, `storage/logs/cass-health.log` | the red **Health** row |
+| nightly dump or weekly archive late | `/var/log/cass-backup.log` | the script by hand (**Backups**) |
+| a new issue in the tracker | its stack trace and route | a fix through a pull request, never an edit in the container |
+
 ## Rollback
 
 Coolify -> Deployments -> redeploy the previous successful build. Migrations are additive; do not roll back the schema without a backup restore.
@@ -1106,13 +1158,17 @@ mysql one, not some other stack's:
 [cass-backup] mysql container: mysql-vag136azl5q2bv87qqzgblo1-1
 ```
 
+Each ping URL goes in a root-only file, never on a cron line: `sudo install -m 600 /dev/null /root/.cass-ping-nightly` and `sudo install -m 600 /dev/null /root/.cass-ping-weekly`, then `sudoedit` each and write one line, `url = "<that check's ping URL>"`.
+
 Then the cron line (`sudo crontab -e`):
 
 ```cron
 # CASS database backup, nightly at 03:17 local. Not on the hour: every other
 # cron on this host is, and MySQL does not need the company.
-17 3 * * * /usr/local/bin/cass-backup >> /var/log/cass-backup.log 2>&1
+17 3 * * * /usr/local/bin/cass-backup >> /var/log/cass-backup.log 2>&1 && curl -fsS -m 10 --retry 3 -o /dev/null -K /root/.cass-ping-nightly >> /var/log/cass-backup.log 2>&1
 ```
+
+The URL is the heartbeat check's (see **Monitoring**) and a secret: anyone holding it can mark the backup done. It lives only in that mode-600 file. Cron writes each job's command line to the system log, and `ps` shows it while curl runs, so both show the file name, never the URL; `sudoedit` keeps the URL out of sudo's log as well. If the backup succeeded and only the ping failed, curl's error is the last line of `/var/log/cass-backup.log`.
 
 It writes `/srv/backups/cass/cass-<date>-<time>.sql.gz`, keeps 14 days, refuses
 a dump under 4 KB rather than rotating a good backup away for a broken one, and
@@ -1137,7 +1193,7 @@ settable on the cron line:
 | `CASS_BACKUP_KEEP_DAYS` | Rotation window in days. Default 14. |
 
 ```cron
-17 3 * * * CASS_MYSQL_CONTAINER=mysql-vag136azl5q2bv87qqzgblo1-1 /usr/local/bin/cass-backup >> /var/log/cass-backup.log 2>&1
+17 3 * * * CASS_MYSQL_CONTAINER=mysql-vag136azl5q2bv87qqzgblo1-1 /usr/local/bin/cass-backup >> /var/log/cass-backup.log 2>&1 && curl -fsS -m 10 --retry 3 -o /dev/null -K /root/.cass-ping-nightly >> /var/log/cass-backup.log 2>&1
 ```
 
 Prefer no override: the suffix changes on every recreate, and the detection does
@@ -1217,7 +1273,7 @@ between. Add the cron line beside the nightly one:
 
 ```cron
 # CASS uploaded files, Sundays at 03:47 - after the nightly database dump.
-47 3 * * 0 /usr/local/bin/cass-storage-backup >> /var/log/cass-backup.log 2>&1
+47 3 * * 0 /usr/local/bin/cass-storage-backup >> /var/log/cass-backup.log 2>&1 && curl -fsS -m 10 --retry 3 -o /dev/null -K /root/.cass-ping-weekly >> /var/log/cass-backup.log 2>&1
 ```
 
 The directory is `0700` and each dump is `0600`; the script sets both every
@@ -1225,7 +1281,7 @@ run. Check with `ls -ld /srv/backups/cass` and `ls -l /srv/backups/cass | head`.
 
 ## Secret rotation
 
-Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and the encrypted two-factor secrets; announce a re-login and re-enrolment.
+Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and makes every stored two-factor secret unreadable: an enrolled user's sign-in answers 500 until the factor is cleared and set up again (see **Platform admin second factor**). `APP_PREVIOUS_KEYS` would keep them readable, but the compose file does not pass it yet (backlog, "Monitoring"). Announce a re-login and re-enrolment.
 
 Drain the queue before rotating `APP_KEY`: queued mail payloads are encrypted with it (`TemplatedMail` and `SendQueuedNotificationsWithLog` implement `ShouldBeEncrypted`, so that is every templated email and every notification), and a job written under the old key cannot be run under the new one. `php artisan queue:monitor database:default` should print `[database] default` with `[0] OK` and no pending, delayed or reserved jobs, and `queue:failed` should be empty or retried, before the redeploy. (There is no `queue:size` command in Laravel 13 — `queue:monitor` is the one that prints the size.)
 
@@ -1236,6 +1292,22 @@ Rotating it also **moves Livewire's endpoint prefix**, which is
 a visitor already had open posts to the old path and gets a 404 until they
 reload, and `php artisan route:list --path=livewire` is how you read the new
 one.
+
+## Platform admin second factor
+
+The admin panel requires an authenticator app (`AdminPanelProvider`); the organizer and reviewer panels offer it without requiring it. The first sign-in after the release, and any sign-in by an admin with no second factor, opens "Set up two-factor authentication" at `/admin/multi-factor-authentication/set-up`: scan the code, type one code back, and keep the eight recovery codes it shows once somewhere that is not this platform. Enrol in the same session as the deploy: until then, whoever holds the password could enrol first.
+
+On all three panels the app's code is good for 30 seconds either side of the one it shows, so a phone whose clock is a minute or more off is refused: set it to network time. Five codes or recovery codes in 15 minutes, right or wrong, lock the prompt for that account until the 15 minutes are up, and the container log gets one `Second-factor sign-in locked` warning (`sudo docker logs --since 24h "$(cass_container app)" 2>&1 | grep Second-factor`). A lockout you did not cause means someone has the password: change it under Profile.
+
+Then change the admin password under Profile. Enrolling ends no existing session. Filament asks for the code only at sign-in, and its middleware asks whether the account is enrolled, not whether this session answered a code, so a browser that signed in with the password alone before you enrolled, or ticked Remember me (400 days), stays in. A new password makes `AuthenticateSession`, which all three panels and the asset downloads run, sign out every other session and remembered browser on its next request.
+
+- Lost phone, codes at hand: type a recovery code at the code prompt, then in Profile disable the app and set it up again on the new phone, with new recovery codes.
+- Lost phone and codes, or an `APP_KEY` rotated without `APP_PREVIOUS_KEYS`: the owner clears the factor on the host (a production write), then signs in, enrols again and at once changes the password under Profile (Profile opens only after enrolment).
+
+```bash
+C=$(cass_container app)
+sudo docker exec "$C" su-exec app php artisan tinker --execute='App\Models\User::query()->where("email", "<admin email>")->firstOrFail()->forceFill(["app_authentication_secret" => null, "app_authentication_recovery_codes" => null])->save();'
+```
 
 ## Trusted proxies
 
@@ -1308,6 +1380,8 @@ sudo docker exec "$C" su-exec app php artisan cass:health
 
 `--json` for a cron. It exits 1 if any row is red, so
 `cass:health --json || mail -s 'CASS unhealthy' you@example.org` is a monitor.
+
+`--ping` also GETs `CASS_HEARTBEAT_URL` when every row is OK; the scheduler runs `cass:health --json --ping` hourly and appends its output to `storage/logs/cass-health.log` (see **Monitoring**).
 
 ## Erasing one person's data
 

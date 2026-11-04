@@ -35,9 +35,13 @@ class AdminPanelProvider extends PanelProvider
             ->login(Login::class)
             ->passwordReset()
             ->profile()
+            // Required here, and only here: the platform admin passes every policy through before(),
+            // so a password alone must not open this panel. An admin with no factor is sent to set one up.
+            // codeWindow(1): a code is good for one 30-second step either side of now, not Filament's eight. The
+            // three panels share one sign-in, so all three keep the same window (App\Filament\Auth\MultiFactorChallenge).
             ->multiFactorAuthentication([
-                AppAuthentication::make()->recoverable(),
-            ])
+                AppAuthentication::make()->recoverable()->codeWindow(1),
+            ], isRequired: true)
             ->brandName('CASS Admin')
             ->brandLogo(fn () => view('brand.logo'))
             ->brandLogoHeight('2.25rem')
