@@ -304,11 +304,15 @@ jobs:
         run: docker build -t cass:smoke .
       - name: Run container
         run: |
+          # With a tracker DSN, as production has once SENTRY_LARAVEL_DSN is set: the package's boot-time
+          # wiring (event handlers, HTTP middleware, the route dispatchers) then meets config:cache,
+          # route:cache and opcache here first. A .invalid host never resolves, so nothing is sent.
           docker run -d --name cass --network host \
             -e APP_KEY=base64:$(openssl rand -base64 32) -e APP_URL=http://localhost:8080 -e APP_ENV=production -e APP_DEBUG=false \
             -e DB_CONNECTION=mysql -e DB_HOST=127.0.0.1 -e DB_USERNAME=cass -e DB_PASSWORD=cass -e DB_DATABASE=cass \
             -e QUEUE_CONNECTION=database -e CACHE_STORE=database -e SESSION_DRIVER=database -e MAIL_MAILER=log \
-            -e CASS_ADMIN_EMAIL=admin@example.org -e CASS_ADMIN_PASSWORD=smoke-test-password-1 cass:smoke
+            -e CASS_ADMIN_EMAIL=admin@example.org -e CASS_ADMIN_PASSWORD=smoke-test-password-1 \
+            -e SENTRY_LARAVEL_DSN=https://public@sentry.invalid/1 cass:smoke
           for i in $(seq 1 30); do curl -sf -H 'Host: localhost' http://127.0.0.1:8080/up && break; sleep 2; done
           docker exec cass su-exec app php artisan migrate --force
       - name: Assertions

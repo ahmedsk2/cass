@@ -11,11 +11,18 @@ use App\Http\Middleware\RequireCustomDomain;
 use App\Http\Middleware\ResolveCustomDomain;
 use App\Http\Middleware\SecurityHeaders;
 use App\Support\Domains\CustomDomains;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
+use Livewire\Exceptions\MaxNestingDepthExceededException;
+use Livewire\Exceptions\PayloadTooLargeException;
+use Livewire\Exceptions\PublicPropertyNotFoundException;
+use Livewire\Exceptions\TooManyCallsException;
+use Livewire\Exceptions\TooManyComponentsException;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -123,4 +130,23 @@ return Application::configure(basePath: dirname(__DIR__))
         // DSN the SDK drops it. The handler's dontReport list (validation, authentication, every HTTP
         // exception such as a 404 or a 429) still applies first.
         Integration::handles($exceptions);
+
+        // Livewire throws these for an update request of the wrong shape: too large, too many components or
+        // calls, nested too deep, or a property that does not exist or is locked. Anyone can send one without a
+        // session, so each report would spend the tracker's quota and hold a php-fpm worker for the send.
+        $exceptions->dontReport([
+            CannotUpdateLockedPropertyException::class,
+            MaxNestingDepthExceededException::class,
+            PayloadTooLargeException::class,
+            PublicPropertyNotFoundException::class,
+            TooManyCallsException::class,
+            TooManyComponentsException::class,
+        ]);
+
+        // At most ten reports of one exception class an hour, to the server log and the tracker alike, so one
+        // error raised on every request spends neither Sentry's 5,000 a month nor a worker per request; another
+        // class still gets through. A Limit without a key is counted per class; the typed parameter is how the
+        // handler matches the callback to an exception. The DSN's own rate limit in Sentry caps the total
+        // (runbook "Error tracker").
+        $exceptions->throttle(static fn (Throwable $e): Limit => Limit::perHour(10));
     })->create();

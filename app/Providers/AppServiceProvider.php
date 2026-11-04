@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Contracts\DnsResolver;
+use App\Filament\Auth\MultiFactorChallenge;
 use App\Listeners\RecordOutgoingEmail;
 use App\Notifications\SendQueuedNotificationsWithLog;
 use App\Support\ClientIp;
 use App\Support\Domains\SystemDnsResolver;
+use Filament\Auth\MultiFactor\MultiFactorChallenge as FilamentMultiFactorChallenge;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -30,9 +32,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // The first container binding in this application, and the reason is
         // narrow: DnsResolver wraps dns_get_record(), a global function, which
-        // no test can substitute any other way. Apart from the notification
-        // job below, everything else in app/ is resolved by autowiring and
-        // faked with $this->mock().
+        // no test can substitute any other way. Apart from the two bindings
+        // below, everything else in app/ is resolved by autowiring and faked
+        // with $this->mock().
         $this->app->bind(DnsResolver::class, SystemDnsResolver::class);
 
         // The second, and as narrow. NotificationSender::queueNotification()
@@ -42,6 +44,13 @@ class AppServiceProvider extends ServiceProvider
         // Filament's password-reset and verification mail, which this
         // application cannot edit - a failed() that marks its email_logs row.
         $this->app->bind(SendQueuedNotifications::class, SendQueuedNotificationsWithLog::class);
+
+        // The third, and as narrow. Every panel's sign-in builds its
+        // second-factor challenge with MultiFactorChallenge::make(), which is
+        // app(static::class) (vendor/filament/filament/src/Auth/MultiFactor/
+        // MultiFactorChallenge.php:22-25), so this one line gives all three the
+        // 15-minute lockout and its warning.
+        $this->app->bind(FilamentMultiFactorChallenge::class, MultiFactorChallenge::class);
     }
 
     /**

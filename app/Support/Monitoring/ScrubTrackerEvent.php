@@ -21,7 +21,8 @@ use Sentry\Stacktrace;
  * - Breadcrumb metadata a caller supplied: a log line's context (Laravel adds the signed-in
  *   user's id to every reported exception's) and an Artisan command's arguments.
  * - The request beyond its method and path: headers (CF-Connecting-IP and Referer among them), the query
- *   string (a password-reset link carries an address) and the bearer token in /s/{token} and /invite/{token}.
+ *   string (a password-reset link carries an address), the bearer token in /s/{token} and /invite/{token}, and
+ *   the user id and SHA-1 of the address in the panels' /email-verification/verify/{id}/{hash}.
  */
 final class ScrubTrackerEvent
 {
@@ -56,7 +57,11 @@ final class ScrubTrackerEvent
 
         if ($request !== []) {
             $url = is_string($request['url'] ?? null)
-                ? (string) preg_replace(['/[?#].*$/s', '#/(s|invite)/[^/]+#'], ['', '/$1/[token]'], $request['url'])
+                ? (string) preg_replace(
+                    ['/[?#].*$/s', '#/(s|invite)/[^/]+#', '#/email-verification/verify/[^/]+/[^/]+#'],
+                    ['', '/$1/[token]', '/email-verification/verify/[id]/[hash]'],
+                    $request['url'],
+                )
                 : null;
 
             $event->setRequest(array_filter(['method' => $request['method'] ?? null, 'url' => $url]));

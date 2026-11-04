@@ -100,7 +100,7 @@ class HealthCommand extends Command
         try {
             Http::timeout(10)->retry(2, 500)->get($url);
         } catch (Throwable $e) {
-            Log::warning('The heartbeat ping failed; the heartbeat service alerts if the next one fails too.', [
+            Log::warning('The heartbeat ping failed; the heartbeat service alerts about 20 minutes after a missed hourly ping, and the next run pings again.', [
                 // Every URL, not the configured string: Guzzle writes its own form of it.
                 'error' => (string) preg_replace('~https?://[^\s)]+~i', '[url]', $e->getMessage()),
             ]);

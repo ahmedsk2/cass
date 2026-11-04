@@ -7,6 +7,14 @@ use GuzzleHttp\Psr7\Request as PsrRequest;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Exceptions\MaxNestingDepthExceededException;
+use Livewire\Exceptions\PayloadTooLargeException;
+use Livewire\Exceptions\PublicPropertyNotFoundException;
+use Livewire\Exceptions\TooManyCallsException;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
+
+use function Pest\Laravel\postJson;
+
 use Sentry\Breadcrumb;
 use Sentry\ClientBuilder;
 use Sentry\Event;
@@ -72,6 +80,36 @@ it('sends a reported exception once a DSN is set, and none of Laravel\'s unrepor
         ->and($this->transport->events[0]->getExceptions()[0]->getValue())->toBe('tracker test');
 });
 
+it('sends no event for a Livewire update request anyone can malform', function () {
+    ($this->track)();
+    // No session or snapshot needed: Livewire counts the components before it reads one.
+    $components = array_fill(0, 201, ['snapshot' => 'x', 'updates' => [], 'calls' => []]);
+    postJson(route('default-livewire.update'), ['components' => $components], ['X-Livewire' => 'true'])->assertServerError();
+
+    // The request-shape exceptions it throws further on stay out too.
+    report(new PayloadTooLargeException(2_000_000, 1_000_000));
+    report(new TooManyCallsException(51, 50));
+    report(new MaxNestingDepthExceededException('data.authors.0.name', 10));
+    report(new PublicPropertyNotFoundException('missing', 'public.submission-form'));
+    report(new CannotUpdateLockedPropertyException('openedAt'));
+
+    expect($this->transport->events)->toBe([]);
+});
+
+it('sends at most ten events of one exception class an hour', function () {
+    ($this->track)();
+    foreach (range(1, 11) as $attempt) {
+        report(new RuntimeException("tracker test {$attempt}"));
+    }
+    // Another class has ten of its own.
+    report(new LogicException('tracker test'));
+    expect($this->transport->events)->toHaveCount(11);
+
+    $this->travel(61)->minutes();
+    report(new RuntimeException('tracker test, an hour on'));
+    expect($this->transport->events)->toHaveCount(12);
+});
+
 it('adds no trace headers to outgoing requests or queued jobs, and gives up on a slow tracker quickly', function () {
     // With a DSN at boot the package makes this method global Http middleware; tests boot without one.
     ($this->track)();
@@ -135,6 +173,8 @@ it('keeps only the method and the tokenless path of a request', function (string
 })->with([
     'status page' => ['https://cass.towardpcc.com/s/a-plain-status-token?email=sara@example.org', 'https://cass.towardpcc.com/s/[token]'],
     'invitation' => ['https://cass.towardpcc.com/invite/a-plain-invitation-token#accept', 'https://cass.towardpcc.com/invite/[token]'],
+    // The panels' link carries the user id and the SHA-1 of the address, which confirms a guessed one.
+    'email verification' => ['https://cass.towardpcc.com/org/email-verification/verify/7/'.sha1('sara@example.org').'?expires=1&signature=abc', 'https://cass.towardpcc.com/org/email-verification/verify/[id]/[hash]'],
 ]);
 
 it('drops the metadata of log and command breadcrumbs, and masks addresses in the rest', function () {
@@ -149,6 +189,16 @@ it('drops the metadata of log and command breadcrumbs, and masks addresses in th
         ->and($crumbs[0]->getMetadata())->toBe([])
         ->and($crumbs[1]->getMetadata())->toBe([])
         ->and($crumbs[2]->getMetadata())->toBe(['notifiable' => '[email]', 'attempts' => 2]);
+});
+
+it('keeps the level, type, category and time of every breadcrumb it rebuilds', function () {
+    $event = Event::createEvent();
+    $event->setBreadcrumb([new Breadcrumb(Breadcrumb::LEVEL_WARNING, Breadcrumb::TYPE_HTTP, 'http', 'GET https://example.org', ['status_code' => 503], 1700000000.25)]);
+    $crumb = ScrubTrackerEvent::beforeSend($event)->getBreadcrumbs()[0];
+
+    expect([$crumb->getLevel(), $crumb->getType(), $crumb->getCategory(), $crumb->getTimestamp()])
+        ->toBe([Breadcrumb::LEVEL_WARNING, Breadcrumb::TYPE_HTTP, 'http', 1700000000.25])
+        ->and([$crumb->getMessage(), $crumb->getMetadata()])->toBe(['GET https://example.org', ['status_code' => 503]]);
 });
 
 it('leaves query bindings out of a database error message', function () {

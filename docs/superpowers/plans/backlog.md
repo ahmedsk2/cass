@@ -100,6 +100,7 @@ Items raised in code reviews during Plan 1 that were deliberately deferred. Each
 - **Tracker events carry no release.** `SENTRY_RELEASE: ${SOURCE_COMMIT:-}` in the compose file would tag each event with the deployed commit, but whether the reference reaches the container, or surfaces as an empty variable that shadows the real one, is unverified. Try it in a quiet release and read the release on the runbook's tracker-test event.
 - **`APP_PREVIOUS_KEYS` does not reach the container**, so an `APP_KEY` rotation makes every stored second factor unreadable (a 500 at sign-in) until cleared on the host. One compose line, `APP_PREVIOUS_KEYS: ${APP_PREVIOUS_KEYS:-}`, ends it.
 - **Server logs keep frame arguments.** The image leaves `zend.exception_ignore_args` off, so a logged trace shows the start of each string argument; `ScrubTrackerEvent` cleans tracker events only. `zend.exception_ignore_args=On` in `docker/php.ini` ends it, with an image rebuild. Likewise MySQL's own wording can still quote one value, a duplicate account address; the tracker masks it, but the server log keeps it.
+- **The tracker's URL scrub names its secret paths.** `ScrubTrackerEvent` masks `/s/{token}`, `/invite/{token}` and the panels' `/email-verification/verify/{id}/{hash}` by pattern, so a new route with a secret in its path leaks until it is added there. Sending the matched route's pattern instead would cover every route, but it would also hide the tenant slug and the record ids an error is traced back to.
 
 ## Open questions for the owner (raised by Plans 7 and 8)
 
