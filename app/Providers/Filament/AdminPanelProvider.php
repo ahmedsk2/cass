@@ -35,9 +35,11 @@ class AdminPanelProvider extends PanelProvider
             ->login(Login::class)
             ->passwordReset()
             ->profile()
+            // Required here, and only here: the platform admin passes every policy through before(),
+            // so a password alone must not open this panel. An admin with no factor is sent to set one up.
             ->multiFactorAuthentication([
                 AppAuthentication::make()->recoverable(),
-            ])
+            ], isRequired: true)
             ->brandName('CASS Admin')
             ->brandLogo(fn () => view('brand.logo'))
             ->brandLogoHeight('2.25rem')
