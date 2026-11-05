@@ -1088,7 +1088,16 @@ Uptime Kuma push monitors alert when a push is later than the heartbeat interval
 | cass nightly dump | 24 hours | 1, 60 minutes | the 03:17 `cass-backup` cron line | `/root/.cass-ping-nightly` (**Backups**) |
 | cass weekly archive | 7 days | 1, 2 hours | the Sunday 03:47 `cass-storage-backup` cron line | `/root/.cass-ping-weekly` (**Backups**) |
 
-Kuma shows each push URL as `https://uptime.towardpcc.com/api/push/<token>?status=up&msg=OK&ping=`; copy it whole. The route accepts any method, reads a request without `status` as up and answers 200, so `cass:health --ping` (a plain GET) and the cron lines' `curl -K` need nothing Kuma-specific. The application reaches Kuma by its public name; the two are on different Coolify networks.
+Kuma shows each push URL as `https://uptime.towardpcc.com/api/push/<token>?status=up&msg=OK&ping=`; copy it whole. The route accepts any method, reads a request without `status` as up and answers 200, so `cass:health --ping` (a plain GET) and the cron lines' `curl -K` need nothing Kuma-specific. The application reaches Kuma by its public name; the two are on different Coolify networks. Kuma's own pages sit behind Traefik's basic-auth prompt (a 401 at `/`); `/api/push/` is outside it, and a wrong token gets Kuma's own 404, `Monitor not found or not active`, so a 401 on a push means the wall and a 404 means the token. A Kuma 2 push URL with its query is 93 characters; a shorter value in Coolify is a truncated paste.
+
+Set `CASS_HEARTBEAT_URL` through the API from the host rather than the Coolify screen: on 2026-11-05 two saves there never reached the database. With the token wrapper on the host (`~/bin/coolify-api METHOD /path [json]`; the raw `curl` form is under **Custom domain for an organization**):
+
+```bash
+read -r -p 'push URL: ' U && ~/bin/coolify-api PATCH /applications/<uuid>/envs "{\"key\":\"CASS_HEARTBEAT_URL\",\"value\":\"$U\",\"is_preview\":false}"
+~/bin/coolify-api GET /applications/<uuid>/envs | python3 -c 'import sys,json; print([len(e["value"] or "") for e in json.load(sys.stdin) if e["key"]=="CASS_HEARTBEAT_URL"])'
+```
+
+The second line prints the value's length for the production row and the preview row, never the value. Then **Restart** the application in Coolify (or `POST /applications/<uuid>/restart`): it recreates the `app` and `mysql` containers with the current variables, about three minutes on this host, volumes untouched, and `env` inside the new container shows the variable. Do not Redeploy for a variable: that builds `main`'s head, which is not necessarily the release that is running.
 
 "hourly health" goes quiet on a red `cass:health` row, a dead scheduler, a stopped container or a dead host: all look the same from outside. A failed ping leaves the exit code alone and the next hour tries again. Each hourly run appends its rows to `storage/logs/cass-health.log` in the container, plus a timestamped `WARNING` line when its ping failed; a deploy starts the file afresh. `docker logs` shows each run as `DONE` (every row OK) or `FAIL` (a row red, which with a DSN is also a tracker event). First:
 
@@ -1100,14 +1109,14 @@ sudo docker exec "$C" grep WARNING storage/logs/cass-health.log | tail -n 5
 sudo docker logs --since 3h "$C" 2>&1 | grep 'cass:health'
 ```
 
-then the **Health** row that is red. A quiet backup check: `sudo tail -n 40 /var/log/cass-backup.log`, then the script by hand (**Backups**). To prove the alerts reach you, push a failure to hourly health from inside the container, where its URL already is:
+then the **Health** row that is red. A quiet backup check: `sudo tail -n 40 /var/log/cass-backup.log`, then the script by hand (**Backups**). To prove the alerts reach you, push a failure twice to hourly health from inside the container, where its URL already is:
 
 ```bash
 C=$(cass_container app)
-sudo docker exec "$C" sh -c 'wget -q -T 10 -O - "$(printf %s "$CASS_HEARTBEAT_URL" | sed s/status=up/status=down/)"'
+for i in 1 2; do sudo docker exec "$C" sh -c 'wget -q -T 10 -O - "$(printf %s "$CASS_HEARTBEAT_URL" | sed s/status=up/status=down/)"'; echo; done
 ```
 
-Kuma marks the monitor down at once and notifies; the next `cass:health --ping`, hourly or by hand (`sudo docker exec "$C" su-exec app php artisan cass:health --json --ping`), brings it back up. Pausing proves nothing (a paused monitor is not watched), and neither does shortening the interval of a monitor that is already late.
+Kuma answers `{"ok":true}` to each (`curl -fsS` works in the container too). The first down push only turns the monitor pending, because it has one retry, and pending notifies nobody; the second takes it down and Kuma emails. The next `cass:health --ping`, hourly or by hand (`sudo docker exec "$C" su-exec app php artisan cass:health --json --ping`), brings it back up with a recovery email. Kuma's console log says nothing about pushes or emails at its default level; the monitor's event list in its pages is the record. Pausing proves nothing (a paused monitor is not watched), and neither does shortening the interval of a monitor that is already late.
 
 ### Error tracker
 
