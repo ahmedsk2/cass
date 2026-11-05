@@ -237,7 +237,8 @@ it('nonces the sidebar script filament renders on every authenticated panel page
     $nonce = $matches[1] ?? '';
 
     expect($nonce)->not->toBe('')
-        ->and($html)->toMatch('/<script nonce="'.$nonce.'">\s*var collapsedGroups/')
+        // Filament 5.11.0's block runs once per page, guarded by the Alpine store.
+        ->and($html)->toMatch('/<script nonce="'.$nonce.'">\s*if \(! window\.Alpine\?\.store\(\'sidebar\'\)\) \{\s*let collapsedGroups/')
         // And nothing on the page emits a bare inline <script>: a tag without a
         // nonce and without a src is a tag the policy refuses.
         ->and($html)->not->toContain('<script>');

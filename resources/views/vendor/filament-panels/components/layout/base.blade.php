@@ -1,7 +1,7 @@
 @php
     // A copy of
     // vendor/filament/filament/resources/views/components/layout/base.blade.php
-    // (Filament 5.10.2) with the nonce on all seven inline tags - every <style>
+    // (Filament 5.11.1) with the nonce on all seven inline tags - every <style>
     // and every <script> that has no src. Filament nonces the five scripts
     // itself, but only when a nonce is set, and never the two styles; here all
     // seven carry the attribute unconditionally, in place of Filament's own on
@@ -33,7 +33,7 @@
     dir="{{ __('filament-panels::layout.direction') ?? 'ltr' }}"
     @class([
         'fi',
-        'dark' => filament()->hasDarkMode() && filament()->hasDarkModeForced(),
+        'dark' => filament()->hasDarkMode() && filament()->isDarkModeForced(),
     ])
 >
     <head>
@@ -97,10 +97,10 @@
         <style nonce="{{ $cspNonce }}">
             :root {
                 --font-family: '{!! filament()->getFontFamily() !!}';
-                --mono-font-family: '{!! filament()->getMonoFontFamily() !!}';
-                --serif-font-family: '{!! filament()->getSerifFontFamily() !!}';
+                --font-family-mono: '{!! filament()->getMonoFontFamily() !!}';
+                --font-family-serif: '{!! filament()->getSerifFontFamily() !!}';
                 --sidebar-width: {{ filament()->getSidebarWidth() }};
-                --collapsed-sidebar-width: {{ filament()->getCollapsedSidebarWidth() }};
+                --sidebar-collapsed-width: {{ filament()->getCollapsedSidebarWidth() }};
                 --default-theme-mode: {{ filament()->getDefaultThemeMode()->value }};
             }
 
@@ -117,7 +117,7 @@
             <script nonce="{{ $cspNonce }}">
                 localStorage.setItem('filament:theme:mode', 'light')
             </script>
-        @elseif (filament()->hasDarkModeForced())
+        @elseif (filament()->isDarkModeForced())
             <script nonce="{{ $cspNonce }}">
                 localStorage.setItem('filament:theme:mode', 'dark')
             </script>
@@ -177,7 +177,7 @@
             </script>
         @endif
 
-        @if (filament()->hasDarkMode() && (! filament()->hasDarkModeForced()))
+        @if (filament()->hasDarkMode() && (! filament()->isDarkModeForced()))
             <script nonce="{{ $cspNonce }}">
                 loadDarkMode()
             </script>
