@@ -68,7 +68,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 ## Every release
 
 1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying. If the release changes the `mysql` image digest in `docker-compose.production.yml`, run `sudo /usr/local/bin/cass-backup` on the host by hand before deploying: the deploy recreates the database container, and the script backs up only when a migration is pending.
-2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL. Coolify clones and builds the branch's HEAD at that moment, not your checkout: run `git fetch origin main` and compare `origin/main` with the commit you announced immediately before the command below, and merge nothing to `main` while the deploy runs. On 2026-10-17 a merge sixteen minutes before the start shipped Plan 8 together with Plan 7.
+2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL. Coolify clones and builds the branch's HEAD at that moment, not your checkout: run `git fetch origin main` and compare `origin/main` with the commit you announced immediately before the command below, and merge nothing to `main` while the deploy runs. On 2026-10-17 a merge sixteen minutes before the start shipped Plan 8 together with Plan 7. The script waits `CASS_DEPLOY_TIMEOUT` seconds (default 1500) for the new container, and Coolify has its own build limit of 3600 s (Server, Advanced, Builds). A healthy host has this image built and healthy in about 3.5 minutes; a wait past ten minutes means the host, not the release: read **When the host itself is slow** before retrying. The Auto Deploy switch on the application was found on, and inert, on 2026-11-05: no GitHub webhook reaches this Coolify, so a push does nothing, but turn it off all the same.
 
    ```bash
    ssh -i <ssh-key> <ssh-user>@<origin-ip> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh
@@ -1067,21 +1067,28 @@ renewing a certificate for a name nobody uses.
 
 ## Monitoring
 
-Three outside signals: an uptime monitor on `/up`, three dead-man heartbeats and an error tracker. The services, UptimeRobot, Healthchecks.io and Sentry, are the owner's accounts. Every ping URL and the DSN is a secret, held by the service and by the application's environment in Coolify or root-only files on the host, never by this repository; `docs/HANDOVER.md` names the checks only.
+Three outside signals: an uptime monitor on `/up`, three dead-man heartbeats and an error tracker. Two services the owner already runs carry the first two: Uptime Kuma at `https://uptime.towardpcc.com`, a Coolify service on the same host, and the OCI tenancy itself (Health Checks, Monitoring alarms and the Notifications topic `hosting-alerts`, which emails the owner). The error tracker is Sentry, the owner's account. Every push URL and the DSN is a secret, held by the service and by the application's environment in Coolify or root-only files on the host, never by this repository; `docs/HANDOVER.md` names the checks only. Kuma shares the machine it watches, so it cannot report that machine down or stalled; that signal comes from OCI, outside the host.
 
 ### Uptime
 
-UptimeRobot (free plan) requests `https://cass.towardpcc.com/up` every 5 minutes and alerts by email and by its phone app. A 200 proves PHP answers behind Cloudflare and Traefik. It proves nothing about the queue, the scheduler, the disk, pending migrations or mail: that is `cass:health`, reported by the hourly heartbeat. Test it with UptimeRobot's test alert, or point the monitor at `/up-missing` for one check.
+Two probes of `https://cass.towardpcc.com/up`, one from outside the host and one from inside it:
+
+- **OCI Health Checks** monitor `cass-up`: GET `/up` over HTTPS every 5 minutes from three vantage points on three providers (Amazon Frankfurt, Microsoft Dublin, Google East US). Its metric `HTTP.isHealthy` (namespace `oci_healthchecks`) feeds the alarm `cass-up-failing`: CRITICAL, fires when most probes have failed for 5 minutes, repeats hourly, emails through `hosting-alerts`. It sits beside the tenancy's older alarms on the instance, all to the same topic: `hosting-1-down` (Oracle's hardware health signal), `hosting-1-silent` (no CPU metric for 10 minutes) and `hosting-1-high-cpu` (above 92 % for 15 minutes; it fired eight minutes into the 2026-11-04 stall and four more times that night). Every instance alarm's query carries `.groupBy(resourceId)`: without it a fault-domain move (**When the host itself is slow**) starts a new metric stream and the old one reads as absent for up to 72 hours, which is what `hosting-1-silent` did on 2026-11-05.
+- **Uptime Kuma** HTTP monitor on the same URL every 5 minutes, two retries, with Kuma's email notification. It sees a release or Traefik failure with Kuma's history and response times, and goes quiet with the host.
+
+A 200 proves PHP answers behind Cloudflare and Traefik. It proves nothing about the queue, the scheduler, the disk, pending migrations or mail: that is `cass:health`, reported by the hourly heartbeat. The OCI monitor's recent results are under Observability, Health Checks, `cass-up`; to see a Kuma alert arrive, point its monitor at `/up-missing` for one check.
 
 ### Heartbeats
 
-Healthchecks.io (free plan, up to 20 checks) alerts when a ping is later than its period plus its grace time. Create three checks:
+Uptime Kuma push monitors alert when a push is later than the heartbeat interval plus the retries. Create three, type Push:
 
-| Check | Period | Grace | Pinged when this succeeded | Its URL lives in |
+| Monitor | Heartbeat interval | Retries, retry interval | Pushed when this succeeded | Its URL lives in |
 |---|---|---|---|---|
-| hourly health | 1 hour | 20 minutes | the scheduler's `cass:health --json --ping`, every row OK | `CASS_HEARTBEAT_URL`, the application's environment (redeploy after setting it) |
-| nightly dump | 1 day | 1 hour | the 03:17 `cass-backup` cron line | `/root/.cass-ping-nightly` (**Backups**) |
-| weekly storage archive | 7 days | 2 hours | the Sunday 03:47 `cass-storage-backup` cron line | `/root/.cass-ping-weekly` (**Backups**) |
+| cass hourly health | 60 minutes | 1, 20 minutes | the scheduler's `cass:health --json --ping`, every row OK | `CASS_HEARTBEAT_URL`, the application's environment (restart the application after setting it) |
+| cass nightly dump | 24 hours | 1, 60 minutes | the 03:17 `cass-backup` cron line | `/root/.cass-ping-nightly` (**Backups**) |
+| cass weekly archive | 7 days | 1, 2 hours | the Sunday 03:47 `cass-storage-backup` cron line | `/root/.cass-ping-weekly` (**Backups**) |
+
+Kuma shows each push URL as `https://uptime.towardpcc.com/api/push/<token>?status=up&msg=OK&ping=`; copy it whole. The route accepts any method, reads a request without `status` as up and answers 200, so `cass:health --ping` (a plain GET) and the cron lines' `curl -K` need nothing Kuma-specific. The application reaches Kuma by its public name; the two are on different Coolify networks.
 
 "hourly health" goes quiet on a red `cass:health` row, a dead scheduler, a stopped container or a dead host: all look the same from outside. A failed ping leaves the exit code alone and the next hour tries again. Each hourly run appends its rows to `storage/logs/cass-health.log` in the container, plus a timestamped `WARNING` line when its ping failed; a deploy starts the file afresh. `docker logs` shows each run as `DONE` (every row OK) or `FAIL` (a row red, which with a DSN is also a tracker event). First:
 
@@ -1093,7 +1100,14 @@ sudo docker exec "$C" grep WARNING storage/logs/cass-health.log | tail -n 5
 sudo docker logs --since 3h "$C" 2>&1 | grep 'cass:health'
 ```
 
-then the **Health** row that is red. A quiet backup check: `sudo tail -n 40 /var/log/cass-backup.log`, then the script by hand (**Backups**). To prove the alerts reach you, send hourly health a failure from your own machine: `curl -fsS -m 10 -o /dev/null <its ping URL>/fail`. Healthchecks.io reads `/fail` as a failed run: the check goes down and alerts within a minute or two, and the next hourly run brings it back up. Pausing proves nothing (a paused check is not monitored, and a resumed one waits as new for its next ping), and neither does cutting the period in the web UI, which marks an already-late check down without an alert.
+then the **Health** row that is red. A quiet backup check: `sudo tail -n 40 /var/log/cass-backup.log`, then the script by hand (**Backups**). To prove the alerts reach you, push a failure to hourly health from inside the container, where its URL already is:
+
+```bash
+C=$(cass_container app)
+sudo docker exec "$C" sh -c 'wget -q -T 10 -O - "$(printf %s "$CASS_HEARTBEAT_URL" | sed s/status=up/status=down/)"'
+```
+
+Kuma marks the monitor down at once and notifies; the next `cass:health --ping`, hourly or by hand (`sudo docker exec "$C" su-exec app php artisan cass:health --json --ping`), brings it back up. Pausing proves nothing (a paused monitor is not watched), and neither does shortening the interval of a monitor that is already late.
 
 ### Error tracker
 
@@ -1112,10 +1126,32 @@ The event appears in Sentry within a minute. Then make sure a new issue reaches 
 
 | Alert | First look | Then |
 |---|---|---|
-| `/up` down | `sudo docker ps`, the deployment list in Coolify | **Rollback** if a release did it; otherwise the host |
+| `cass-up-failing`, or Kuma's `/up` monitor down | `https://cass.towardpcc.com/up` in a browser, `sudo docker ps`, the deployment list in Coolify | **Rollback** if a release did it; otherwise the host |
+| `hosting-1-down` or `hosting-1-silent` | ssh; if it fails, OCI Console, Compute, hosting-1 | **When the host itself is slow**; reboot from the console if ssh is dead |
+| `hosting-1-high-cpu` | `uptime`, `vmstat 1 3`, `sudo docker stats --no-stream` | a build or a hammered site if `us` is high; **When the host itself is slow** if `sy` is |
 | hourly health late | `cass:health`, `supervisorctl status`, `storage/logs/cass-health.log` | the red **Health** row |
 | nightly dump or weekly archive late | `/var/log/cass-backup.log` | the script by hand (**Backups**) |
 | a new issue in the tracker | its stack trace and route | a fix through a pull request, never an edit in the container |
+
+## When the host itself is slow
+
+On 2026-11-05 the deploy script printed `DEPLOY_FAILED: no new healthy app container within 1500s`, Coolify's build then hit its own one-hour limit, and nothing was wrong with the release: the host had been at 99 % CPU since 19:50 UTC the day before, almost all of it kernel time, with nothing changed in the guest (OCI's `CpuUtilization` metric for the instance, at one-hour resolution, shows when such a thing began). The cause was under the VM: on that physical host every TLB invalidation cost about 5 ms instead of microseconds, so every fork, exec and unmap on the box paid it a few times over, and 31 containers' healthchecks and crons were enough to fill four CPUs. A reboot and a stop/start of the instance changed nothing; moving the instance to another fault domain did, within a minute of booting.
+
+The signs, from a shell on the host: `uptime` far above 4 with `vmstat 1 3` showing `sy` above 80, `us` small and `st` zero; `ps` and `curl` themselves at 20 % CPU; and these two numbers:
+
+```bash
+( time -p bash -c 'for i in $(seq 1 200); do /bin/true; done' )   # healthy: under 0.5 s; sick: 30 s
+python3 - <<'PY'
+import mmap, time
+t = time.time()
+for _ in range(2000): m = mmap.mmap(-1, 1 << 20); m.close()
+a = time.time() - t; t = time.time()
+for _ in range(2000): m = mmap.mmap(-1, 1 << 20); m[0] = 1; m.close()
+print(f"no page touched {a:.2f} s, one page touched {time.time() - t:.2f} s")   # healthy: both under 0.1 s; sick: the second near 10 s
+PY
+```
+
+When the first touch of pages, syscalls and plain compute are normal and only the touched-page unmap is slow, nothing in the guest will fix it. Check A1 capacity in the availability domain (`ComputeClient.create_compute_capacity_report`), then change the instance's fault domain (`ComputeClient.update_instance` with `fault_domain`): OCI stops it, starts it on other hardware in about five minutes, and the reserved public IP, the private IP and the boot volume stay, so Cloudflare, the load balancer and Coolify need nothing. Measure again before retrying the deploy, and tell OCI support which host and hour did it. While it lasts the site is slow but up; a retry fails the same way.
 
 ## Rollback
 
