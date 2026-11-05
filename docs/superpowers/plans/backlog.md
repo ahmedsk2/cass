@@ -89,6 +89,10 @@ Items raised in code reviews during Plan 1 that were deliberately deferred. Each
 
 - **`SubmissionFormTest` "refuses a form that was filled faster than a human could" depends on the wall clock.** `openedAt` is stamped at mount from the real clock and the test freezes time only after filling both forms, so when the fills take four seconds (Docker Desktop MySQL on Windows, 2026-10-16: the full suite took 49 minutes there) the "too fast" form is no longer too fast and the test fails; it passes alone and on CI. Fix: `Carbon::setTestNow(now())` before mounting either component, then advance five seconds as today. Expert work order C7.
 
+## CI
+
+- **The `image` job does not run on a `composer.lock`-only change.** The `changes` job's Docker inputs are the `Dockerfile`, `.dockerignore`, `docker/`, the two compose files, `package.json`, `package-lock.json` and the workflow; `composer.json` and `composer.lock` are missing, although the `Dockerfile` runs `composer install` from the lock. #60 (Filament 5.11.1, a new lock) therefore skipped the arm64 image build on its PR and on `main` (2026-11-05); only the Monday scheduled run, which builds whatever changed, and the deploy itself exercise such a lock. The fix is adding both composer files to the inputs, at the cost of an image build (15 to 36 minutes) on every composer PR, including Dependabot's; the owner decides.
+
 ## Dependencies
 
 - **`composer.json` pins `config.platform.php` to `8.4.1`, and it is load-bearing.** Without it Dependabot resolves as PHP `8.4` (8.4.0), which the locked Symfony 8.1 components and PHPUnit 13.3 refuse (`php >=8.4.1`), so every framework-group update (Laravel, Filament, Livewire) failed in the Dependabot job without opening a pull request. `8.4.1` is the floor the lock already demands, so it cannot strand a machine that installs today. Raise it deliberately when a package needs a newer patch, and never above the PHP the development machine runs.
