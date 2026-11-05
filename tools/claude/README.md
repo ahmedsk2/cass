@@ -101,3 +101,19 @@ tools/claude/workflow-args.test.mjs` (also run by CI's `scripts` job).
   not rebased: Dependabot answers "these dependencies are updatable in another way", closes it
   and opens a replacement within the minute (#39, two digests, became #43 with the `node` digest
   added, 2026-10-18). Triage the replacement as the same PR.
+- `@dependabot` comment commands are not reliable: on 2026-11-05 two `@dependabot rebase` on #56
+  registered as mentions and produced no job in 70 minutes, while the scheduled run and the
+  "dependencies changed" trigger kept working (a merge that moves a member of a group re-runs
+  that group within the minute, closing and reopening its PR; #47 became #61 after #55 moved
+  laravel/framework). When the command is ignored, the fallback is the owner's call: merge the PR
+  as it stands if GitHub reports it mergeable and clean, its files do not overlap the merges
+  before it, and `main`'s push run is checked after each merge (done for #56, #59 and #55);
+  a lock PR that would conflict with one already merged is taken into an own PR and closed with
+  a reason (#58 into #60). Never rebase or force-push a Dependabot branch by hand.
+- A Filament bump is never merged from Dependabot's PR: an own branch takes the same or the
+  latest version, re-publishes the nonce'd views that changed and moves their digests in the same
+  commit, and regenerates its lock on `main` after the other composer PRs merge (`main`'s lock
+  verbatim, then `composer update <packages> --with-all-dependencies`), so the lock is resolved
+  once rather than merged textually. #60 did this for 5.11.1 on 2026-11-05 (sidebar and base
+  layout views changed; `EditProfile::content()` and TipTap's stylesheet did not); Dependabot's
+  #47 and #61 were closed with a reason.
