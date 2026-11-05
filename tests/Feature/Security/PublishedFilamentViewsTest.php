@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * THREE Filament Blade views are published into resources/views/vendor so that
  * every inline <script> and <style> they emit carries the CSP nonce. Filament
- * 5.11.0 nonces its inline scripts only when a nonce is set, and its inline
+ * 5.11.1 nonces its inline scripts only when a nonce is set, and its inline
  * styles never; the copies put the same unconditional attribute on all of them.
  * Publishing freezes them against an upgrade, and this is the alarm.
  *
@@ -45,7 +45,7 @@ it('has not drifted from the filament view it was published from', function (str
     'filament-panels::layout.base' => [
         'vendor/filament/filament/resources/views/components/layout/base.blade.php',
         'resources/views/vendor/filament-panels/components/layout/base.blade.php',
-        'fdce60785520b7265116d9891f83e5b8fd00a9154dd8b9ff06f0e236df895d52',
+        'fb1f134a6d4cc424eb81f6b421a5c55f36fc9c4479a4333c53f1f77eef73ef65',
         // Two <style> and five <script>: [x-cloak], the :root variables, the
         // two theme setters, loadDarkMode()'s definition, the echo bootstrap
         // and the loadDarkMode() call.
