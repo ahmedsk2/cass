@@ -20,6 +20,11 @@ it('renders the static pages', function (string $path, string $heading) {
     ['/terms', 'Terms of use'],
 ]);
 
+it('says on the privacy page that error reports stay on the platform\'s own server in Saudi Arabia', function () {
+    get('/privacy')->assertOk()
+        ->assertSee('The service is hosted in Saudi Arabia. Error reports are kept on our own server there and are not sent to a third-party service.');
+});
+
 it('sends security headers', function () {
     get('/')->assertHeader('X-Content-Type-Options', 'nosniff')
         ->assertHeader('X-Frame-Options', 'DENY')
