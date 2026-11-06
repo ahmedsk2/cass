@@ -55,7 +55,7 @@ services:
       # Optional. The error tracker's DSN (config/sentry.php), a secret. Empty: nothing is reported.
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
       # The deployed commit, which Coolify provides as SOURCE_COMMIT, names each tracker event's
-      # release (config/sentry.php). Empty if Coolify passes none: the events then carry no release.
+      # release (config/sentry.php). Empty if Coolify passes none, and the SDK then sends an empty release.
       SENTRY_RELEASE: ${SOURCE_COMMIT:-}
       # Send Content-Security-Policy-Report-Only instead of the enforcing
       # header. Deploy with this 'true', walk docs/launch-checklist.md section 4
