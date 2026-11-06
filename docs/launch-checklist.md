@@ -92,6 +92,8 @@ answer a plan author happened to choose.
       Coolify, redeploy. Confirm the widget renders on
       `/c/{org}/{conference}/submit` — with no keys it is silently absent and
       the form is protected only by the honeypot and the throttle.
+      **Pending (owner, 2026-11-06):** the owner creates the widget and pastes
+      both keys into Coolify; no widget existed on the account at 07:40 UTC.
 - [x] **Two-factor authentication on the platform admin account.** The admin
       panel requires `AppAuthentication::make()->recoverable()` (the others
       offer it): enrol on the page the first sign-in opens, **store the recovery
@@ -109,14 +111,27 @@ answer a plan author happened to choose.
       owner's towardpicu.com SMTP, so SPF and DKIM are checked on that domain.
       `CASS_CONTACT_EMAIL` is the contact form's inbox, not a sender: confirm
       `cass@towardpcc.com` actually receives mail.
-- [ ] **Cloudflare: Always Use HTTPS = on.** Spec section 9 gives HSTS to
+      **Open (2026-11-06):** to be checked on the registration email of the
+      section 4 walk-through.
+- [x] **Cloudflare: Always Use HTTPS = on.** Spec section 9 gives HSTS to
       Cloudflare and the application deliberately sends no
       `Strict-Transport-Security` of its own.
-- [ ] **Cloudflare: HSTS on**, `max-age` 6 months, include subdomains off
+      **On (verified 2026-11-06).**
+- [x] **Cloudflare: HSTS on**, `max-age` 6 months, include subdomains off
       (custom domains are other people's names).
-- [ ] **Cloudflare: WAF managed rules on**, Bot Fight Mode on. Then submit one
+      **Done (2026-11-06):** `max-age=15552000`, include subdomains off, preload
+      off; seen in the response headers of `/up`.
+- [x] **Cloudflare: WAF managed rules on**, Bot Fight Mode on. Then submit one
       real abstract to confirm neither blocks the Livewire upload endpoint.
-- [ ] **Cloudflare: Rocket Loader OFF** (it is off by default — confirm, do not
+      **Done (2026-11-06), with Bot Fight Mode off.** This Free-plan zone runs
+      Cloudflare's Free Managed Ruleset by default (the full Managed Ruleset
+      needs Pro), so there was nothing to turn on. Bot Fight Mode, on from 07:47
+      to 07:56 UTC, answered 403 to two of OCI's three Health Checks vantage
+      points within one probe round, which would fire `cass-up-failing`, and
+      the Free plan allows no exception for it, so it stays off (runbook
+      "Monitoring"). The one real abstract through the WAF is submitted in the
+      section 4 walk-through.
+- [x] **Cloudflare: Rocket Loader OFF** (it is off by default — confirm, do not
       assume). It rewrites every `<script>` in the HTML it proxies and
       re-executes it from its own loader, dropping the per-request nonce that
       Livewire's config script, Filament's published inline scripts and the
@@ -125,21 +140,37 @@ answer a plan author happened to choose.
       JavaScript at all — and nothing in CI can see it, because no CI job goes
       through Cloudflare. Check:
       `curl -s https://cass.towardpcc.com/org/login | grep -c 'text/rocketloader'` → **0**.
-- [ ] **Cloudflare: Email Address Obfuscation — confirmed harmless.** Its
+      **Off (verified 2026-11-06):** the count is 0.
+- [x] **Cloudflare: Email Address Obfuscation — confirmed harmless.** Its
       decoder is served from `/cdn-cgi/scripts/…` on our own origin, so
       `script-src 'self'` allows it. Re-check after any change to `script-src`.
-- [ ] **Cloudflare cache rules:** cache `/build/*` and `/storage/*`
+      **Off (2026-11-06)**, so there is nothing to confirm; this check applies
+      again only if it is turned on.
+- [x] **Cloudflare cache rules:** cache `/build/*` and `/storage/*`
       aggressively (both are content-addressed or immutable), and **bypass**
       everything else. A cached `/s/{token}` or a cached panel page is a data
       leak between visitors.
-- [ ] **OCI security list: restrict port 22 to known addresses.** The backlog
+      **Done (2026-11-06):** two rules scoped to the host `cass.towardpcc.com`
+      (the zone fronts other applications): `/build/*` and `/storage/*` cached
+      at the edge for 7 days, everything else bypassed. `theme-CqWSRzWm.css`
+      answered `MISS` then `HIT`; `/up` and `/org/login` answered `DYNAMIC`
+      (runbook "Monitoring").
+- [x] **OCI security list: restrict port 22 to known addresses.** The backlog
       records that the origin IP and SSH details existed in early commits of
       the public repository. Ports 80 and 443 stay open to Cloudflare's ranges
       only.
+      **Closed by decision (owner, 2026-09-25, re-affirmed 2026-11-06): port 22
+      stays open, key-only.** Ports 80 and 443 were already Cloudflare-only: the
+      security list admits them from Cloudflare's 15 IPv4 ranges alone
+      (HANDOVER B3).
 - [ ] **Confirm `/srv/backups/cass` is on a filesystem with room** for fourteen
       compressed dumps **plus one uncompressed one** (the script dumps to disk
       first so a truncated `mysqldump` cannot hide inside a pipe), and that the
       NAS sync includes it **and** the weekly `cass-storage` tarball.
+      **Room confirmed, sync not (2026-11-06):** `/srv/backups/cass` is on `/`,
+      with 123 GB free. Whether a NAS sync exists is not known to the engineer;
+      B8, whose plan is being written, replaces it with an encrypted off-host
+      copy.
 
 ## 3. Production readiness, on the deployed site
 
@@ -147,9 +178,13 @@ Each line is a command and the answer it must give.
 
 Run on 2026-10-17 23:58 UTC against commit `57a8c4f`, two minutes after the A8 deploy; the ticks
 below are from that run (the numbers are in `docs/HANDOVER.md`, Production row, and the runbook's
-"Resource limits"). Still open: the enforcing CSP (after the section 4 walk-through), HSTS
-(Cloudflare, phase B item B4), the restore drill (last done 2026-09-13; B8) and the ranking timing,
-which ran in 0.002 s but against 12 abstracts, not a few hundred.
+"Resource limits"). Still open: the enforcing CSP (after the section 4 walk-through), the restore
+drill (last done 2026-09-13; B8) and the ranking timing, which ran in 0.002 s but against 12
+abstracts, not a few hundred. HSTS, open after that run, was seen on 2026-11-06 (B4) and is ticked.
+
+On 2026-11-06 the deploy of `d417c8a` (05:46 UTC) re-ran two lines through the deploy script,
+`migrate:status` (36 applied, nothing pending) and `cass:health` (six rows OK), beside its eight
+probes through Traefik; no other line was re-run with it.
 
 - [x] `curl -sI https://cass.towardpcc.com/up` → `200`.
 - [ ] `curl -sI https://cass.towardpcc.com/ | grep -i content-security-policy`
@@ -158,8 +193,10 @@ which ran in 0.002 s but against 12 abstracts, not a few hundred.
       console open, then set it false and redeploy.
 - [x] `curl -sI https://cass.towardpcc.com/ | grep -iE 'x-frame-options|referrer-policy|permissions-policy|cross-origin-opener|x-content-type'`
       → five headers.
-- [ ] `curl -sI https://cass.towardpcc.com/ | grep -i strict-transport-security`
+- [x] `curl -sI https://cass.towardpcc.com/ | grep -i strict-transport-security`
       → present, and served by Cloudflare rather than by the app.
+      **2026-11-06:** seen on `/up` once B4 turned it on at Cloudflare; the
+      application sends none of its own.
 - [x] `docker exec <app> su-exec app php artisan cass:health` → every row OK,
       exit 0.
 - [x] `docker exec <app> su-exec app php artisan migrate:status` → nothing
