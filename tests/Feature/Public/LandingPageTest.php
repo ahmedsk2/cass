@@ -20,9 +20,9 @@ it('renders the static pages', function (string $path, string $heading) {
     ['/terms', 'Terms of use'],
 ]);
 
-it('says on the privacy page that error reports stay on the platform\'s own server in Saudi Arabia', function () {
+it('says on the privacy page where error reports are stored and how they travel', function () {
     get('/privacy')->assertOk()
-        ->assertSee('The service is hosted in Saudi Arabia. Error reports are kept on our own server there and are not sent to a third-party service.');
+        ->assertSee('The service is hosted in Saudi Arabia. Error reports are stored only on our own server there, and personal data is removed from them before they are sent. Like every page of this site, they travel encrypted through our content delivery network.');
 });
 
 it('sends security headers', function () {

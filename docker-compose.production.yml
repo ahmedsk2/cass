@@ -22,8 +22,8 @@ services:
       APP_DEBUG: 'false'
       APP_URL: https://cass.towardpcc.com
       APP_KEY: ${APP_KEY}
-      # Optional. Former APP_KEY values, comma-separated and secret, that still decrypt what they
-      # encrypted after a rotation (config/app.php). Empty: none.
+      # Optional. Former APP_KEY values, secret, comma-separated with no spaces, that still decrypt what
+      # they encrypted after a rotation (config/app.php). Empty: none.
       APP_PREVIOUS_KEYS: ${APP_PREVIOUS_KEYS:-}
       LOG_CHANNEL: stderr
       LOG_LEVEL: warning
@@ -54,8 +54,8 @@ services:
       CASS_HEARTBEAT_URL: ${CASS_HEARTBEAT_URL:-}
       # Optional. The error tracker's DSN (config/sentry.php), a secret. Empty: nothing is reported.
       SENTRY_LARAVEL_DSN: ${SENTRY_LARAVEL_DSN:-}
-      # The deployed commit, which Coolify provides as SOURCE_COMMIT, names each tracker event's
-      # release (config/sentry.php). Empty if Coolify passes none, and the events then carry no release.
+      # The deployed commit names each tracker event's release (config/sentry.php), but only when Coolify
+      # makes SOURCE_COMMIT available at runtime, which it does not by default. Empty: no release.
       SENTRY_RELEASE: ${SOURCE_COMMIT:-}
       # Send Content-Security-Policy-Report-Only instead of the enforcing
       # header. Deploy with this 'true', walk docs/launch-checklist.md section 4

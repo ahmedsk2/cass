@@ -107,7 +107,7 @@ return [
         'retention_heading' => 'Retention and deletion',
         'retention_body' => 'Data is kept for the life of the conference record. Organizers may delete a conference, and authors may ask the organizer or us to delete a submission. Write to :email.',
         'hosting_heading' => 'Hosting',
-        'hosting_body' => 'The service is hosted in Saudi Arabia. Error reports are kept on our own server there and are not sent to a third-party service. Email is sent through the platform mail server; transactional email is logged for delivery troubleshooting.',
+        'hosting_body' => 'The service is hosted in Saudi Arabia. Error reports are stored only on our own server there, and personal data is removed from them before they are sent. Like every page of this site, they travel encrypted through our content delivery network. Email is sent through the platform mail server; transactional email is logged for delivery troubleshooting.',
     ],
 
     'terms' => [
