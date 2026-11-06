@@ -5,7 +5,8 @@ declare(strict_types=1);
 /**
  * docker/php.ini and docker-compose.production.yml are not PHP, so nothing else in this suite reads
  * them, and each setting below fails quietly when it goes: nothing breaks until a trace is logged or
- * APP_KEY is rotated. The first two cases read the files as text; the CI `smoke` job is what proves the image.
+ * APP_KEY is rotated. The first two cases read the files as text, so they prove what the files say, not that
+ * a running container applies those settings: nothing in CI reads them back from the image.
  */
 it('keeps argument values out of every trace the image records', function () {
     // The Dockerfile copies this file into PHP's conf.d, which php-fpm and the CLI (the queue worker
