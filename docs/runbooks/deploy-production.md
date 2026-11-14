@@ -1328,7 +1328,7 @@ run. Check with `ls -ld /srv/backups/cass` and `ls -l /srv/backups/cass | head`.
 
 Every night at 04:17 `cass-backup-offsite` sends each finished dump and storage archive in `/srv/backups/cass` that is not off the host yet to the private OCI Object Storage bucket `cass-offsite`, compartment `cass-backups`, in the host's region (decision 0016). It checks that each file is a whole gzip (`gzip -t`), then encrypts it with `age` to the owner's public key; the private key is never on this host. Nothing in plain text is written outside `/srv/backups/cass`: age reads the backup and writes the encrypted copy to `.offsite-work/` there, removed once sent. An object is named after the file and the SHA-256 of its encrypted bytes, `db/cass-2026-11-06-0317.sql.gz.<64 hex>.age` or `storage/cass-storage-2026-11-01.tar.gz.<64 hex>.age`. After each upload the script lists the object, compares size and MD5, and appends a row to `offsite-manifest.tsv` (time, destination, file, bytes, mtime, object, object bytes, MD5); a file with a row for this destination, size and mtime is not sent again, so a failed night is caught up the next, and a new bucket or region gets everything again. It pings `cass offsite copy` (**Monitoring**) only when every finished backup is off-host and verified and the newest dump is under 30 hours old. Room in `/srv/backups/cass`: one encrypted copy of the largest backup at a time.
 
-The host signs in as itself, an instance principal, with no key on the host, and may only create objects in that bucket and list them. That bounds the damage a compromise does; it does not prevent it. Every process on the host, containers included, reaches the metadata service that hands out the credential, so any of them can read the objects' names and sizes and upload junk until the 10 GB quota is full; nobody can delete that junk for 30 days, and real copies fail with `StorageQuotaExceeded` until the quota is raised. Root on the host can also upload forged copies that decrypt cleanly, because it holds the public key and age proves secrecy, not origin, and it can keep pinging `cass offsite copy` while sending nothing, because it holds the push URL. So after a suspected compromise of the host, trust only copies made before it: each drill recorded in `docs/HANDOVER.md` names an object and its SHA-256, checked against the host's own file at the time. Uploads are single-part (`--no-multipart`, 50 GiB at most), because a multipart upload needs rights the host does not have.
+The host signs in as itself, an instance principal, with no key on the host, and may only create objects in that bucket and list them. That bounds the damage a compromise does; it does not prevent it. Every process on the host, containers included, reaches the metadata service that hands out the credential, so any of them can read the objects' names and sizes and upload junk until the 10 GB quota is full; nobody can delete that junk for 30 days, and real copies fail with a quota error (`QuotaExceeded`, HTTP 400, as OCI's API error reference names a compartment quota reached) until the quota is raised. Root on the host can also upload forged copies that decrypt cleanly, because it holds the public key and age proves secrecy, not origin, and it can keep pinging `cass offsite copy` while sending nothing, because it holds the push URL. So after a suspected compromise of the host, trust only copies made before it: each drill recorded in `docs/HANDOVER.md` names an object and its SHA-256, checked against the host's own file at the time. Uploads are single-part (`--no-multipart`, 50 GiB at most), because a multipart upload needs rights the host does not have.
 
 | In OCI | Name | What it is |
 |---|---|---|
@@ -1347,13 +1347,13 @@ The host signs in as itself, an instance principal, with no key on the host, and
 | 0 | every finished backup off-host and verified, newest dump under 30 hours, pinged | nothing |
 | 1 | a file, tool or setting missing (the line names it), the lock file or the manifest unusable, another run holding the lock, or an unexpected failure | fix what the line names; run it by hand |
 | 2 | a backup not a complete gzip, age failed, or its output not an age file; that file not sent | beside a hand-run `cass-backup`, run it again. A damaged file fails every night: move it into `/srv/backups/cass/damaged/` (the script looks at no subfolder) and tell the engineer. Otherwise `age --version` and `/root/.cass-age-recipient` |
-| 3 | an upload failed or timed out; the CLI's error is above the line | `StorageQuotaExceeded`: raise `cass-backups-cap`, then find out what wrote the junk, since it cannot be deleted for 30 days. Otherwise the policy (**Installing the off-host copy**) and the network |
+| 3 | an upload failed or timed out; the CLI's error is above the line | a quota error (`QuotaExceeded`): raise `cass-backups-cap`, then find out what wrote the junk, since it cannot be deleted for 30 days. Otherwise the policy (**Installing the off-host copy**) and the network |
 | 4 | an object missing after its upload, or its size or MD5 differs | run it again; twice in a row, tell the engineer |
 | 5 | no dump, or the newest older than 30 hours or dated in the future | the nightly dump (**Backups**); a date in the future, the host's clock (`timedatectl`) |
 | 6 | everything copied, but the ping failed or `/root/.cass-ping-offsite` is missing | that file, then Kuma |
-| 129, 130, 143 | stopped by SIGHUP, SIGINT or SIGTERM (a reboot, a stopped job, Ctrl-C) once the command in hand returned | run it again. A copy uploaded but not yet recorded goes again under a new name; the stray object ages out |
+| 129, 130, 143 | stopped by SIGHUP, SIGINT or SIGTERM (a reboot, a stopped job, Ctrl-C) once the command in hand returned; Ctrl-C included, it waits for the upload in hand, up to 30 minutes | run it again. A copy uploaded but not yet recorded goes again under a new name; the stray object ages out |
 
-One file's failure does not stop the others; the exit is the first failure's. Every run ends with one line, `[cass-backup-offsite] OK: …` or `[cass-backup-offsite] FAILED (exit N): …`, in `/var/log/cass-backup.log`, a stop by a signal included; only SIGKILL leaves none. After a hand-run `cass-backup` (a migration release), `sudo /usr/local/bin/cass-backup-offsite` sends that dump at once. Overrides, for tests: `CASS_OFFSITE_CONFIG`, `CASS_OFFSITE_RECIPIENTS`, `CASS_OFFSITE_PING_FILE`, `CASS_OCI_BIN`, `CASS_AGE_BIN`, `CASS_OFFSITE_MAX_AGE_HOURS` (30), `CASS_OFFSITE_CLI_TIMEOUT` (1800). The weekly archives are full copies. The first run sends every archive the host keeps (8 or 9), so for the first 90 days the bucket holds about 21 archives, then 13; `cass-offsite-filling` warns at 8 GB, from outside the host.
+One file's failure does not stop the others; the exit is the first failure's. Every run ends with one line, `[cass-backup-offsite] OK: …` or `[cass-backup-offsite] FAILED (exit N): …`, in `/var/log/cass-backup.log`, a stop by a signal included; only SIGKILL leaves none. After a hand-run `cass-backup` (a migration release), `sudo /usr/local/bin/cass-backup-offsite` sends that dump at once. Overrides, for tests, `CASS_AGE_BIN` also on an Ubuntu older than 22.04 (**Installing the off-host copy**): `CASS_OFFSITE_CONFIG`, `CASS_OFFSITE_RECIPIENTS`, `CASS_OFFSITE_PING_FILE`, `CASS_OCI_BIN`, `CASS_AGE_BIN`, `CASS_OFFSITE_MAX_AGE_HOURS` (30), `CASS_OFFSITE_CLI_TIMEOUT` (1800). The weekly archives are full copies. The first run sends every archive the host keeps (8 or 9), so for the first 90 days the bucket holds about 21 archives, then 13; `cass-offsite-filling` warns at 8 GB, from outside the host.
 
 #### The key
 
@@ -1362,7 +1362,7 @@ Made, stored and checked on the PC, in Git Bash, in the tools folder; never on t
 ```bash
 curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-windows-amd64.zip
 echo 'f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7  age-v1.3.2-windows-amd64.zip' | sha256sum -c -
-powershell -NoProfile -Command "Expand-Archive age-v1.3.2-windows-amd64.zip -DestinationPath ."
+powershell -NoProfile -Command "Expand-Archive age-v1.3.2-windows-amd64.zip -DestinationPath . -Force"
 ./age/age-keygen.exe                                   # three lines on the screen; nothing on disk
 R=age1…; echo cass-key-check | ./age/age.exe -r "$R" -o check.age
 read -rs -p 'AGE-SECRET-KEY line: ' K; echo; printf '%s\n' "$K" | ./age/age.exe -d -i - check.age; unset K; rm -f check.age
@@ -1371,14 +1371,14 @@ read -rs -p 'AGE-SECRET-KEY line: ' K; echo; printf '%s\n' "$K" | ./age/age.exe 
 - **Make it** with the first four lines: age v1.3.2 for Windows, its zip checked by `sha256sum -c` against the digest GitHub lists (it must print `OK`), then `age-keygen.exe` with no options. Never `-pq`: the host's age 1.1.1 cannot encrypt to an `age1pq1…` key. Clipboard history off (Settings, System, Clipboard, and its cloud sync) while the key is on the screen, cleared afterwards. The `age1…` public key goes to `/root/.cass-age-recipient`; the private key goes nowhere but the two places below.
 - **Store it twice:** one password-manager entry, "CASS backup key (age), <date>", and paper written by hand or printed on a printer attached by cable, kept away from the PC. Never on the host, in a chat, in this repository or in a cloud drive.
 - **Check the stored copy** with the last two lines, pasting the `AGE-SECRET-KEY-1…` line from the password manager, not from the screen: they print `cass-key-check`. Then clear the clipboard history and close the terminal, whose scrollback held the key. At every third drill, type the paper copy instead of pasting: the key carries a checksum, so a clean decrypt proves the paper.
-- **Rotate** at once on a suspected leak, otherwise when the owner decides: make a new pair, store and check it as above, and replace the line in `/root/.cass-age-recipient`. Keep the old private key, both copies, until the last copy encrypted to it is gone (90 days in the bucket, 90 on the external drive), then destroy both. Each password-manager entry notes the dates its key was in use.
+- **Rotate** at once on a suspected leak, otherwise when the owner decides: make a new pair, store and check it as above, and replace the line in `/root/.cass-age-recipient`. Only backups made after the change are encrypted to the new key: the manifest keys a copy by file, size and mtime, not by key, so the host's current files are not sent again. To send them again under the new key now, move the manifest aside (`sudo mv /srv/backups/cass/offsite-manifest.tsv /srv/backups/cass/offsite-manifest-<date>.tsv`) and run the script by hand; that adds a full set to the bucket, so check `cass-backups-cap` first. Keep the old private key, both copies, until the last copy encrypted to it is gone (90 days in the bucket, 90 on the external drive), then destroy both. Each password-manager entry notes the dates its key was in use.
 - **One copy lost:** make a new copy from the other at once, then check it.
-- **Both copies lost:** every off-host copy is unreadable. Make a new pair at once and replace the recipient line; until new copies build up, the host's own 15 dumps and 8 or 9 archives are the only backups. Tell the engineer; `docs/HANDOVER.md` records the date.
-- **Suspected leak:** rotate now. Copies made under the old key stay readable to anyone who also gets read access to the bucket or the external drive, so check who holds the owner's OCI login.
+- **Both copies lost:** every off-host copy is unreadable. Make a new pair at once, replace the recipient line and send the host's files again under it (**Rotate**, above); until they are off-host, the host's own 15 dumps and 8 or 9 archives are the only backups. Tell the engineer; `docs/HANDOVER.md` records the date.
+- **Suspected leak:** rotate now, and send the host's files again under the new key (**Rotate**, above). Copies made under the old key stay readable to anyone who also gets read access to the bucket or the external drive, so check who holds the owner's OCI login.
 
 ### Installing the off-host copy
 
-Once, with the owner. Before it, in OCI: the audit has found no dynamic group but `cass-backup-host` matching the instance and no other statement reaching it (statements naming `dynamic-group`, `any-user` or `request.principal`, in the tenancy and every compartment; the session runs it through the OCI API, and again at every third drill); every resource in the table above exists except the retention rule; the dynamic group is an hour old. A rebuilt or replaced instance has a new OCID: change the group's rule, wait an hour, run the canary again. `age` comes from Ubuntu's archive and follows its security updates (the format is frozen); on an Ubuntu older than 22.04, which has no package, use the release `age-v1.3.2-linux-arm64.tar.gz`, checked with `sha256sum -c` against `6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4`, in `/usr/local/bin`, with `CASS_AGE_BIN=/usr/local/bin/age` on the cron line. The CLI goes into its own virtual environment from wheels only (no source build; if pip refuses a package for want of one, stop), and its resolved versions are kept beside it.
+Once, with the owner. Before it, in OCI: the audit has found no dynamic group but `cass-backup-host` matching the instance and no other statement reaching it (statements naming `dynamic-group`, `any-user` or `request.principal`, in the tenancy and every compartment; the session runs it through the OCI API, and again at every third drill); every resource in the table above exists except the retention rule; the dynamic group is an hour old. A rebuilt or replaced instance has a new OCID: change the group's rule, wait an hour, run the canary again. `age` comes from Ubuntu's archive and follows its security updates (the format is frozen); on an Ubuntu older than 22.04, which has no package, use the release instead: `curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-arm64.tar.gz`, then `echo '6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4  age-v1.3.2-linux-arm64.tar.gz' | sha256sum -c -` (it must print `OK`), then `tar xzf age-v1.3.2-linux-arm64.tar.gz && sudo install -m 755 age/age /usr/local/bin/age`, and `CASS_AGE_BIN=/usr/local/bin/age` on the cron line. The CLI goes into its own virtual environment from wheels only (no source build; if pip refuses a package for want of one, stop), and its resolved versions are kept beside it.
 
 ```bash
 sudo apt-get -s install age python3-venv | grep '^Inst'      # only these and their new dependencies, or stop
@@ -1403,7 +1403,7 @@ $O os bucket list --compartment-id <cass-backups OCID> 2>&1 | grep -qF "$N" && e
 sudo rm /root/cass-canary.txt
 ```
 
-Now the retention rule (`keep-30-days`, 30 days, not locked). Then the script, from a commit of `main` whose push run is green, both ends' SHA-256 compared; the commit and the digest go into the project memory:
+Now the retention rule: the session creates it with `ObjectStorageClient.create_retention_rule` on `cass-offsite` (display name `keep-30-days`, 30 days, no lock), or the owner in the Console: Buckets, `cass-offsite`, Retention rules, Create rule. Then the script, from a commit of `main` whose push run is green, both ends' SHA-256 compared; the commit and the digest go into the project memory:
 
 ```bash
 git fetch origin && C=$(git rev-parse origin/main) && gh run list --workflow ci.yml --branch main --commit "$C" --json conclusion --jq '.[0].conclusion'   # success
@@ -1418,42 +1418,42 @@ On the host, run `sudo /usr/local/bin/cass-backup-offsite` once and read every l
 17 4 * * * /usr/local/bin/cass-backup-offsite >> /var/log/cass-backup.log 2>&1
 ```
 
-Prove the alert as for the other monitors, without the URL on a command line: `for i in 1 2; do sudo sh -c 'sed s/status=up/status=down/ /root/.cass-ping-offsite | curl -fsS -m 10 -o /dev/null -K -'; done` takes the monitor down and Kuma emails; the next run by hand brings it back. To update the CLI, rebuild the environment with the new version; to update the script, the three lines from the PC with the new green commit.
+Prove the alert as for the other monitors, without the URL on a command line: `for i in 1 2; do sudo sh -c 'sed s/status=up/status=down/ /root/.cass-ping-offsite | curl -fsS -m 10 -o /dev/null -K -'; done` takes the monitor down and Kuma emails; the next run by hand brings it back. To update the CLI, `sudo rm -rf /opt/oci-cli`, then the install block's third to fifth lines with the new version; to update the script, the three lines from the PC with the new green commit.
 
 ### Restore drill from the off-host copy — monthly, and not optional
 
-The owner, on the PC in Git Bash with Docker Desktop running, and on the host in their own terminal; never in a Claude session, and in a folder outside every repository. It restores the copy the host's manifest names, not whichever object is newest: anything uploaded after it, junk or forgery, is never picked. It proves the copy is the host's file byte for byte, then that it restores. The decrypted data exists only in pipes and in a container held in memory; the private key is pasted at a prompt. Once per PC, the CLI: `python -m venv <tools>/oci-cli && <tools>/oci-cli/Scripts/pip install --only-binary :all: 'oci-cli==3.96.0'`, `<tools>` being `/c/Users/khawl/Desktop/Ahmed/claude/tools`. Once, too: check that Windows device encryption is on (Settings, Privacy and security, Device encryption).
+The owner, on the PC in Git Bash with Docker Desktop running, and on the host in their own terminal; never in a Claude session, and in a folder outside every repository. It restores the copy the host's manifest names, not whichever object is newest: anything uploaded after it, junk or forgery, is never picked. It proves the copy is the host's file byte for byte, then that it restores. The decrypted data exists only in pipes and in a container held in memory, or on the PC's encrypted disk where MySQL spills over; the private key is pasted at a prompt. At every third drill, type the key from the paper copy instead of pasting it, and ask the session to re-run the audit (**Installing the off-host copy**). Once per PC, the CLI: `python -m venv <tools>/oci-cli && <tools>/oci-cli/Scripts/pip install --only-binary :all: 'oci-cli==3.96.0'`, `<tools>` being `/c/Users/khawl/Desktop/Ahmed/claude/tools`. Once, too: check that Windows device encryption is on (Settings, Privacy and security, Device encryption).
 
-First on the host, with `cass_container` pasted: the last `db/` and `storage/` rows of the manifest, the two files' digests, the dump's completion time and the counts at a cut-off five minutes before it.
+First on the host, with `cass_container` pasted. The first command reads the manifest's last `db/` and `storage/` rows and prints the region, then two lines to paste as they are, here and on the PC: `F=… DB=…` and `G=… ST=…`, the file and its object, each followed after a `#` by the object's bytes, MD5 and upload time. Then the two files' digests, the dump's completion time, and two counts per table: the rows created up to five minutes before the dump finished, and those created before it finished.
 
 ```bash
-sudo awk -F '\t' '$6 ~ /^db\// { d = $0 } $6 ~ /^storage\// { s = $0 } END { print d; print s }' /srv/backups/cass/offsite-manifest.tsv
-F='<file of the db row>'; G='<file of the storage row>'; sudo sha256sum "/srv/backups/cass/$F" "/srv/backups/cass/$G"
+sudo awk -F '\t' '$6 ~ /^db\// { d = $0 } $6 ~ /^storage\// { s = $0 } END { split(d, a, "\t"); split(s, b, "\t"); printf "region: %s\nF=%s DB=%s    # %s bytes, MD5 %s, sent %s\nG=%s ST=%s    # %s bytes, MD5 %s, sent %s\n", substr(a[2], 1, index(a[2], "/") - 1), a[3], a[6], a[7], a[8], a[1], b[3], b[6], b[7], b[8], b[1] }' /srv/backups/cass/offsite-manifest.tsv
+sudo sha256sum "/srv/backups/cass/$F" "/srv/backups/cass/$G"                 # after pasting the F= and G= lines
 sudo sh -c "gzip -dc /srv/backups/cass/$F | tail -n 1"                       # -- Dump completed on <date> <time>
-CUT=$(date -u -d '<date> <time> 5 minutes ago' '+%F %T'); C=$(cass_container mysql)
+CUT=$(date -u -d '<date> <time> 5 minutes ago' '+%F %T'); END=$(date -u -d '<date> <time>' '+%F %T'); C=$(cass_container mysql)
 for T in organizations users conferences submissions submission_files reviews review_assignments email_logs; do
   sudo docker exec "$C" sh -c "MYSQL_PWD=\"\$MYSQL_ROOT_PASSWORD\" mysql -uroot -N -e \
-    'SELECT \"$T\", (SELECT COUNT(*) FROM cass.$T WHERE created_at < \"$CUT\"), (SELECT COUNT(*) FROM cass.$T);'"
+    'SELECT \"$T\", (SELECT COUNT(*) FROM cass.$T WHERE created_at < \"$CUT\"), (SELECT COUNT(*) FROM cass.$T WHERE created_at < \"$END\");'"
 done
 sudo grep -F "$G (" /var/log/cass-backup.log | tail -n 1                     # that archive's entry count
 ```
 
-Then on the PC, the two objects of those rows, by name, signed in for at most an hour:
+Then on the PC, the two objects of those rows, by name, signed in for at most an hour; `<region>` is the one the host printed:
 
 ```bash
 set -o pipefail; T=/c/Users/khawl/Desktop/Ahmed/claude/tools; OCI=$T/oci-cli/Scripts/oci.exe; AGE=$T/age/age.exe
 "$OCI" session authenticate --region <region> --profile-name cass-drill --config-location ~/.oci/cass-drill.config
 X=(--config-file ~/.oci/cass-drill.config --profile cass-drill --auth security_token)
 mkdir -p ~/cass-drill && cd ~/cass-drill && NS=$("$OCI" os ns get "${X[@]}" --query data --raw-output)
-DB='<object of the db row>'; ST='<object of the storage row>'
+# here, the host's F=… DB=… and G=… ST=… lines, pasted as they were printed
 "$OCI" os object get "${X[@]}" -ns "$NS" -bn cass-offsite --name "$DB" --file db.age
 "$OCI" os object get "${X[@]}" -ns "$NS" -bn cass-offsite --name "$ST" --file st.age
 for p in "db.age $DB" "st.age $ST"; do set -- $p
   [ "$(sha256sum < "$1" | cut -d' ' -f1)" = "$(sed -E 's/.*\.([0-9a-f]{64})\.age$/\1/' <<< "$2")" ] && echo "$1: name hash OK"
-  echo "$1: $(wc -c < "$1") bytes, MD5 $(openssl dgst -md5 -binary "$1" | base64)"; done   # as in the manifest rows
+  echo "$1: $(wc -c < "$1") bytes, MD5 $(openssl dgst -md5 -binary "$1" | base64)"; done   # as the host printed after its #
 IMG=$(grep -oE 'mysql:8\.4@sha256:[0-9a-f]{64}' /c/Users/khawl/Desktop/Ahmed/claude/projects/CASS/docker-compose.production.yml)
 docker rm -f -v cass-drill > /dev/null 2>&1
-docker run -d --name cass-drill --network none --tmpfs /var/lib/mysql:rw,size=1g -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=cass_restore "$IMG"
+docker run -d --name cass-drill --network none --tmpfs /var/lib/mysql:rw,size=1g --tmpfs /tmp:rw,size=256m -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=cass_restore "$IMG" --skip-log-bin
 for i in $(seq 60); do docker exec cass-drill mysql -h127.0.0.1 -uroot -e 'SELECT 1' > /dev/null 2>&1 && break; sleep 3; done
 read -rs -p 'AGE-SECRET-KEY line: ' KEY; echo
 for f in db.age st.age; do printf '%s\n' "$KEY" | "$AGE" -d -i - "$f" | sha256sum; done      # the host's two digests
@@ -1466,11 +1466,11 @@ D=/<drive>/cass-offline; mkdir -p "$D/$(date +%F)" && mv db.age st.age "$D/$(dat
 ```
 
 Tick each box; one left empty is a failed drill.
-- [ ] The two objects are the manifest's last `db/` and `storage/` rows, and the `db/` row is at most a day old.
-- [ ] Each download printed `name hash OK`, and its bytes and MD5 equal its manifest row's.
+- [ ] The two objects are the manifest's last `db/` and `storage/` rows, and the `db/` one was sent at most a day ago.
+- [ ] Each download printed `name hash OK`, and its bytes and MD5 equal those the host printed for it.
 - [ ] Each decrypted SHA-256 equals the host's `sha256sum` of that file: the off-host copy is the host's copy, byte for byte.
 - [ ] `load rc=0`, with no MySQL error.
-- [ ] Every table: restored ≥ the host's first number, the rows that existed five minutes before the dump finished (the cut-off assumes the dump took less than five minutes). Above it only for a reason you can name: rows deleted since the dump (an organization purged, `cass:demo-reset`, a reviewer unassigned, email logs past retention, an erasure). If a legacy import ran after the dump, its rows keep their old `created_at` and this comparison is void: drill again on a dump taken after the import.
+- [ ] Every table: restored at least the host's first number (rows created up to five minutes before the dump finished) and at most its second (rows created before it finished); the dump's snapshot falls between the two whenever the dump took under five minutes. Above the second only by rows deleted since the dump, each for a reason you can name (an organization purged, `cass:demo-reset`, a reviewer unassigned, email logs past retention, an erasure). If a legacy import ran after the dump, its rows keep their old `created_at` and this comparison is void: drill again on a dump taken after the import.
 - [ ] The archive lists as many entries as the host's log line for it.
 - [ ] The container is gone, the session terminated, `KEY` unset, the terminal closed, the clipboard history cleared, and the two files are on the external drive.
 

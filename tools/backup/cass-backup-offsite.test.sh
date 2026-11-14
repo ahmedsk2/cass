@@ -4,8 +4,9 @@
 # file goes only when it is a whole gzip, encrypted with age, uploaded in one part and found
 # again in a listing with its size and MD5; that the heartbeat is pinged only when everything
 # is off-host and the newest dump is fresh, and never with the push URL on a command line; each
-# failure's exit code, a signal's included, with the one line every run ends with; and, as far
-# as a test can see it, that no backup leaves the backup directory in plain text.
+# failure's exit code, a signal's included, with the one line every run ends with; and, within
+# the reach set out below and no further, that no backup leaves the backup directory in plain
+# text.
 #
 # Runs with no network, no docker and no OCI account. Fakes for oci, age, curl and flock are
 # written into a temporary bin directory: age, curl and flock go first on PATH, and the CLI is
@@ -16,16 +17,18 @@
 # every call it receives to $FAKE/calls, refused calls included. The scenario directory also
 # stands in for /srv/backups/cass (dest/), root's home, the temporary folder and the bucket.
 #
-# Plain text outside the backup directory is looked for three ways. Before any run, the
-# script's code may name no temporary folder and may not unpack a backup: it needs neither.
-# During a run, home/, tmp/ and cwd/ are read-only where a 0555 directory refuses writes (CI's
-# case; not root's, nor Git Bash's). After it, every file under the scenario but dest/ whose
-# status changed during the run, every new entry of /tmp, /var/tmp and /dev/shm, and every
-# file directly in them written again, is compared with the backups byte for byte and searched
-# for the scenario's marker, which sits in every backup as it is (the fixtures are gzip files
-# of stored, uncompressed deflate blocks), so a wrapped, offset or unpacked copy shows too. A
-# copy removed before the run ends, one inside a folder that was already in those three, and
-# one anywhere else are beyond what this check sees; the static checks stand for them.
+# Plain text outside the backup directory is looked for three ways, each with its own reach.
+# Before any run, the script's code is read: it may name no temporary folder, may not unpack a
+# backup, and may write only to the manifest, the lock, /dev/null and age's --output, running
+# no command that copies, moves, links or makes a file. During a run, home/, tmp/ and cwd/ are
+# read-only where a 0555 directory refuses writes (CI's case; not root's, nor Git Bash's).
+# After it, every file under the scenario but dest/ whose status changed during the run, every
+# new entry of /tmp, /var/tmp and /dev/shm, and every file directly in them written again, is
+# compared with the backups byte for byte and searched for the scenario's marker, which sits in
+# every backup as it is (the fixtures are gzip files of stored, uncompressed deflate blocks),
+# so a wrapped, offset or unpacked copy shows too. A write none of these sees (by a command the
+# code check does not know, into a folder the scan does not walk, or removed before the run
+# ends) is beyond what this harness proves.
 #
 # After every run seven checks hold whatever the scenario: one summary line, the last; no plain
 # text outside dest/, as above; nothing asked of OCI that the host may not do; at most one
@@ -64,6 +67,8 @@ skip() { printf '  skip  %s\n' "$1"; SKIPS=$((SKIPS + 1)); }
 
 # A real flock, where this machine has one (CI's ubuntu does): S24 holds the lock with it.
 REAL_FLOCK="$(command -v flock 2> /dev/null || true)"
+# The real stat, which S38's stand-in calls once it has done its harm.
+REAL_STAT="$(command -v stat)"
 
 mkdir -p "$ROOT/bin"
 
@@ -291,6 +296,22 @@ SHIM
 
 chmod +x "$ROOT/bin/oci" "$ROOT/bin/age" "$ROOT/bin/curl" "$ROOT/bin/flock"
 
+# A stand-in for stat, put on PATH by S38 alone: its first call on the file named in
+# $FAKE/stat-removes deletes that file first, as a rotation between the script's check and its
+# stat would, then hands over to the real stat.
+cat > "$ROOT/stat.fake" <<'SHIM'
+#!/usr/bin/env bash
+if [ -f "$FAKE/stat-removes" ] && [ ! -e "$FAKE/stat-removed" ]; then
+    target=$(cat "$FAKE/stat-removes")
+    for a in "$@"; do
+        if [ "${a##*/}" = "$target" ]; then : > "$FAKE/stat-removed"; rm -f -- "$a"; break; fi
+    done
+fi
+exec REAL_STAT "$@"
+SHIM
+sed -i "s|REAL_STAT|$REAL_STAT|" "$ROOT/stat.fake"
+chmod +x "$ROOT/stat.fake"
+
 # age, curl and flock must win the PATH lookup, or the script would reach the real ones. A
 # temporary directory whose path holds a colon splits PATH.
 for f in age curl flock; do
@@ -440,12 +461,14 @@ run_offsite() {
     after_run
 }
 
-# run_offsite_signalled <whom> [VAR=VALUE ...]: as run_offsite, but once the CLI has begun an
-# upload a TERM goes to the script alone (whom=script) or to the script and the CLI together
-# (whom=both, as stopping the whole job does).
+# run_offsite_signalled <signal> <whom> [VAR=VALUE ...]: as run_offsite, but once the CLI has
+# begun an upload the signal goes to the script alone (whom=script) or to the script and the
+# CLI together (whom=both, as stopping the whole job does). The guard passes it on to the
+# script only, and starts the script with every signal at its default, SIGINT included, which
+# a background job would otherwise inherit ignored.
 run_offsite_signalled() {
-    local whom=$1 pid cli i
-    shift
+    local signal=$1 whom=$2 pid cli i
+    shift 2
     RC=0
     CALLS_AT=$(wc -l < "$S/calls")
     lock_down
@@ -466,8 +489,8 @@ run_offsite_signalled() {
         sleep 0.1
     done
     cli=$(cat "$S/put-started" 2> /dev/null || true)
-    kill -TERM "$pid" 2> /dev/null || true
-    if [ "$whom" = both ] && [ -n "$cli" ]; then kill -TERM "$cli" 2> /dev/null || true; fi
+    kill -"$signal" "$pid" 2> /dev/null || true
+    if [ "$whom" = both ] && [ -n "$cli" ]; then kill -"$signal" "$cli" 2> /dev/null || true; fi
     wait "$pid" || RC=$?
     BACKGROUND=''
     open_up
@@ -509,8 +532,8 @@ $(show "$S/out")" ;;
 
 # count <text>: how many recorded calls contain <text>.
 count() { awk -v s="$1" 'index($0, s) { n++ } END { print n + 0 }' "$S/calls"; }
-# The manifest's rows, its header aside, and their number.
-rows() { grep -v '^#' "$S/dest/offsite-manifest.tsv" 2> /dev/null || true; }
+# The manifest's rows, its header aside, and their number; read as text even with a NUL in it.
+rows() { grep -av '^#' "$S/dest/offsite-manifest.tsv" 2> /dev/null || true; }
 row_count() { rows | grep -c . || true; }
 # The objects in the bucket, by name, and their number.
 objects() { (cd "$S/bucket" && find . -type f | sed 's|^\./||' | LC_ALL=C sort); }
@@ -641,6 +664,21 @@ if [ ! -f "$SCRIPT" ]; then bad "its code never unpacks a backup: there is no fi
 elif [ -n "$FOUND" ]; then bad "its code never unpacks a backup (gzip -d, gunzip, zcat, tar -x), but
 $(printf '%s\n' "$FOUND" | sed 's/^/          | /')"
 else ok 'its code never unpacks a backup (gzip -d, gunzip, zcat, tar -x)'; fi
+# And it writes to the manifest, the lock, /dev/null and age's --output "$TMP" only, running no
+# command that copies, moves, links or makes a file: a write anywhere else, by a path built at
+# run time or into a folder no scan walks, would otherwise go unseen.
+COPY_RE='(^|[^[:alnum:]_.-])(cp|mv|ln|install|dd|tee|rsync|split|csplit|mkfifo|mknod|tar|cpio|zip|touch|truncate|sed[[:space:]]+-i|gzip[[:space:]]+(-[[:alnum:]]+[[:space:]]+)*-[[:alnum:]]*c)([[:space:]]|$)'
+writes_elsewhere() {
+    printf '%s\n' "$CODE" | grep -E -- "$COPY_RE" || true
+    printf '%s\n' "$CODE" | grep -oE -- '[0-9]*>>?[[:space:]]*[^[:space:];&|)]+' |
+        grep -vE -- '>>?[[:space:]]*("\$MANIFEST"|"\$LOCK"|/dev/null)$' || true
+    printf '%s\n' "$CODE" | grep -oE -- '--output[[:space:]]+[^[:space:]]+' | grep -vxF -- '--output "$TMP"' || true
+}
+FOUND="$(writes_elsewhere)"
+if [ ! -f "$SCRIPT" ]; then bad "its code writes only where it may: there is no file at $SCRIPT"
+elif [ -n "$FOUND" ]; then bad "its code writes only to the manifest, the lock, /dev/null and age's --output, and copies, moves, links or makes no file, but
+$(printf '%s\n' "$FOUND" | sed 's/^/          | /')"
+else ok "its code writes only to the manifest, the lock, /dev/null and age's --output, and copies, moves, links or makes no file"; fi
 
 scenario 'S1 first run: the three backups go, the decoys stay'
 run_offsite
@@ -991,7 +1029,7 @@ eq 'each row for that destination' 3 "$(rows | awk -F '\t' '$2 == "xx-test-1/tes
 
 scenario 'S31 a TERM to the script while the CLI uploads: exit 143 once the CLI returns, one last line saying so'
 : > "$S/put-hangs"
-run_offsite_signalled script CASS_OFFSITE_CLI_TIMEOUT=3
+run_offsite_signalled TERM script CASS_OFFSITE_CLI_TIMEOUT=3
 eq 'exit status' 143 "$RC"
 starts 'the last line' "$H FAILED (exit 143)"
 has 'names the signal and the step' 'stopped by SIGTERM while copying cass-2026-11-05-0317.sql.gz'
@@ -1000,7 +1038,7 @@ eq 'no ping' 0 "$(count 'curl ')"
 
 scenario 'S32 a TERM to the script and the CLI together, as stopping the job sends: exit 143, one last line saying so'
 : > "$S/put-hangs"
-run_offsite_signalled both
+run_offsite_signalled TERM both
 eq 'exit status' 143 "$RC"
 starts 'the last line' "$H FAILED (exit 143)"
 has 'names the signal and the step' 'stopped by SIGTERM while copying cass-2026-11-05-0317.sql.gz'
@@ -1057,6 +1095,44 @@ eq 'exit status' 1 "$RC"
 starts 'the last line' "$H FAILED (exit 1)"
 has 'says so' "cannot open the lock file $S/dest/.offsite.lock"
 eq 'no age call' 0 "$(count 'age -R')"
+
+scenario 'S38 a backup rotated away between its check and its stat: gone, and the night goes on'
+echo cass-2026-11-05-0317.sql.gz > "$S/stat-removes"
+cp "$ROOT/stat.fake" "$ROOT/bin/stat"
+run_offsite
+rm -f "$ROOT/bin/stat"
+eq 'exit status' 0 "$RC"
+starts 'the last line' "$H OK: 2 uploaded, 0 already off-host"
+has 'says it is gone' 'cass-2026-11-05-0317.sql.gz: gone (rotated away?)'
+eq 'two objects' 2 "$(object_count)"
+eq 'one ping' 1 "$(count 'curl -K ')"
+
+scenario 'S39 a torn last manifest row ending in NUL bytes, as a crash can leave it: the next row on a line of its own'
+run_offsite
+TORN="$S/dest/offsite-manifest.tsv"
+head -c "$(( $(stat -c %s "$TORN") - 5 ))" "$TORN" > "$S/dest/.torn"
+printf '\0\0\0\0\0' >> "$S/dest/.torn"
+mv "$S/dest/.torn" "$TORN"
+make_backup cass-2026-11-07-0317.sql.gz 0
+: > "$S/calls"
+run_offsite
+eq 'exit status' 0 "$RC"
+starts 'the last line' "$H OK: 1 uploaded, 3 already off-host"
+eq "the new dump's row, on a line of its own with eight fields" 1 \
+    "$(rows | awk -F '\t' 'NF == 8 && $3 == "cass-2026-11-07-0317.sql.gz"' | grep -c . || true)"
+
+scenario 'S40 an INT to the script while the CLI uploads: exit 130 once the CLI returns, one last line saying so'
+if [ -n "$GUARD" ]; then
+    : > "$S/put-hangs"
+    run_offsite_signalled INT script CASS_OFFSITE_CLI_TIMEOUT=3
+    eq 'exit status' 130 "$RC"
+    starts 'the last line' "$H FAILED (exit 130)"
+    has 'names the signal and the step' 'stopped by SIGINT while copying cass-2026-11-05-0317.sql.gz'
+    eq 'no manifest row' 0 "$(row_count)"
+    eq 'no ping' 0 "$(count 'curl ')"
+else
+    skip 'S40 needs timeout, which starts the script with SIGINT at its default rather than ignored'
+fi
 
 # ---------------------------------------------------------------------------
 echo

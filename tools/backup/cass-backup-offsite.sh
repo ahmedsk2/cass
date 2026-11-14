@@ -185,8 +185,10 @@ fi
 # Found out before any upload: a copy uploaded and then left out of the manifest would be
 # uploaded again every night.
 if ! : >> "$MANIFEST"; then fail 1 "cannot append to $MANIFEST"; fi
-# A last row cut short (a full disk, a power cut) lacks its newline; the next row must not join it.
-if [ -n "$(tail -c 1 "$MANIFEST")" ]; then printf '\n' >> "$MANIFEST"; fi
+# A last row cut short (a full disk, a power cut, a tail of NUL bytes after a crash) lacks its
+# newline; the next row must not join it. wc counts the newline that $(...) would strip, and
+# sees past a NUL, which $(...) would drop.
+if [ -s "$MANIFEST" ] && [ "$(tail -c 1 "$MANIFEST" | wc -l)" -eq 0 ]; then printf '\n' >> "$MANIFEST"; fi
 
 DESTINATION="$REGION/$NS/$BUCKET"
 OCI_ARGS=(--auth instance_principal --region "$REGION" --namespace "$NS" --bucket-name "$BUCKET")
@@ -209,9 +211,12 @@ for f in "${FILES[@]}"; do
     # cass-backup, which a release also runs before a migration, may rotate a file away at any
     # hour; a file gone before or while it is read is no failure.
     if [ ! -f "$DEST/$f" ]; then say "$f: gone (rotated away?)"; continue; fi
-    # One substitution per assignment: in "a=$(x) b=$(y)" a failing x is masked by y.
-    size=$(stat -c %s "$DEST/$f")
-    mtime=$(stat -c %Y "$DEST/$f")
+    # One substitution per assignment: in "a=$(x) b=$(y)" a failing x is masked by y. A file
+    # rotated away since the check above is gone too.
+    if ! size=$(stat -c %s "$DEST/$f" 2> /dev/null) || ! mtime=$(stat -c %Y "$DEST/$f" 2> /dev/null); then
+        if [ ! -e "$DEST/$f" ]; then say "$f: gone (rotated away?)"; continue; fi
+        problem 1 "$f: its size and mtime cannot be read" 1; continue
+    fi
     if awk -F '\t' -v d="$DESTINATION" -v f="$f" -v s="$size" -v m="$mtime" \
         '$2 == d && $3 == f && $4 == s && $5 == m { hit = 1 } END { exit !hit }' "$MANIFEST"; then
         ALREADY=$((ALREADY + 1)); continue
