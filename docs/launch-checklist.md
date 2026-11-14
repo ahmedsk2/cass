@@ -94,6 +94,10 @@ answer a plan author happened to choose.
       the form is protected only by the honeypot and the throttle.
       **Pending (owner, 2026-11-06):** the owner creates the widget and pastes
       both keys into Coolify; no widget existed on the account at 07:40 UTC.
+      **Keys set (2026-11-14):** both at 18:09 UTC, present in the container after
+      the 18:17 UTC deploy of `4a2ca15` (HANDOVER B1). Render check pending the
+      section 4 walk-through: no conference is open (the demo conference is in
+      reviewing).
 - [x] **Two-factor authentication on the platform admin account.** The admin
       panel requires `AppAuthentication::make()->recoverable()` (the others
       offer it): enrol on the page the first sign-in opens, **store the recovery
@@ -190,6 +194,10 @@ probes through Traefik; no other line was re-run with it.
 On 2026-11-14 the deploy of `7ab187a` (14:58 UTC, after a hand-run `cass-backup` because the MySQL
 digest changed) re-ran the same two lines, 36 applied with nothing pending and six rows OK, beside
 its eight probes; the public conference page then answered in 33 ms over five samples.
+
+On 2026-11-14 at 18:17 UTC the deploy of `4a2ca15` (no hand backup: the MySQL digest did not
+change) re-ran the same two lines, nothing pending and `cass:health` OK, beside its eight probes;
+page timings after it: not recorded.
 
 - [x] `curl -sI https://cass.towardpcc.com/up` → `200`.
 - [ ] `curl -sI https://cass.towardpcc.com/ | grep -i content-security-policy`
