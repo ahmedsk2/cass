@@ -167,7 +167,7 @@ answer a plan author happened to choose.
       stays open, key-only.** Ports 80 and 443 were already Cloudflare-only: the
       security list admits them from Cloudflare's 15 IPv4 ranges alone
       (HANDOVER B3).
-- [ ] **Confirm `/srv/backups/cass` is on a filesystem with room** for fourteen
+- [x] **Confirm `/srv/backups/cass` is on a filesystem with room** for fourteen
       compressed dumps **plus one uncompressed one** (the script dumps to disk
       first so a truncated `mysqldump` cannot hide inside a pipe) and one
       encrypted copy of the largest backup, and that the off-host copy (runbook
@@ -176,6 +176,11 @@ answer a plan author happened to choose.
       **Room confirmed, sync not (2026-11-06):** `/srv/backups/cass` is on `/`,
       with 123 GB free. Whether a NAS sync exists is not known to the engineer;
       B8's encrypted off-host copy replaces it, in #71 and not yet installed.
+      **Both confirmed (2026-11-14):** 117 GB free on `/` before the off-host
+      copy was installed that evening; its first run sent and verified the past
+      week's eight dumps (`db/`) and the weekly archive (`storage/`) (HANDOVER
+      B8 and Backups row). The 21 backups already older than 7 days at that
+      run stay on the host only.
 
 ## 3. Production readiness, on the deployed site
 
@@ -245,6 +250,9 @@ page timings after it: not recorded.
 - [ ] Restore the off-host copy on the PC and compare it with production
       (runbook **Restore drill from the off-host copy**); its date and the
       next one go into `docs/HANDOVER.md`.
+      **Open (2026-11-14):** the copy is installed and its first run sent nine
+      backups (HANDOVER B8). The first drill is not before 2026-11-15; the
+      bucket's retention rule `keep-30-days` stays unlocked until it is good.
 - [x] `APP=$(cass_container app)`,
       `DB=$(cass_container mysql)`,
       then `docker stats --no-stream "$APP" "$DB"` → the app container's steady

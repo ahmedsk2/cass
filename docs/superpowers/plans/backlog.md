@@ -114,6 +114,9 @@ Items raised in code reviews during Plan 1 that were deliberately deferred. Each
 
 ## Backups (deferred by Plan 10)
 
+- **The first restore drill from the off-host copy, then the retention lock.** The copy was installed on 2026-11-14 (`docs/HANDOVER.md`, B8, and the Backups row, which names the reference object). The first drill is not before 2026-11-15 (runbook "Restore drill from the off-host copy"); after a good one, `keep-30-days` is locked (decision 0016, default 1). Until then the rule can still be removed.
+- **The Kuma monitor `cass offsite copy` was set up by the owner and not checked by a session.** Push, 24 hours, 1 retry, 60 minutes, as runbook "Heartbeats" asks. The alert test of 2026-11-14 shows that it alerts (two down pushes took it down and the owner saw the notification), not that its interval and retry are those; one look at its settings closes this.
+- **Twenty-one backups older than 7 days on 2026-11-14 stay on the host only.** The first off-host run named and left ten dumps (2026-10-31 to 11-07) and eleven archives (2026-09-12 to 11-05), as designed: only a backup younger than 7 days is sent (decision 0016). Each lives on the host alone until its own rotation, 14 days for a dump and 56 for an archive; nothing to do.
 - **Containers can use the instance principal** until the `DOCKER-USER` fence of B3's second item is in (`docs/HANDOVER.md`, B3; decision 0016).
 - **A hash-locked requirements list for the OCI CLI.** Today it installs from wheels only, its versions kept in `/opt/oci-cli/requirements.lock`; hashes need `pip-compile --generate-hashes` run for the host's platform and Python.
 - **Restoring production onto a new host from the off-host copies** is not written down. The drill covers the database half; the storage archive needs its volume found and filled, as `docker/storage-backup.sh` finds it.
