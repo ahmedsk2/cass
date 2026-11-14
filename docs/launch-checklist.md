@@ -171,7 +171,7 @@ answer a plan author happened to choose.
       tarball.
       **Room confirmed, sync not (2026-11-06):** `/srv/backups/cass` is on `/`,
       with 123 GB free. Whether a NAS sync exists is not known to the engineer;
-      B8's encrypted off-host copy replaces it, in #NN and not yet installed.
+      B8's encrypted off-host copy replaces it, in #71 and not yet installed.
 
 ## 3. Production readiness, on the deployed site
 
