@@ -2,25 +2,37 @@
 # Tests for tools/backup/cass-backup-offsite.sh, the off-host copy that runs as root on the
 # production host every night. Pinned here: which files it sends and under which names; that a
 # file goes only when it is a whole gzip, encrypted with age, uploaded in one part and found
-# again in a listing with its size and MD5; that nothing in plain text is written outside the
-# backup directory; that the heartbeat is pinged only when everything is off-host and the
-# newest dump is fresh, and never with the push URL on a command line; and each failure's exit
-# code, with the one line every run ends with.
+# again in a listing with its size and MD5; that the heartbeat is pinged only when everything
+# is off-host and the newest dump is fresh, and never with the push URL on a command line; each
+# failure's exit code, a signal's included, with the one line every run ends with; and, as far
+# as a test can see it, that no backup leaves the backup directory in plain text.
 #
 # Runs with no network, no docker and no OCI account. Fakes for oci, age, curl and flock are
 # written into a temporary bin directory: age, curl and flock go first on PATH, and the CLI is
 # reached by its path, through CASS_OCI_BIN, as on the host. The oci fake holds the host's
 # rights in the bucket and nothing more (create objects in one part, never over an existing
 # name, and list them) and answers as the real CLI does, so a script that asks for more fails
-# here. Each fake answers from the current scenario's directory ($FAKE) and appends every call
-# it receives to $FAKE/calls. The scenario directory also stands in for /srv/backups/cass
-# (dest/), root's home, the temporary folder and the bucket.
+# here. Each fake answers from the current scenario's directory ($FAKE) and appends a line for
+# every call it receives to $FAKE/calls, refused calls included. The scenario directory also
+# stands in for /srv/backups/cass (dest/), root's home, the temporary folder and the bucket.
 #
-# After every run six checks hold whatever the scenario: one summary line, the last; no plain
-# text outside dest/; nothing asked of OCI that the host may not do; at most one ping, only on
-# exit 0 or 6, the push URL never on curl's command line or in the output; nothing left in
-# .offsite-work/; and every object the manifest names is in the bucket, an age file with the
-# SHA-256 its name carries, with no backup in plain text among the objects.
+# Plain text outside the backup directory is looked for three ways. Before any run, the
+# script's code may name no temporary folder and may not unpack a backup: it needs neither.
+# During a run, home/, tmp/ and cwd/ are read-only where a 0555 directory refuses writes (CI's
+# case; not root's, nor Git Bash's). After it, every file under the scenario but dest/ whose
+# status changed during the run, every new entry of /tmp, /var/tmp and /dev/shm, and every
+# file directly in them written again, is compared with the backups byte for byte and searched
+# for the scenario's marker, which sits in every backup as it is (the fixtures are gzip files
+# of stored, uncompressed deflate blocks), so a wrapped, offset or unpacked copy shows too. A
+# copy removed before the run ends, one inside a folder that was already in those three, and
+# one anywhere else are beyond what this check sees; the static checks stand for them.
+#
+# After every run seven checks hold whatever the scenario: one summary line, the last; no plain
+# text outside dest/, as above; nothing asked of OCI that the host may not do; at most one
+# ping, only on exit 0 or 6, the push URL never on curl's command line or in the output;
+# nothing left in .offsite-work/; every object the manifest names in the bucket, an age file
+# with the SHA-256 its name carries, and no backup in plain text among the objects; and no call
+# that a fake refused, as the real tool would refuse it.
 #
 # CASS_OFFSITE_SCRIPT tests another copy of the script instead (a mutant, say).
 #
@@ -30,8 +42,18 @@ set -eu
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 SCRIPT="${CASS_OFFSITE_SCRIPT:-$HERE/cass-backup-offsite.sh}"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/cass-offsite-test.XXXXXX")"
+# Processes a scenario leaves running for a while (S24's lock holder, a signalled run).
+BACKGROUND=''
 # A run makes home/, tmp/ and cwd/ read-only; the cleanup gives the rights back first.
-trap 'chmod -R u+w "$ROOT" 2> /dev/null || true; rm -rf "$ROOT"' EXIT INT TERM
+cleanup() {
+    local p
+    for p in $BACKGROUND; do kill "$p" 2> /dev/null || true; done
+    chmod -R u+w "$ROOT" 2> /dev/null || true
+    rm -rf "$ROOT"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 FAILURES=0
 PASSES=0
@@ -72,12 +94,13 @@ cat > "$ROOT/bin/oci" <<'SHIM'
 # `os object list`. Anything else is refused as OCI refuses it. The objects are files under
 # $FAKE/bucket. Knobs, files in $FAKE: put-fails, put-truncates, put-hangs, list-empty,
 # list-md5-differs; expected-region, expected-ns and expected-bucket hold the destination.
+# Every put first writes its process id to $FAKE/put-started.
 set -eu
 log() { printf '%s\n' "$*" >> "$FAKE/calls"; }
 # The base64 MD5 of stdin, as OCI reports it.
 md5_b64() { printf '%b' "$(md5sum | cut -c 1-32 | sed 's/../\\x&/g')" | base64; }
 # usage <message>: refused by the CLI itself, before any request, as click refuses: exit 2.
-usage() { printf 'fake oci: %s\n' "$1" >&2; exit 2; }
+usage() { log "oci REFUSED $1"; printf 'fake oci: %s\n' "$1" >&2; exit 2; }
 # service_error <code> <message> <status>: what the CLI prints when the service says no.
 service_error() {
     printf 'ServiceError:\n{"code": "%s", "message": "%s", "status": %s}\n' "$1" "$2" "$3" >&2
@@ -129,7 +152,16 @@ want=$(cat "$FAKE/expected-bucket")
 [ "$bucket" = "$want" ] || usage "--bucket-name is [$bucket], expected [$want]"
 
 if [ "$verb" = put ]; then
-    if [ -f "$FAKE/put-hangs" ]; then sleep 10; fi
+    printf '%s\n' "$$" > "$FAKE/put-started"
+    if [ -f "$FAKE/put-hangs" ]; then
+        # Dies on a TERM, as the real CLI does, and takes its sleep with it.
+        sleeper=''
+        trap 'if [ -n "$sleeper" ]; then kill "$sleeper" 2> /dev/null; fi; exit 143' TERM
+        sleep 10 &
+        sleeper=$!
+        wait "$sleeper" || true
+        trap - TERM
+    fi
     [ "$multipart" = no ] || usage 'multipart needs OBJECT_READ and OBJECT_OVERWRITE, which the host does not have'
     [ "$no_overwrite" = yes ] || usage 'without --no-overwrite the CLI would ask before overwriting'
     [ "$force" = no ] || usage '--force overwrites, and the host may not overwrite'
@@ -137,7 +169,7 @@ if [ "$verb" = put ]; then
     if [ -z "$file" ] || [ ! -f "$file" ]; then usage "Error: Invalid value for '--file': '$file' does not exist."; fi
     # The service refuses a body whose MD5 is not the one the request announced.
     if [ "$md5" != "$(md5_b64 < "$file")" ]; then
-        log "oci put $name refused: UnmatchedContentMD5"
+        log "oci REFUSED put $name: UnmatchedContentMD5"
         service_error UnmatchedContentMD5 'The computed MD5 of the request body does not match the Content-MD5 header.' 400
     fi
     if [ -f "$FAKE/put-fails" ]; then
@@ -190,7 +222,7 @@ cat > "$ROOT/bin/age" <<'SHIM'
 # each holding a file's base name; age-plain.
 set -eu
 log() { printf '%s\n' "$*" >> "$FAKE/calls"; }
-refuse() { printf 'fake age: %s is not how the host calls age\n' "$1" >&2; exit 2; }
+refuse() { log "age REFUSED $1"; printf 'fake age: %s is not how the host calls age\n' "$1" >&2; exit 2; }
 recipients='' out='' in=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -268,11 +300,14 @@ for f in age curl flock; do
     fi
 done
 
-# The script calls python3. Where that name is missing or is not Python 3 (on Windows it is a
-# Microsoft Store stub), point it at `python`, without the \r that Windows' python ends every
-# printed line with: the host's python3 never writes one.
+# Python 3 for the harness's fixtures ($PY) and python3 for the script. Where python3 is
+# missing or is not Python 3 (on Windows it is a Microsoft Store stub), `python` stands in for
+# both; for the script through a shim that drops the \r Windows' python ends every printed line
+# with, which the host's python3 never writes.
+PY=python3
 if ! python3 -c 'import sys; sys.exit(sys.version_info[0] != 3)' > /dev/null 2>&1; then
     if python -c 'import sys; sys.exit(sys.version_info[0] != 3)' > /dev/null 2>&1; then
+        PY=python
         cat > "$ROOT/bin/python3" <<'SHIM'
 #!/usr/bin/env bash
 set -o pipefail
@@ -285,16 +320,23 @@ SHIM
     fi
 fi
 
-# A script that loops forever fails its scenario instead of hanging the run.
+# A script that loops forever fails its scenario instead of hanging the run. A signalled run
+# keeps the signal to the script alone (--foreground) and is killed if it ignores it.
 WATCHDOG=''
-if command -v timeout > /dev/null 2>&1; then WATCHDOG='timeout 30'; fi
+GUARD=''
+if command -v timeout > /dev/null 2>&1; then
+    WATCHDOG='timeout 30'
+    GUARD='timeout --foreground -k 5 30'
+fi
 
 # ---------------------------------------------------------------------------
 # Scenarios and assertions.
 # ---------------------------------------------------------------------------
 
 H='[cass-backup-offsite]'
+CR=$'\r'
 PUBLIC_KEY="age1$(printf 'q%.0s' $(seq 58))"
+TMP_DIRS='/tmp /var/tmp /dev/shm'
 N=0
 S=''
 MARKER=''
@@ -304,14 +346,26 @@ CALLS_AT=0
 
 sha() { sha256sum | cut -d ' ' -f 1; }
 md5_b64() { printf '%b' "$(md5sum | cut -c 1-32 | sed 's/../\\x&/g')" | base64; }
-# hours_ago <n>: a time for touch -d, n hours before now.
+# hours_ago <n>: a time for touch -d, n hours before now (after it, for a negative n).
 hours_ago() { printf '@%s' "$(( $(date +%s) - $1 * 3600 ))"; }
+# stored_gzip: stdin as a gzip file of stored (uncompressed) deflate blocks, so that what it
+# holds is in it, and in any copy of it, byte for byte.
+stored_gzip() { "$PY" -c 'import gzip, sys; sys.stdout.buffer.write(gzip.compress(sys.stdin.buffer.read(), 0, mtime=0))'; }
 
-# The entries directly in /tmp and /var/tmp, one path per line.
+# The entries directly in /tmp, /var/tmp and /dev/shm, one path per line.
 tmp_names() {
     local d
-    for d in /tmp /var/tmp; do
+    for d in $TMP_DIRS; do
         if [ -d "$d" ]; then find "$d" -mindepth 1 -maxdepth 1 -printf "$d/%f\n" 2> /dev/null || true; fi
+    done
+}
+# The files directly in them whose status changed after .start: a name that was there before,
+# written again. A folder that was there before is not walked; on a busy machine such folders
+# hold tens of thousands of files that other programs keep changing.
+tmp_changed_files() {
+    local d
+    for d in $TMP_DIRS; do
+        if [ -d "$d" ]; then find "$d" -mindepth 1 -maxdepth 1 -type f -cnewer "$S/.start" -print 2> /dev/null || true; fi
     done
 }
 
@@ -320,7 +374,7 @@ tmp_names() {
 make_backup() {
     SEQ=$((SEQ + 1))
     printf -- "-- %s, test fixture %s (%s)\nINSERT INTO organizations VALUES (1, '%s');\n-- Dump completed on 2026-11-06  3:17:42 %s\n" \
-        "$MARKER" "$1" "$SEQ" "$MARKER" "$MARKER" | gzip -n > "$S/dest/$1"
+        "$MARKER" "$1" "$SEQ" "$MARKER" "$MARKER" | stored_gzip > "$S/dest/$1"
     touch -d "$(hours_ago "$2")" "$S/dest/$1"
     sha < "$S/dest/$1" >> "$S/fixture-sums"
 }
@@ -348,7 +402,7 @@ scenario() {
     # Decoys, a day old, none of which may be sent: a dump still being written, a stray file,
     # a directory and a link named like dumps.
     printf -- "-- %s, still being written\nINSERT INTO organizations VALUES (1, '%s');\n" "$MARKER" "$MARKER" |
-        gzip -n > "$S/dest/cass-2026-11-06-0400.sql.partial"
+        stored_gzip > "$S/dest/cass-2026-11-06-0400.sql.partial"
     sha < "$S/dest/cass-2026-11-06-0400.sql.partial" >> "$S/fixture-sums"
     printf 'notes on the backups, %s\n' "$MARKER" > "$S/dest/notes.txt"
     sha < "$S/dest/notes.txt" >> "$S/fixture-sums"
@@ -362,13 +416,16 @@ scenario() {
     touch "$S/.start"
 }
 
+lock_down() { if [ "$READONLY" = yes ]; then chmod 555 "$S/home" "$S/tmp" "$S/cwd"; fi; }
+open_up()   { if [ "$READONLY" = yes ]; then chmod 755 "$S/home" "$S/tmp" "$S/cwd"; fi; }
+
 # run_offsite [VAR=VALUE ...]: runs the script against the fakes, from cwd/, with HOME and
-# TMPDIR in the scenario. Sets RC; the output (stdout and stderr) is $S/out. Then the six
+# TMPDIR in the scenario. Sets RC; the output (stdout and stderr) is $S/out. Then the seven
 # checks every run gets.
 run_offsite() {
     RC=0
     CALLS_AT=$(wc -l < "$S/calls")
-    if [ "$READONLY" = yes ]; then chmod 555 "$S/home" "$S/tmp" "$S/cwd"; fi
+    lock_down
     (
         cd "$S/cwd"
         exec env PATH="$ROOT/bin:$PATH" HOME="$S/home" TMPDIR="$S/tmp" FAKE="$S" \
@@ -379,7 +436,41 @@ run_offsite() {
             "$@" \
             $WATCHDOG bash "$SCRIPT" "$S/dest"
     ) > "$S/out" 2>&1 || RC=$?
-    if [ "$READONLY" = yes ]; then chmod 755 "$S/home" "$S/tmp" "$S/cwd"; fi
+    open_up
+    after_run
+}
+
+# run_offsite_signalled <whom> [VAR=VALUE ...]: as run_offsite, but once the CLI has begun an
+# upload a TERM goes to the script alone (whom=script) or to the script and the CLI together
+# (whom=both, as stopping the whole job does).
+run_offsite_signalled() {
+    local whom=$1 pid cli i
+    shift
+    RC=0
+    CALLS_AT=$(wc -l < "$S/calls")
+    lock_down
+    (
+        cd "$S/cwd"
+        exec env PATH="$ROOT/bin:$PATH" HOME="$S/home" TMPDIR="$S/tmp" FAKE="$S" \
+            CASS_OFFSITE_CONFIG="$S/conf" \
+            CASS_OFFSITE_RECIPIENTS="$S/recipient" \
+            CASS_OFFSITE_PING_FILE="$S/ping" \
+            CASS_OCI_BIN="$ROOT/bin/oci" \
+            "$@" \
+            $GUARD bash "$SCRIPT" "$S/dest"
+    ) > "$S/out" 2>&1 &
+    pid=$!
+    BACKGROUND=$pid
+    for i in $(seq 150); do
+        if [ -s "$S/put-started" ]; then break; fi
+        sleep 0.1
+    done
+    cli=$(cat "$S/put-started" 2> /dev/null || true)
+    kill -TERM "$pid" 2> /dev/null || true
+    if [ "$whom" = both ] && [ -n "$cli" ]; then kill -TERM "$cli" 2> /dev/null || true; fi
+    wait "$pid" || RC=$?
+    BACKGROUND=''
+    open_up
     after_run
 }
 
@@ -427,22 +518,26 @@ object_count() { objects | grep -c . || true; }
 
 # The files a run may have written outside dest/: every file under $S whose status changed
 # after .start (a copy made with cp -p, tar or rsync -t keeps the backup's mtime, never its
-# ctime), and every entry of /tmp and /var/tmp whose name was not there before, or the files
-# under such a directory. /tmp is never walked beyond those new names, and what cannot be read
-# is passed over.
+# ctime); every entry of /tmp, /var/tmp and /dev/shm that is new, a file or the files under a
+# new directory; and every file directly in them whose status changed. Those folders are never
+# walked beyond such entries, the harness's own directory among them is left to the first
+# part, and what cannot be read is passed over.
 written_outside() {
+    local e
     find "$S" -path "$S/dest" -prune -o -type f -cnewer "$S/.start" -print 2> /dev/null || true
     tmp_names | awk 'NR == FNR { seen[$0] = 1; next } !($0 in seen)' "$S/tmp-before" - |
         while IFS= read -r e; do
+            [ "${e##*/}" != "${ROOT##*/}" ] || continue
             if [ -d "$e" ]; then find "$e" -type f 2> /dev/null || true
             elif [ -f "$e" ]; then printf '%s\n' "$e"; fi
         done
+    tmp_changed_files
 }
 
 # Each of those files that is a backup byte for byte, or holds the marker as it is or gunzipped.
 plain_text_outside() {
     local c sum
-    written_outside | while IFS= read -r c; do
+    written_outside | LC_ALL=C sort -u | while IFS= read -r c; do
         [ -r "$c" ] || continue
         sum=$(sha 2> /dev/null < "$c" || true)
         if [ -n "$sum" ] && grep -qxF -- "$sum" "$S/fixture-sums"; then echo "$c (a backup, byte for byte)"
@@ -469,7 +564,7 @@ bucket_problems() {
     done
 }
 
-# The six checks every run gets, whatever its scenario.
+# The seven checks every run gets, whatever its scenario.
 after_run() {
     local summary_re='^\[cass-backup-offsite\] (OK|FAILED)' n last found pings
     n=$(grep -cE "$summary_re" "$S/out" || true)
@@ -504,6 +599,11 @@ $(printf '%s\n' "$found" | sed 's/^/          | /')"; fi
     if [ -z "$found" ]; then ok "after the run: the manifest's objects in the bucket, each an age file with the SHA-256 its name carries; no backup among them"
     else bad "after the run: the bucket against the manifest
 $(printf '%s\n' "$found" | sed 's/^/          | /')"; fi
+
+    found=$(grep -F 'REFUSED' "$S/calls" || true)
+    if [ -z "$found" ]; then ok 'after the run: no call refused as the real tool would refuse it'
+    else bad "after the run: no call refused as the real tool would refuse it, but
+$(printf '%s\n' "$found" | sed 's/^/          | /')"; fi
 }
 
 # ---------------------------------------------------------------------------
@@ -520,10 +620,27 @@ if [ "$FIRST_LINE" = '#!/usr/bin/env bash' ]; then ok 'its first line is #!/usr/
 else bad "its first line is #!/usr/bin/env bash, not [$FIRST_LINE]"; fi
 # -U: grep under MSYS drops a CR before it matches unless told the file is binary; GNU grep
 # elsewhere ignores the option.
-CR=$'\r'
 if [ ! -f "$SCRIPT" ]; then bad "it holds no CR: there is no file at $SCRIPT"
 elif grep -qU -- "$CR" "$SCRIPT"; then bad 'it holds no CR, which cron would run as part of every line'
 else ok 'it holds no CR'; fi
+# Its code, comment lines aside, with line numbers. It needs no temporary folder (age writes
+# into the backup directory) and never unpacks a backup (gzip -t reads one through).
+TEMP_RE='/tmp|/var/tmp|/dev/shm|mktemp|TMPDIR|tempfile'
+UNPACK_RE='(^|[^[:alnum:]_-])(gunzip|zcat|zgrep|zless|zmore)([^[:alnum:]_-]|$)'
+UNPACK_RE="$UNPACK_RE"'|(^|[^[:alnum:]_-])gzip[[:space:]]+(-[[:alnum:]]+[[:space:]]+)*(-[[:alnum:]]*d|--decompress|--uncompress)'
+UNPACK_RE="$UNPACK_RE"'|(^|[^[:alnum:]_-])tar[[:space:]][^|;&]*([[:space:]]-[[:alnum:]]*x|[[:space:]][[:alnum:]]*x[[:alnum:]]*f|--extract|--get)'
+UNPACK_RE="$UNPACK_RE"'|gzip\.(open|decompress|GzipFile)|zlib\.decompress|import[[:space:]][^;]*(gzip|zlib)'
+CODE="$(grep -n -v -E '^[[:space:]]*#' "$SCRIPT" 2> /dev/null || true)"
+FOUND="$(printf '%s\n' "$CODE" | grep -E -- "$TEMP_RE" || true)"
+if [ ! -f "$SCRIPT" ]; then bad "its code names no temporary folder: there is no file at $SCRIPT"
+elif [ -n "$FOUND" ]; then bad "its code names no temporary folder (/tmp, /var/tmp, /dev/shm, mktemp, TMPDIR), but
+$(printf '%s\n' "$FOUND" | sed 's/^/          | /')"
+else ok 'its code names no temporary folder (/tmp, /var/tmp, /dev/shm, mktemp, TMPDIR)'; fi
+FOUND="$(printf '%s\n' "$CODE" | grep -E -- "$UNPACK_RE" || true)"
+if [ ! -f "$SCRIPT" ]; then bad "its code never unpacks a backup: there is no file at $SCRIPT"
+elif [ -n "$FOUND" ]; then bad "its code never unpacks a backup (gzip -d, gunzip, zcat, tar -x), but
+$(printf '%s\n' "$FOUND" | sed 's/^/          | /')"
+else ok 'its code never unpacks a backup (gzip -d, gunzip, zcat, tar -x)'; fi
 
 scenario 'S1 first run: the three backups go, the decoys stay'
 run_offsite
@@ -771,11 +888,13 @@ if [ -n "$REAL_FLOCK" ]; then
     mv "$ROOT/bin/flock" "$ROOT/flock.fake"
     "$REAL_FLOCK" "$S/dest/.offsite.lock" sleep 20 &
     HOLDER=$!
+    BACKGROUND=$HOLDER
     sleep 1
     run_offsite
     if command -v pkill > /dev/null 2>&1; then pkill -P "$HOLDER" 2> /dev/null || true; fi
     kill "$HOLDER" 2> /dev/null || true
     wait "$HOLDER" 2> /dev/null || true
+    BACKGROUND=''
     mv "$ROOT/flock.fake" "$ROOT/bin/flock"
     eq 'exit status' 1 "$RC"
     starts 'the last line' "$H FAILED (exit 1)"
@@ -803,7 +922,11 @@ eq 'three more manifest rows, for the new destination' 3 \
     "$(rows | awk -F '\t' '$2 == "xx-test-1/testns/test-bucket-2"' | grep -c . || true)"
 
 scenario 'S26 an object already under that name, with other bytes: exit 4, left as it was'
-# The name the fake age's bytes for that dump give, taken by other bytes.
+# The name the fake age's bytes for that dump give, taken by other bytes. The fake answers as
+# the CLI documents (--no-overwrite: "already exists", exit 0), so the listing finds the other
+# bytes: exit 4. The service may instead refuse the PUT for want of OBJECT_OVERWRITE (exit 3);
+# either way no row and no ping. Real age writes new bytes every time, so only a SHA-256
+# collision could bring this about.
 mkdir -p "$S/scratch"
 FAKE="$S/scratch" "$ROOT/bin/age" --encrypt --recipients-file "$S/recipient" \
     --output "$S/scratch/expected.age" "$S/dest/cass-2026-11-05-0317.sql.gz"
@@ -817,6 +940,123 @@ starts 'the last line' "$H FAILED (exit 4)"
 eq 'that object unchanged' "$BEFORE" "$(sha < "$S/bucket/$TAKEN")"
 eq 'no manifest row for it' 0 "$(rows | awk -F '\t' -v o="$TAKEN" '$6 == o' | grep -c . || true)"
 eq 'no ping' 0 "$(count 'curl ')"
+
+scenario 'S27 a recipients file with comments only: exit 1 before any age call'
+printf '# the public key of the pair goes on the next line\n\n# (none yet)\n' > "$S/recipient"
+run_offsite
+eq 'exit status' 1 "$RC"
+starts 'the last line' "$H FAILED (exit 1)"
+has 'says so' 'holds no age1 public key'
+eq 'no age call' 0 "$(count 'age -R')"
+
+scenario 'S28 a recipients line that is not an age1 public key: exit 1, the line never printed'
+BAD_LINE="age1$(printf 'Q%.0s' $(seq 58))"
+printf '# the public key, upper case by mistake\n%s\n' "$BAD_LINE" > "$S/recipient"
+run_offsite
+eq 'exit status' 1 "$RC"
+starts 'the last line' "$H FAILED (exit 1)"
+has 'says so' 'not an age1 public key'
+lacks 'never prints the line' "$BAD_LINE"
+eq 'no age call' 0 "$(count 'age -R')"
+
+scenario "S29 the configuration's other refusals: an unknown key, a value with a slash, no namespace=, no region="
+printf '%s\n' namespace=testns bucket=test-bucket region=xx-test-1 profile=DEFAULT > "$S/conf"
+run_offsite
+eq 'an unknown key: exit status' 1 "$RC"
+has 'an unknown key: named' 'unknown key profile'
+printf '%s\n' namespace=testns bucket=../other-bucket region=xx-test-1 > "$S/conf"
+run_offsite
+eq 'a value with a slash: exit status' 1 "$RC"
+has 'a value with a slash: says what a value may hold' 'letters, digits'
+printf '%s\n' bucket=test-bucket region=xx-test-1 > "$S/conf"
+run_offsite
+eq 'no namespace=: exit status' 1 "$RC"
+has 'no namespace=: named' 'namespace='
+printf '%s\n' namespace=testns bucket=test-bucket > "$S/conf"
+run_offsite
+eq 'no region=: exit status' 1 "$RC"
+has 'no region=: named' 'region='
+eq 'no age call in any of them' 0 "$(count 'age -R')"
+
+scenario 'S30 the configuration and the recipients file with CRLF line ends: read as if LF'
+awk '{ printf "%s\r\n", $0 }' "$S/conf" > "$S/conf.new"
+mv "$S/conf.new" "$S/conf"
+awk '{ printf "%s\r\n", $0 }' "$S/recipient" > "$S/recipient.new"
+mv "$S/recipient.new" "$S/recipient"
+run_offsite
+eq 'exit status' 0 "$RC"
+starts 'the last line' "$H OK: 3 uploaded, 0 already off-host"
+eq 'three puts to the configured destination' 3 "$(count 'oci put ')"
+eq 'each row for that destination' 3 "$(rows | awk -F '\t' '$2 == "xx-test-1/testns/test-bucket"' | grep -c . || true)"
+
+scenario 'S31 a TERM to the script while the CLI uploads: exit 143 once the CLI returns, one last line saying so'
+: > "$S/put-hangs"
+run_offsite_signalled script CASS_OFFSITE_CLI_TIMEOUT=3
+eq 'exit status' 143 "$RC"
+starts 'the last line' "$H FAILED (exit 143)"
+has 'names the signal and the step' 'stopped by SIGTERM while copying cass-2026-11-05-0317.sql.gz'
+eq 'no manifest row' 0 "$(row_count)"
+eq 'no ping' 0 "$(count 'curl ')"
+
+scenario 'S32 a TERM to the script and the CLI together, as stopping the job sends: exit 143, one last line saying so'
+: > "$S/put-hangs"
+run_offsite_signalled both
+eq 'exit status' 143 "$RC"
+starts 'the last line' "$H FAILED (exit 143)"
+has 'names the signal and the step' 'stopped by SIGTERM while copying cass-2026-11-05-0317.sql.gz'
+eq 'no manifest row' 0 "$(row_count)"
+eq 'no ping' 0 "$(count 'curl ')"
+
+scenario 'S33 a torn last manifest row (a full disk, a power cut): the next row still stands on its own line'
+run_offsite
+# The last row cut short, its newline gone, as a write that died half way leaves it.
+TORN="$S/dest/offsite-manifest.tsv"
+head -c "$(( $(stat -c %s "$TORN") - 5 ))" "$TORN" > "$S/dest/.torn"
+mv "$S/dest/.torn" "$TORN"
+make_backup cass-2026-11-07-0317.sql.gz 0
+: > "$S/calls"
+run_offsite
+eq 'exit status' 0 "$RC"
+starts 'the last line' "$H OK: 1 uploaded, 3 already off-host"
+eq "the new dump's row, on a line of its own with eight fields" 1 \
+    "$(rows | awk -F '\t' 'NF == 8 && $3 == "cass-2026-11-07-0317.sql.gz"' | grep -c . || true)"
+run_offsite
+starts 'a third run finds it off-host' "$H OK: 0 uploaded, 4 already off-host"
+
+scenario 'S34 a manifest that cannot be appended to: exit 1 before any upload'
+mkdir "$S/dest/offsite-manifest.tsv"
+run_offsite
+eq 'exit status' 1 "$RC"
+starts 'the last line' "$H FAILED (exit 1)"
+has 'says so' 'cannot append to'
+eq 'no put' 0 "$(count 'oci put ')"
+eq 'no object' 0 "$(object_count)"
+
+scenario 'S35 a backup rotated away while age reads it: gone, not a failure'
+echo cass-2026-11-05-0317.sql.gz > "$S/age-removes"
+run_offsite
+eq 'exit status' 0 "$RC"
+starts 'the last line' "$H OK: 2 uploaded, 0 already off-host"
+has 'says it is gone' 'cass-2026-11-05-0317.sql.gz: gone (rotated away?)'
+eq 'two objects' 2 "$(object_count)"
+eq 'one ping' 1 "$(count 'curl -K ')"
+
+scenario "S36 the newest dump dated in the future: exit 5, the host's clock named"
+touch -d "$(hours_ago -3)" "$S/dest/cass-2026-11-06-0317.sql.gz"
+run_offsite
+eq 'exit status' 5 "$RC"
+starts 'the last line' "$H FAILED (exit 5)"
+has 'says so' 'in the future'
+eq 'three objects' 3 "$(object_count)"
+eq 'no ping' 0 "$(count 'curl ')"
+
+scenario 'S37 a lock file that cannot be opened: exit 1, named'
+mkdir "$S/dest/.offsite.lock"
+run_offsite
+eq 'exit status' 1 "$RC"
+starts 'the last line' "$H FAILED (exit 1)"
+has 'says so' "cannot open the lock file $S/dest/.offsite.lock"
+eq 'no age call' 0 "$(count 'age -R')"
 
 # ---------------------------------------------------------------------------
 echo

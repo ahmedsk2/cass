@@ -36,16 +36,19 @@
 # Exits with the first failure's code; one file's failure does not stop the others:
 #   0  every finished backup is off-host and verified, the newest dump is under the limit,
 #      the ping went out
-#   1  the directory, a tool, the configuration or the recipients file is missing or wrong,
-#      another run holds the lock, or something failed unexpectedly
+#   1  the directory, a tool, the configuration, the recipients file, the lock or the manifest
+#      is missing or wrong, another run holds the lock, or something failed unexpectedly
 #   2  a file is not a complete gzip, age failed on it, or what age wrote is not an age file;
 #      that file was not sent
 #   3  an upload failed or timed out
 #   4  an object is missing after its upload, or its size or MD5 differs
-#   5  there is no dump, or the newest is older than CASS_OFFSITE_MAX_AGE_HOURS
+#   5  there is no dump, or the newest is older than CASS_OFFSITE_MAX_AGE_HOURS or dated in
+#      the future
 #   6  everything was copied, but the ping failed or its file is missing
+#   129, 130, 143  stopped by SIGHUP, SIGINT or SIGTERM, once the command in hand returned
 # Every run ends with one line, "[cass-backup-offsite] OK: ..." or
-# "[cass-backup-offsite] FAILED (exit N): ...".
+# "[cass-backup-offsite] FAILED (exit N): ...", a stop by a signal included. Only SIGKILL,
+# which nothing can catch, leaves none.
 #
 # cass-backup-offsite.test.sh beside it runs it against fakes for oci, age, curl and flock.
 set -euo pipefail
@@ -89,9 +92,24 @@ fail() { problem "$1" "$2"; finish; }
 on_exit() {
     local rc=$?
     if [ -n "$TMP" ]; then rm -f "$TMP"; fi
-    if [ -z "$DONE" ]; then DONE=yes RC=1 FIRST="stopped by an unexpected exit $rc while $STEP"; summary; exit 1; fi
+    if [ -z "$DONE" ]; then
+        DONE=yes RC=1
+        if [ "$rc" -eq 0 ]; then FIRST="stopped unexpectedly while $STEP"
+        else FIRST="stopped by an unexpected exit $rc while $STEP"; fi
+        summary
+        exit 1
+    fi
+}
+# on_signal <name> <exit code>: bash runs it once the command in hand returns, an upload
+# included, so the run stops there with its one last line and the signal's exit code.
+on_signal() {
+    if [ -z "$DONE" ]; then DONE=yes RC=$2 FIRST="stopped by SIG$1 while $STEP"; summary; fi
+    exit "$RC"
 }
 trap on_exit EXIT
+trap 'on_signal HUP 129' HUP
+trap 'on_signal INT 130' INT
+trap 'on_signal TERM 143' TERM
 
 # md5_b64 <file>: the base64 MD5 that OCI checks a single-part upload against.
 md5_b64() { python3 -c 'import base64, hashlib, sys
@@ -117,7 +135,7 @@ if ! [[ "$MAX_AGE_HOURS" =~ ^[1-9][0-9]*$ ]]; then fail 1 "CASS_OFFSITE_MAX_AGE_
 if ! [[ "$CLI_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then fail 1 "CASS_OFFSITE_CLI_TIMEOUT is not a whole number of seconds: $CLI_TIMEOUT"; fi
 
 # One run at a time: cron's, and a hand run after a migration release's cass-backup.
-exec 9>> "$LOCK"
+exec 9>> "$LOCK" || fail 1 "cannot open the lock file $LOCK"
 flock -n 9 || fail 1 "another run holds $LOCK"
 
 # Read line by line and never sourced: the file names a destination, it runs nothing.
@@ -143,7 +161,7 @@ if [ -z "$BUCKET" ]; then fail 1 "$CONFIG has no bucket= line"; fi
 if [ -z "$REGION" ]; then fail 1 "$CONFIG has no region= line"; fi
 
 if [ ! -f "$RECIPIENTS" ] || [ ! -r "$RECIPIENTS" ]; then fail 1 "no age recipients file at $RECIPIENTS (runbook: Installing the off-host copy)"; fi
-# A private key here would sit on the host beside the copies it opens. The line is never echoed.
+# A private key here would sit on the host beside the copies it opens. No line is ever echoed.
 if grep -qi 'AGE-SECRET-KEY-' "$RECIPIENTS"; then
     fail 1 "$RECIPIENTS holds an age private key: delete the file now, make a new key pair on the PC and put only its age1 public key here"
 fi
@@ -151,7 +169,7 @@ KEYS=0
 while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     case "$line" in ''|'#'*) continue ;; esac
-    if ! [[ "$line" =~ ^age1[0-9a-z]{58}$ ]]; then fail 1 "$RECIPIENTS: a line that is neither blank, a # comment nor an age1 public key"; fi
+    if ! [[ "$line" =~ ^age1[0-9a-z]{58}$ ]]; then fail 1 "$RECIPIENTS: a line that is not an age1 public key (blank and # lines aside)"; fi
     KEYS=$((KEYS + 1))
 done < "$RECIPIENTS"
 if [ "$KEYS" -eq 0 ]; then fail 1 "$RECIPIENTS holds no age1 public key"; fi
@@ -164,6 +182,11 @@ rm -f "$WORK"/*.age.partial
 if [ ! -e "$MANIFEST" ]; then
     printf '# %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' 'time (UTC)' destination file bytes mtime object 'object bytes' 'MD5 (base64)' > "$MANIFEST"
 fi
+# Found out before any upload: a copy uploaded and then left out of the manifest would be
+# uploaded again every night.
+if ! : >> "$MANIFEST"; then fail 1 "cannot append to $MANIFEST"; fi
+# A last row cut short (a full disk, a power cut) lacks its newline; the next row must not join it.
+if [ -n "$(tail -c 1 "$MANIFEST")" ]; then printf '\n' >> "$MANIFEST"; fi
 
 DESTINATION="$REGION/$NS/$BUCKET"
 OCI_ARGS=(--auth instance_principal --region "$REGION" --namespace "$NS" --bucket-name "$BUCKET")
@@ -174,7 +197,8 @@ NEWEST=$(grep -E '^cass-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}\.sql\.gz$' <<< "$LIS
 if [ -z "$NEWEST" ]; then problem 5 "no dump in $DEST"
 else
     HOURS=$(( ($(date +%s) - $(stat -c %Y "$DEST/$NEWEST")) / 3600 ))
-    if [ "$HOURS" -ge "$MAX_AGE_HOURS" ]; then problem 5 "the newest dump, $NEWEST, is $HOURS h old (limit $MAX_AGE_HOURS h)"; fi
+    if [ "$HOURS" -lt 0 ]; then problem 5 "the newest dump, $NEWEST, is dated $(( -HOURS )) h in the future: check the host's clock"
+    elif [ "$HOURS" -ge "$MAX_AGE_HOURS" ]; then problem 5 "the newest dump, $NEWEST, is $HOURS h old (limit $MAX_AGE_HOURS h)"; fi
 fi
 
 # An array, not a loop over stdin: a child reading stdin would swallow the rest of the list.
@@ -182,8 +206,9 @@ mapfile -t FILES <<< "$LIST"
 for f in "${FILES[@]}"; do
     [ -n "$f" ] || continue
     STEP="copying $f"
-    # cass-backup, which a release also runs before a migration, may rotate a file away at any hour.
-    if [ ! -f "$DEST/$f" ]; then say "$f: gone before it was sent (rotated away?)"; continue; fi
+    # cass-backup, which a release also runs before a migration, may rotate a file away at any
+    # hour; a file gone before or while it is read is no failure.
+    if [ ! -f "$DEST/$f" ]; then say "$f: gone (rotated away?)"; continue; fi
     # One substitution per assignment: in "a=$(x) b=$(y)" a failing x is masked by y.
     size=$(stat -c %s "$DEST/$f")
     mtime=$(stat -c %Y "$DEST/$f")
@@ -193,11 +218,16 @@ for f in "${FILES[@]}"; do
     fi
     # The dump's final name is written by a redirect, so a hand run beside cass-backup could
     # see it half written; gzip -t reads it through and writes nothing.
-    if ! gzip -t "$DEST/$f"; then problem 2 "$f: not a complete gzip file (still being written, or damaged) - not sent" 1; continue; fi
+    if ! gzip -t "$DEST/$f"; then
+        if [ ! -f "$DEST/$f" ]; then say "$f: gone (rotated away?)"; continue; fi
+        problem 2 "$f: not a complete gzip file (still being written, or damaged) - not sent" 1; continue
+    fi
     case "$f" in cass-storage-*) kind=storage ;; *) kind=db ;; esac
     TMP="$WORK/$f.age.partial"
     if ! "$AGE" --encrypt --recipients-file "$RECIPIENTS" --output "$TMP" "$DEST/$f" < /dev/null; then
-        rm -f "$TMP"; problem 2 "$f: age failed" 1; continue
+        rm -f "$TMP"
+        if [ ! -f "$DEST/$f" ]; then say "$f: gone (rotated away?)"; continue; fi
+        problem 2 "$f: age failed" 1; continue
     fi
     if [ "$(head -c 21 "$TMP")" != 'age-encryption.org/v1' ]; then
         rm -f "$TMP"; problem 2 "$f: what age wrote is not an age file - refusing to upload it" 1; continue
