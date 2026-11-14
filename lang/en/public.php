@@ -105,7 +105,7 @@ return [
         'access_heading' => 'Who can see it',
         'access_body' => 'Members of the organizing organization see submissions to their conferences. Reviewers see the abstracts they are asked to review; when blind review is enabled they do not see author names. Platform administrators can access all data for support and security.',
         'retention_heading' => 'Retention and deletion',
-        'retention_body' => 'Data is kept for the life of the conference record. Organizers may delete a conference, and authors may ask the organizer or us to delete a submission. Deleted data remains in our backups until they expire, at most 90 days later; copies kept away from our server are encrypted. Write to :email.',
+        'retention_body' => 'Data is kept for the life of the conference record. Organizers may delete a conference, and authors may ask the organizer or us to delete a submission. Deleted data remains in our backups until they expire: the copies kept away from our server are encrypted and kept at most 90 days from the day they are sent, which is within a day of each backup. Write to :email.',
         'hosting_heading' => 'Hosting',
         'hosting_body' => 'The service and its backups are kept in Saudi Arabia. Error reports are stored only on our own server there, and personal data is removed from them before they are sent. Like every page of this site, they travel encrypted through our content delivery network. Email is sent through the platform mail server; transactional email is logged for delivery troubleshooting.',
     ],

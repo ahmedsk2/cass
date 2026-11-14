@@ -1134,6 +1134,26 @@ else
     skip 'S40 needs timeout, which starts the script with SIGINT at its default rather than ignored'
 fi
 
+scenario 'S41 a json.py and a base64.py where the script is run from: never imported, though root runs it by hand from any folder'
+for m in json base64; do
+    printf 'import os\nopen(os.path.join(os.environ.get("FAKE", "."), "planted-ran"), "a").write(__name__ + "\\n")\n' > "$S/cwd/$m.py"
+done
+run_offsite
+eq 'exit status' 0 "$RC"
+starts 'the last line' "$H OK: 3 uploaded, 0 already off-host"
+eq 'neither planted module ran' no "$(if [ -e "$S/planted-ran" ]; then echo yes; else echo no; fi)"
+
+scenario "S42 backups older than seven days, never sent: named and left, since a late copy would outlive the bucket's 90 days"
+make_backup cass-2026-10-29-0317.sql.gz 192
+make_backup cass-storage-2026-10-25.tar.gz 480
+run_offsite
+eq 'exit status' 0 "$RC"
+starts 'the last line' "$H OK: 3 uploaded, 0 already off-host"
+has 'names the old dump' 'cass-2026-10-29-0317.sql.gz: older than 7 days, not sent'
+has 'names the old archive' 'cass-storage-2026-10-25.tar.gz: older than 7 days, not sent'
+eq 'three objects, none for those two' 3 "$(object_count)"
+eq 'three manifest rows' 3 "$(row_count)"
+
 # ---------------------------------------------------------------------------
 echo
 echo "$N scenarios: $PASSES ok, $SKIPS skipped, $FAILURES failed"

@@ -20,7 +20,9 @@
 # reads the backup there and writes the encrypted copy into its .offsite-work/, removed once
 # sent. The manifest keys each copy by destination (region/namespace/bucket), file, size and
 # mtime, so a file remade under its name is sent again, and a changed destination gets every
-# file again.
+# file again. A backup is sent only while it is younger than 7 days: a copy lives 90 days from
+# its upload, so one sent late would outlive that by its age. An older one not yet off-host (on
+# a first run, a re-send, after a long outage) is named and left.
 #
 # Usage: cass-backup-offsite [dir]   (default /srv/backups/cass)
 #
@@ -111,14 +113,16 @@ trap 'on_signal HUP 129' HUP
 trap 'on_signal INT 130' INT
 trap 'on_signal TERM 143' TERM
 
+# Both run python3 -I: without it, python3 -c puts the current directory first on its module
+# path, and a hand run as root from a shared folder would import a planted json.py or base64.py.
 # md5_b64 <file>: the base64 MD5 that OCI checks a single-part upload against.
-md5_b64() { python3 -c 'import base64, hashlib, sys
+md5_b64() { python3 -I -c 'import base64, hashlib, sys
 h = hashlib.md5(usedforsecurity=False)
 for chunk in iter(lambda: sys.stdin.buffer.read(1 << 20), b""):
     h.update(chunk)
 print(base64.b64encode(h.digest()).decode())' < "$1"; }
 # listed <object>: "<size> <md5>" of that object in the listing on stdin, nothing when absent.
-listed() { python3 -c 'import json, sys
+listed() { python3 -I -c 'import json, sys
 raw = sys.stdin.read().strip()
 items = (json.loads(raw).get("data") or []) if raw else []
 match = [i for i in items if i.get("name") == sys.argv[1]]
@@ -203,6 +207,9 @@ else
     elif [ "$HOURS" -ge "$MAX_AGE_HOURS" ]; then problem 5 "the newest dump, $NEWEST, is $HOURS h old (limit $MAX_AGE_HOURS h)"; fi
 fi
 
+# Only backups younger than this are sent (the header says why).
+SEND_DAYS=7
+NOW=$(date +%s)
 # An array, not a loop over stdin: a child reading stdin would swallow the rest of the list.
 mapfile -t FILES <<< "$LIST"
 for f in "${FILES[@]}"; do
@@ -221,6 +228,7 @@ for f in "${FILES[@]}"; do
         '$2 == d && $3 == f && $4 == s && $5 == m { hit = 1 } END { exit !hit }' "$MANIFEST"; then
         ALREADY=$((ALREADY + 1)); continue
     fi
+    if [ $(( NOW - mtime )) -ge $(( SEND_DAYS * 86400 )) ]; then say "$f: older than $SEND_DAYS days, not sent"; continue; fi
     # The dump's final name is written by a redirect, so a hand run beside cass-backup could
     # see it half written; gzip -t reads it through and writes nothing.
     if ! gzip -t "$DEST/$f"; then
