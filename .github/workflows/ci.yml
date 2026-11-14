@@ -200,6 +200,12 @@ jobs:
       # fakes for sudo, docker, curl and cass-backup.
       - name: Deploy script
         run: bash -n tools/claude/deploy.sh && bash tools/claude/deploy.test.sh
+      # The off-host copy the production host runs as root every night, against fakes for
+      # oci, age, curl and flock: what it sends and under which names, that no backup leaves
+      # the backup directory in plain text as far as a test can see, and that its heartbeat
+      # fires only on success. No network, no OCI account, and the runner's own python3.
+      - name: Off-host backup script
+        run: bash -n tools/backup/cass-backup-offsite.sh && bash tools/backup/cass-backup-offsite.test.sh
       # The Claude Code production guard, the pre-push hook that stands in
       # for branch protection, and the Workflow scripts' refusal to start
       # without their path args. The runner's preinstalled Node is enough.
