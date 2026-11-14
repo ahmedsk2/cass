@@ -1376,6 +1376,106 @@ read -rs -p 'AGE-SECRET-KEY line: ' K; echo; printf '%s\n' "$K" | ./age/age.exe 
 - **Both copies lost:** every off-host copy is unreadable. Make a new pair at once and replace the recipient line; until new copies build up, the host's own 15 dumps and 8 or 9 archives are the only backups. Tell the engineer; `docs/HANDOVER.md` records the date.
 - **Suspected leak:** rotate now. Copies made under the old key stay readable to anyone who also gets read access to the bucket or the external drive, so check who holds the owner's OCI login.
 
+### Installing the off-host copy
+
+Once, with the owner. Before it, in OCI: the audit has found no dynamic group but `cass-backup-host` matching the instance and no other statement reaching it (statements naming `dynamic-group`, `any-user` or `request.principal`, in the tenancy and every compartment; the session runs it through the OCI API, and again at every third drill); every resource in the table above exists except the retention rule; the dynamic group is an hour old. A rebuilt or replaced instance has a new OCID: change the group's rule, wait an hour, run the canary again. `age` comes from Ubuntu's archive and follows its security updates (the format is frozen); on an Ubuntu older than 22.04, which has no package, use the release `age-v1.3.2-linux-arm64.tar.gz`, checked with `sha256sum -c` against `6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4`, in `/usr/local/bin`, with `CASS_AGE_BIN=/usr/local/bin/age` on the cron line. The CLI goes into its own virtual environment from wheels only (no source build; if pip refuses a package for want of one, stop), and its resolved versions are kept beside it.
+
+```bash
+sudo apt-get -s install age python3-venv | grep '^Inst'      # only these and their new dependencies, or stop
+sudo NEEDRESTART_MODE=l apt-get install -y age python3-venv && age --version
+sudo python3 -m venv /opt/oci-cli && sudo /opt/oci-cli/bin/pip install --no-cache-dir --only-binary :all: 'oci-cli==3.96.0'
+sudo /opt/oci-cli/bin/pip freeze | sudo tee /opt/oci-cli/requirements.lock && sudo chmod -R go-rwx /opt/oci-cli
+sudo /opt/oci-cli/bin/oci --version                                                   # 3.96.0
+for f in .cass-offsite.conf .cass-age-recipient .cass-ping-offsite; do sudo install -m 600 /dev/null /root/$f; done
+```
+
+Then the three files: `/root/.cass-offsite.conf` gets `namespace=<namespace>`, `bucket=cass-offsite` and `region=<region>`; `/root/.cass-age-recipient` the owner's public key, one line starting `age1`; `/root/.cass-ping-offsite` one line, `url = "<the push URL of cass offsite copy>"`, which the owner writes with `sudoedit` in their own terminal. Then the canary, while the bucket has no retention rule yet, so a refusal can only be IAM's: create and list work, and the read, the delete, the overwrite and a bucket listing must each print `refused by IAM`. Any other answer: stop.
+
+```bash
+O='sudo /opt/oci-cli/bin/oci --auth instance_principal'; A='-ns <namespace> -bn cass-offsite'; K=canary/$(date +%FT%H%M%S).txt
+N='"code": "NotAuthorizedOrNotFound"'; printf 'canary\n' | sudo tee /root/cass-canary.txt > /dev/null
+$O os object put $A --name "$K" --file /root/cass-canary.txt --no-multipart --no-overwrite        # an etag
+$O os object list $A --prefix canary/ --fields name,size                                          # lists it
+$O os object get $A --name "$K" --file /dev/null 2>&1 | grep -qF "$N" && echo 'refused by IAM'
+$O os object delete $A --name "$K" --force 2>&1 | grep -qF "$N" && echo 'refused by IAM'
+$O os object put $A --name "$K" --file /root/cass-canary.txt --no-multipart --force 2>&1 | grep -qF "$N" && echo 'refused by IAM'
+$O os bucket list --compartment-id <cass-backups OCID> 2>&1 | grep -qF "$N" && echo 'refused by IAM'
+sudo rm /root/cass-canary.txt
+```
+
+Now the retention rule (`keep-30-days`, 30 days, not locked). Then the script, from a commit of `main` whose push run is green, both ends' SHA-256 compared; the commit and the digest go into the project memory:
+
+```bash
+git fetch origin && C=$(git rev-parse origin/main) && gh run list --workflow ci.yml --branch main --commit "$C" --json conclusion --jq '.[0].conclusion'   # success
+git show "$C:tools/backup/cass-backup-offsite.sh" > /tmp/cass-backup-offsite && sha256sum /tmp/cass-backup-offsite
+ssh -i ~/.ssh/<key> <user>@<host> 'sudo tee /usr/local/bin/cass-backup-offsite > /dev/null && sudo chmod 755 /usr/local/bin/cass-backup-offsite && sha256sum /usr/local/bin/cass-backup-offsite' < /tmp/cass-backup-offsite
+```
+
+On the host, run `sudo /usr/local/bin/cass-backup-offsite` once and read every line (the first run sends every dump and archive the host holds), then add the cron line beside the other two (`sudo crontab -e`). Cron's PATH, `/usr/bin:/bin`, holds `age`, `curl`, `flock`, `gzip` and `python3`; the CLI is called by its full path.
+
+```cron
+# CASS off-host copy, nightly at 04:17: an hour after the 03:17 dump, half an hour after Sunday's 03:47 archive.
+17 4 * * * /usr/local/bin/cass-backup-offsite >> /var/log/cass-backup.log 2>&1
+```
+
+Prove the alert as for the other monitors, without the URL on a command line: `for i in 1 2; do sudo sh -c 'sed s/status=up/status=down/ /root/.cass-ping-offsite | curl -fsS -m 10 -o /dev/null -K -'; done` takes the monitor down and Kuma emails; the next run by hand brings it back. To update the CLI, rebuild the environment with the new version; to update the script, the three lines from the PC with the new green commit.
+
+### Restore drill from the off-host copy — monthly, and not optional
+
+The owner, on the PC in Git Bash with Docker Desktop running, and on the host in their own terminal; never in a Claude session, and in a folder outside every repository. It restores the copy the host's manifest names, not whichever object is newest: anything uploaded after it, junk or forgery, is never picked. It proves the copy is the host's file byte for byte, then that it restores. The decrypted data exists only in pipes and in a container held in memory; the private key is pasted at a prompt. Once per PC, the CLI: `python -m venv <tools>/oci-cli && <tools>/oci-cli/Scripts/pip install --only-binary :all: 'oci-cli==3.96.0'`, `<tools>` being `/c/Users/khawl/Desktop/Ahmed/claude/tools`. Once, too: check that Windows device encryption is on (Settings, Privacy and security, Device encryption).
+
+First on the host, with `cass_container` pasted: the last `db/` and `storage/` rows of the manifest, the two files' digests, the dump's completion time and the counts at a cut-off five minutes before it.
+
+```bash
+sudo awk -F '\t' '$6 ~ /^db\// { d = $0 } $6 ~ /^storage\// { s = $0 } END { print d; print s }' /srv/backups/cass/offsite-manifest.tsv
+F='<file of the db row>'; G='<file of the storage row>'; sudo sha256sum "/srv/backups/cass/$F" "/srv/backups/cass/$G"
+sudo sh -c "gzip -dc /srv/backups/cass/$F | tail -n 1"                       # -- Dump completed on <date> <time>
+CUT=$(date -u -d '<date> <time> 5 minutes ago' '+%F %T'); C=$(cass_container mysql)
+for T in organizations users conferences submissions submission_files reviews review_assignments email_logs; do
+  sudo docker exec "$C" sh -c "MYSQL_PWD=\"\$MYSQL_ROOT_PASSWORD\" mysql -uroot -N -e \
+    'SELECT \"$T\", (SELECT COUNT(*) FROM cass.$T WHERE created_at < \"$CUT\"), (SELECT COUNT(*) FROM cass.$T);'"
+done
+sudo grep -F "$G (" /var/log/cass-backup.log | tail -n 1                     # that archive's entry count
+```
+
+Then on the PC, the two objects of those rows, by name, signed in for at most an hour:
+
+```bash
+set -o pipefail; T=/c/Users/khawl/Desktop/Ahmed/claude/tools; OCI=$T/oci-cli/Scripts/oci.exe; AGE=$T/age/age.exe
+"$OCI" session authenticate --region <region> --profile-name cass-drill --config-location ~/.oci/cass-drill.config
+X=(--config-file ~/.oci/cass-drill.config --profile cass-drill --auth security_token)
+mkdir -p ~/cass-drill && cd ~/cass-drill && NS=$("$OCI" os ns get "${X[@]}" --query data --raw-output)
+DB='<object of the db row>'; ST='<object of the storage row>'
+"$OCI" os object get "${X[@]}" -ns "$NS" -bn cass-offsite --name "$DB" --file db.age
+"$OCI" os object get "${X[@]}" -ns "$NS" -bn cass-offsite --name "$ST" --file st.age
+for p in "db.age $DB" "st.age $ST"; do set -- $p
+  [ "$(sha256sum < "$1" | cut -d' ' -f1)" = "$(sed -E 's/.*\.([0-9a-f]{64})\.age$/\1/' <<< "$2")" ] && echo "$1: name hash OK"
+  echo "$1: $(wc -c < "$1") bytes, MD5 $(openssl dgst -md5 -binary "$1" | base64)"; done   # as in the manifest rows
+IMG=$(grep -oE 'mysql:8\.4@sha256:[0-9a-f]{64}' /c/Users/khawl/Desktop/Ahmed/claude/projects/CASS/docker-compose.production.yml)
+docker rm -f -v cass-drill > /dev/null 2>&1
+docker run -d --name cass-drill --network none --tmpfs /var/lib/mysql:rw,size=1g -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=cass_restore "$IMG"
+for i in $(seq 60); do docker exec cass-drill mysql -h127.0.0.1 -uroot -e 'SELECT 1' > /dev/null 2>&1 && break; sleep 3; done
+read -rs -p 'AGE-SECRET-KEY line: ' KEY; echo
+for f in db.age st.age; do printf '%s\n' "$KEY" | "$AGE" -d -i - "$f" | sha256sum; done      # the host's two digests
+printf '%s\n' "$KEY" | "$AGE" -d -i - db.age | gzip -dc | docker exec -i cass-drill mysql -uroot cass_restore; echo "load rc=$?"
+for t in organizations users conferences submissions submission_files reviews review_assignments email_logs; do
+  echo "$t $(docker exec cass-drill mysql -uroot -N -e "SELECT COUNT(*) FROM cass_restore.$t")"; done
+printf '%s\n' "$KEY" | "$AGE" -d -i - st.age | tar tzf - | wc -l                           # the host log's entry count
+unset KEY; docker rm -f -v cass-drill; "$OCI" session terminate --config-file ~/.oci/cass-drill.config --profile cass-drill
+D=/<drive>/cass-offline; mkdir -p "$D/$(date +%F)" && mv db.age st.age "$D/$(date +%F)/" && find "$D" -mindepth 1 -maxdepth 1 -type d -mtime +90 -exec rm -r {} +
+```
+
+Tick each box; one left empty is a failed drill.
+- [ ] The two objects are the manifest's last `db/` and `storage/` rows, and the `db/` row is at most a day old.
+- [ ] Each download printed `name hash OK`, and its bytes and MD5 equal its manifest row's.
+- [ ] Each decrypted SHA-256 equals the host's `sha256sum` of that file: the off-host copy is the host's copy, byte for byte.
+- [ ] `load rc=0`, with no MySQL error.
+- [ ] Every table: restored ≥ the host's first number, the rows that existed five minutes before the dump finished (the cut-off assumes the dump took less than five minutes). Above it only for a reason you can name: rows deleted since the dump (an organization purged, `cass:demo-reset`, a reviewer unassigned, email logs past retention, an erasure). If a legacy import ran after the dump, its rows keep their old `created_at` and this comparison is void: drill again on a dump taken after the import.
+- [ ] The archive lists as many entries as the host's log line for it.
+- [ ] The container is gone, the session terminated, `KEY` unset, the terminal closed, the clipboard history cleared, and the two files are on the external drive.
+
+A failed box: do not wait a month; see **Off-host copies** and tell the engineer. The session writes the date, both objects with their SHA-256, the result and the next date into `docs/HANDOVER.md`'s Backups row. What a drill cannot tell: a compromised host can fill the quota with junk that nobody can delete for 30 days, upload forged copies that decrypt cleanly, and ping Kuma while sending nothing (**Off-host copies**). Picking by the manifest keeps junk out of a restore, but root could have forged both a copy and its manifest row; the byte-for-byte match with the host's file, the counts and the drills already recorded are what speak for a copy, and after a suspected compromise only a copy made before it is restored. A restore of production must also re-apply every erasure made since the copy's date (**Erasing one person's data**).
+
 ## Secret rotation
 
 Change the value in Coolify, redeploy. Rotating `APP_KEY` invalidates all sessions and makes every stored two-factor secret unreadable: an enrolled user's sign-in answers 500 until the factor is cleared and set up again (see **Platform admin second factor**). `APP_PREVIOUS_KEYS` would keep them readable, but the compose file does not pass it yet (backlog, "Monitoring"). Announce a re-login and re-enrolment.
@@ -1510,6 +1610,8 @@ printf("in email_logs: %d\n", App\Models\EmailLog::query()->where("to_email", $e
 
 `email_logs` prunes itself after `CASS_EMAIL_LOG_RETENTION_DAYS` (365), so that
 half resolves on its own within a year.
+
+Note each erasure, its date and the address, in the owner's own records outside the platform. A restore from a backup older than the erasure brings the rows back, and they must be erased again; backups keep them at most 90 days (privacy page).
 
 ## Resource limits, and how to measure them
 
