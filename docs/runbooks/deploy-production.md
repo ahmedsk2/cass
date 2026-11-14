@@ -1371,7 +1371,7 @@ The host signs in as itself, an instance principal, with no key on the host, and
 | Lifecycle | `delete-after-90-days`, `abort-uploads-after-7-days` | objects deleted 90 days after upload; unfinished multipart uploads aborted after 7 |
 | Quota | `cass-backups-cap` | `Set object-storage quota storage-bytes to 10000000000 in compartment cass-backups` |
 | Alarm | `cass-offsite-filling` | `StoredBytes[1h]{resourceDisplayName = "cass-offsite"}.max() > 8000000000` (namespace `oci_objectstorage`), WARNING, to `hosting-alerts` |
-| Dynamic group | `cass-backup-host` | `Any {instance.id = '<OCID of hosting-1>'}`, and no other group may match the instance |
+| Dynamic group | `cass-backup-host` | `Any {instance.id = '<OCID of hosting-1>'}`; no other group that matches the instance may hold a right in Object Storage (decision 0017) |
 | Policy in `cass-backups` | `cass-backup-host-writes` | `Allow dynamic-group cass-backup-host to inspect objects in compartment cass-backups where target.bucket.name = 'cass-offsite'` and `Allow dynamic-group cass-backup-host to manage objects in compartment cass-backups where all {target.bucket.name = 'cass-offsite', request.permission = 'OBJECT_CREATE'}` |
 | Policy in the root | `cass-backups-lifecycle` | `Allow service objectstorage-<region> to manage object-family in compartment cass-backups where any {request.permission='BUCKET_INSPECT', request.permission='BUCKET_READ', request.permission='OBJECT_INSPECT', request.permission='OBJECT_UPDATE_TIER', request.permission='OBJECT_DELETE', request.permission='OBJECT_VERSION_DELETE'}` |
 
@@ -1390,7 +1390,7 @@ One file's failure does not stop the others; the exit is the first failure's. Ev
 
 #### The key
 
-Made, stored and checked on the PC, in Git Bash, in the tools folder; never on the host:
+Made, stored and checked on the PC, in the tools folder, in Git Bash or in Windows PowerShell; never on the host:
 
 ```bash
 cd /c/Users/khawl/Desktop/Ahmed/claude/tools
@@ -1402,7 +1402,19 @@ R=age1…; echo cass-key-check | ./age/age.exe -r "$R" -o check.age
 read -rs -p 'AGE-SECRET-KEY line: ' K; echo; printf '%s\n' "$K" | ./age/age.exe -d -i - check.age; unset K; rm -f check.age
 ```
 
-- **Make it** with the four lines after the `cd`: age v1.3.2 for Windows, its zip checked by `sha256sum -c` against the digest GitHub lists (it must print `OK`), then `age-keygen.exe` with no options. Never `-pq`: the host's age 1.1.1 cannot encrypt to an `age1pq1…` key. Clipboard history off (Settings, System, Clipboard, and its cloud sync) while the key is on the screen, cleared afterwards. The `age1…` public key goes to `/root/.cass-age-recipient`; the private key goes nowhere but the two places below.
+Windows PowerShell 5.1, where the owner made the key, does not run those lines as written: `curl` there is an alias of `Invoke-WebRequest`, `&&` is not a statement separator, and there is no `sha256sum`, `read -s` or `printf`. The same seven lines, from the same URL against the same digest:
+
+```powershell
+cd C:\Users\khawl\Desktop\Ahmed\claude\tools
+curl.exe -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-windows-amd64.zip
+(Get-FileHash .\age-v1.3.2-windows-amd64.zip -Algorithm SHA256).Hash -eq 'f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7'   # True
+Expand-Archive .\age-v1.3.2-windows-amd64.zip -DestinationPath . -Force
+.\age\age-keygen.exe                                   # three lines on the screen; nothing on disk
+$R = 'age1…'; 'cass-key-check' | .\age\age.exe -r $R -o check.age
+$K = Read-Host -AsSecureString 'AGE-SECRET-KEY line'; [Net.NetworkCredential]::new('', $K).Password | .\age\age.exe -d -i - check.age; Remove-Variable K; Remove-Item .\check.age
+```
+
+- **Make it** with the four lines after the `cd`: age v1.3.2 for Windows, its zip checked against the digest GitHub lists (`sha256sum -c` must print `OK`, PowerShell's comparison `True`), then `age-keygen.exe` with no options. Never `-pq`: the host's age 1.1.1 cannot encrypt to an `age1pq1…` key. Clipboard history off (Settings, System, Clipboard, and its cloud sync) while the key is on the screen, cleared afterwards. The `age1…` public key goes to `/root/.cass-age-recipient`; the private key goes nowhere but the two places below.
 - **Store it twice:** one password-manager entry, "CASS backup key (age), <date>", and paper written by hand or printed on a printer attached by cable, kept away from the PC. Never on the host, in a chat, in this repository or in a cloud drive.
 - **Check the stored copy** with the last two lines, pasting the `AGE-SECRET-KEY-1…` line from the password manager, not from the screen: they print `cass-key-check`. Then clear the clipboard history and close the terminal, whose scrollback held the key. At every third drill, type the paper copy instead of pasting: the key carries a checksum, so a clean decrypt proves the paper.
 - **Rotate** at once on a suspected leak, otherwise when the owner decides: make a new pair, store and check it as above, and replace the line in `/root/.cass-age-recipient`. Only backups made after the change are encrypted to the new key: the manifest keys a copy by file, size and mtime, not by key, so the host's current files are not sent again. To send them again under the new key now, move the manifest aside (`sudo mv /srv/backups/cass/offsite-manifest.tsv /srv/backups/cass/offsite-manifest-<date>.tsv`) and run the script by hand; that sends the past week's backups again (older ones are named and left), so check `cass-backups-cap` first. Keep the old private key, both copies, until the last copy encrypted to it is gone (in the bucket 90 days after its upload; on the external drive until the first drill 51 or more days after it was put there, at most about 81 days), then destroy both. Each password-manager entry notes the dates its key was in use.
@@ -1412,7 +1424,7 @@ read -rs -p 'AGE-SECRET-KEY line: ' K; echo; printf '%s\n' "$K" | ./age/age.exe 
 
 ### Installing the off-host copy
 
-Once, with the owner. Before it, in OCI: the audit has found no dynamic group but `cass-backup-host` matching the instance and no other statement reaching it (statements naming `dynamic-group`, `any-user` or `request.principal`, in the tenancy and every compartment; the session runs it through the OCI API, and again at every third drill); every resource in the table above exists except the retention rule; the dynamic group is an hour old. A rebuilt or replaced instance has a new OCID: change the group's rule, wait an hour, run the canary again. `age` comes from Ubuntu's archive and follows its security updates (the format is frozen); on an Ubuntu older than 22.04, which has no package, use the release instead: `curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-arm64.tar.gz`, then `echo '6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4  age-v1.3.2-linux-arm64.tar.gz' | sha256sum -c -` (it must print `OK`), then `tar xzf age-v1.3.2-linux-arm64.tar.gz && sudo install -m 755 age/age /usr/local/bin/age`, and `CASS_AGE_BIN=/usr/local/bin/age` on the cron line. The CLI goes into its own virtual environment from wheels only (no source build; if pip refuses a package for want of one, stop), and its resolved versions are kept beside it.
+Once, with the owner. Before it, in OCI: the audit lists every dynamic group that matches the instance, each with its policies, and every statement naming `dynamic-group`, `any-user` or `request.principal`, in the tenancy and every compartment (the session runs it through the OCI API, and again at every third drill); none of them but `cass-backup-host` and its policy may give the instance a right in Object Storage. The one other group known to match hosting-1 is the owner's `lb-cert-renewer` (2026-08-08), for the certificate of the load balancer that serves the `towardpcc.com` apex, with load-balancer rights only (`read load-balancers`, and `use load-balancers` where the permission is `LOAD_BALANCER_UPDATE`; decision 0017). Every resource in the table above exists except the retention rule; the dynamic group is an hour old. A rebuilt or replaced instance has a new OCID: change the group's rule, wait an hour, run the canary again. `age` comes from Ubuntu's archive and follows its security updates (the format is frozen); on an Ubuntu older than 22.04, which has no package, use the release instead: `curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-arm64.tar.gz`, then `echo '6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4  age-v1.3.2-linux-arm64.tar.gz' | sha256sum -c -` (it must print `OK`), then `tar xzf age-v1.3.2-linux-arm64.tar.gz && sudo install -m 755 age/age /usr/local/bin/age`, and `CASS_AGE_BIN=/usr/local/bin/age` on the cron line. The CLI goes into its own virtual environment from wheels only (no source build; if pip refuses a package for want of one, stop), and its resolved versions are kept beside it. During the install, apt's needrestart lists the service restarts it defers, `docker.service` among them: `NEEDRESTART_MODE=l` is there precisely so that it only lists them and none runs.
 
 ```bash
 sudo apt-get update                                           # a stale index fails the install with 404s
@@ -1424,17 +1436,25 @@ sudo /opt/oci-cli/bin/oci --version                                             
 for f in .cass-offsite.conf .cass-age-recipient .cass-ping-offsite; do sudo test -e /root/$f || sudo install -m 600 /dev/null /root/$f; done
 ```
 
-Then the three files: `/root/.cass-offsite.conf` gets `namespace=<namespace>`, `bucket=cass-offsite` and `region=<region>`; `/root/.cass-age-recipient` the owner's public key, one line starting `age1`; `/root/.cass-ping-offsite` one line, `url = "<the push URL of cass offsite copy>"`, which the owner writes with `sudoedit` in their own terminal. Then the canary, while the bucket has no retention rule yet, so a refusal can only be IAM's: create and list work, and the read, the delete, the overwrite and a bucket listing must each print `refused by IAM`. Any other answer: stop.
+Then the three files: `/root/.cass-offsite.conf` gets `namespace=<namespace>`, `bucket=cass-offsite` and `region=<region>`; `/root/.cass-age-recipient` the owner's public key, one line starting `age1`; `/root/.cass-ping-offsite` one line, `url = "<the push URL of cass offsite copy>"`, which the owner writes in their own terminal, with `sudoedit` or with the first line below. That line reads the URL at a hidden prompt, which keeps it out of the shell's history and out of any session, and prints `1`. A right-click paste into the Windows console can fire more than once (on 2026-11-14 it did: three URLs on one line, and `grep -c`, which counts lines, still printed `1`), so the second line checks the shape without printing the token: it must show exactly one `xxxxx://…?xxxxxx=xx&xxx=xx&xxxx=` inside the quotes. If it shows more, the third line keeps the first URL; then the second again.
+
+```bash
+read -rsp 'Push URL: ' U; echo; printf 'url = "%s"\n' "$U" | sudo tee /root/.cass-ping-offsite > /dev/null; unset U; sudo grep -c 'status=up' /root/.cass-ping-offsite
+sudo sed -E 's/[A-Za-z0-9]/x/g' /root/.cass-ping-offsite                                             # xxx = "xxxxx://…?xxxxxx=xx&xxx=xx&xxxx="
+sudo sed -i -E 's#^(url = "https://[^"?]+\?status=up&msg=OK&ping=).*$#\1"#' /root/.cass-ping-offsite   # only if it showed more than one
+```
+
+Then the canary, while the bucket has no retention rule yet, so a refusal can only be IAM's: create and list work, and the read, the delete, the overwrite and a bucket listing must each print `refused by IAM`. Object Storage refuses an unauthorized get, delete or overwrite with HTTP 404 and the code `BucketNotFound` (its message: "Either the bucket named … does not exist in the namespace … or you are not authorized to access it"), and an unauthorized bucket listing with the code `NamespaceNotFound`; it never answers `NotAuthorizedOrNotFound` there. The put and the list a moment earlier show that the bucket and the namespace exist, so these answers are the refusal. Any other answer: stop.
 
 ```bash
 O='sudo /opt/oci-cli/bin/oci --auth instance_principal'; A='-ns <namespace> -bn cass-offsite'; K=canary/$(date +%FT%H%M%S).txt
-N='"code": "NotAuthorizedOrNotFound"'; printf 'canary\n' | sudo tee /root/cass-canary.txt > /dev/null
+NB='"code": "BucketNotFound"'; NN='"code": "NamespaceNotFound"'; printf 'canary\n' | sudo tee /root/cass-canary.txt > /dev/null
 $O os object put $A --name "$K" --file /root/cass-canary.txt --no-multipart --no-overwrite        # an etag
 $O os object list $A --prefix canary/ --fields name,size                                          # lists it
-$O os object get $A --name "$K" --file /dev/null 2>&1 | grep -qF "$N" && echo 'refused by IAM'
-$O os object delete $A --name "$K" --force 2>&1 | grep -qF "$N" && echo 'refused by IAM'
-$O os object put $A --name "$K" --file /root/cass-canary.txt --no-multipart --force 2>&1 | grep -qF "$N" && echo 'refused by IAM'
-$O os bucket list --compartment-id <cass-backups OCID> 2>&1 | grep -qF "$N" && echo 'refused by IAM'
+$O os object get $A --name "$K" --file /dev/null 2>&1 | grep -qF "$NB" && echo 'refused by IAM'
+$O os object delete $A --name "$K" --force 2>&1 | grep -qF "$NB" && echo 'refused by IAM'
+$O os object put $A --name "$K" --file /root/cass-canary.txt --no-multipart --force 2>&1 | grep -qF "$NB" && echo 'refused by IAM'
+$O os bucket list --compartment-id <cass-backups OCID> 2>&1 | grep -qF "$NN" && echo 'refused by IAM'
 sudo rm /root/cass-canary.txt
 ```
 
