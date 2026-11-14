@@ -97,7 +97,7 @@ return [
     'privacy' => [
         'title' => 'Privacy',
         'heading' => 'Privacy policy',
-        'updated' => 'Last updated 10 September 2026.',
+        'updated' => 'Last updated 6 November 2026.',
         'collect_heading' => 'What we collect',
         'collect_body' => 'Organizer and reviewer accounts store a name, email address and password hash. Abstract submissions store the content authors provide: title, abstract text, author names, affiliations, contact details and uploaded files. We record the time of actions such as submissions, reviews and decisions, and count visits to short links without storing personal data.',
         'use_heading' => 'How we use it',
@@ -107,7 +107,7 @@ return [
         'retention_heading' => 'Retention and deletion',
         'retention_body' => 'Data is kept for the life of the conference record. Organizers may delete a conference, and authors may ask the organizer or us to delete a submission. Write to :email.',
         'hosting_heading' => 'Hosting',
-        'hosting_body' => 'The service is hosted in Saudi Arabia. Email is sent through the platform mail server; transactional email is logged for delivery troubleshooting.',
+        'hosting_body' => 'The service is hosted in Saudi Arabia. Error reports are stored only on our own server there, and personal data is removed from them before they are sent. Like every page of this site, they travel encrypted through our content delivery network. Email is sent through the platform mail server; transactional email is logged for delivery troubleshooting.',
     ],
 
     'terms' => [

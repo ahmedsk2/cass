@@ -14,8 +14,9 @@ use Sentry\Stacktrace;
  * there keep request bodies, personal data and the breadcrumbs that carry form fields out; this removes what
  * they let through.
  *
- * - Frame arguments. The image leaves zend.exception_ignore_args off, so every trace records them and the SDK
- *   sends them: an Action's $data would arrive whole, abstract and authors included.
+ * - Frame arguments. The image turns zend.exception_ignore_args on (docker/php.ini), but a PHP without it
+ *   records them in every trace and the SDK sends them: an Action's $data would arrive whole, abstract and
+ *   authors included.
  * - Email addresses in exception messages and breadcrumbs: a mail server names the address it refused, and
  *   MySQL quotes a duplicate value.
  * - Breadcrumb metadata a caller supplied: a log line's context (Laravel adds the signed-in

@@ -17,8 +17,9 @@ return [
     // A secret, set only in the deployment's environment. Unset or empty: nothing is sent.
     'dsn' => env('SENTRY_LARAVEL_DSN'),
 
-    // Optional, for grouping events by release (the deployed commit, say).
-    'release' => env('SENTRY_RELEASE'),
+    // Optional, for grouping events by release: in production, the deployed commit (docker-compose.production.yml).
+    // Unset or empty, as when no commit reached the container: no release, rather than an empty one.
+    'release' => env('SENTRY_RELEASE') ?: null,
 
     // Unset: APP_ENV.
     'environment' => env('SENTRY_ENVIRONMENT'),
