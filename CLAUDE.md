@@ -23,7 +23,7 @@ Engineering
 
 Security-sensitive changes
 
-- These paths are sensitive: `app/Policies`, `app/Support/Tokens`, `app/Support/Turnstile.php`, `app/Support/ClientIp.php`, `app/Http/Middleware`, `app/Filament/Auth`, `bootstrap/app.php`, `config/`, `database/migrations`, `docker/`, `Dockerfile`, `docker-compose.*.yml`, `.github/`, `.claude/`. A PR that touches one lists each such file with one line of why, and the owner approves that list before merge.
+- These paths are sensitive: `app/Policies`, `app/Support/Tokens`, `app/Support/Turnstile.php`, `app/Support/ClientIp.php`, `app/Http/Middleware`, `app/Filament/Auth`, `bootstrap/app.php`, `config/`, `database/migrations`, `docker/`, `Dockerfile`, `docker-compose.*.yml`, `.github/`, `.claude/`, `tools/backup/`. A PR that touches one lists each such file with one line of why, and the owner approves that list before merge.
 - A Filament bump re-publishes the three nonce'd views and updates their digests in the same commit. Never update a digest alone.
 
 Dependencies

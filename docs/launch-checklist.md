@@ -165,12 +165,13 @@ answer a plan author happened to choose.
       (HANDOVER B3).
 - [ ] **Confirm `/srv/backups/cass` is on a filesystem with room** for fourteen
       compressed dumps **plus one uncompressed one** (the script dumps to disk
-      first so a truncated `mysqldump` cannot hide inside a pipe), and that the
-      NAS sync includes it **and** the weekly `cass-storage` tarball.
+      first so a truncated `mysqldump` cannot hide inside a pipe) and one
+      encrypted copy of the largest backup, and that the off-host copy (runbook
+      **Off-host copies**) includes the dumps **and** the weekly `cass-storage`
+      tarball.
       **Room confirmed, sync not (2026-11-06):** `/srv/backups/cass` is on `/`,
       with 123 GB free. Whether a NAS sync exists is not known to the engineer;
-      B8, whose plan is being written, replaces it with an encrypted off-host
-      copy.
+      B8's encrypted off-host copy replaces it, in #NN and not yet installed.
 
 ## 3. Production readiness, on the deployed site
 
@@ -185,6 +186,10 @@ abstracts, not a few hundred. HSTS, open after that run, was seen on 2026-11-06 
 On 2026-11-06 the deploy of `d417c8a` (05:46 UTC) re-ran two lines through the deploy script,
 `migrate:status` (36 applied, nothing pending) and `cass:health` (six rows OK), beside its eight
 probes through Traefik; no other line was re-run with it.
+
+On 2026-11-14 the deploy of `7ab187a` (14:58 UTC, after a hand-run `cass-backup` because the MySQL
+digest changed) re-ran the same two lines, 36 applied with nothing pending and six rows OK, beside
+its eight probes; the public conference page then answered in 33 ms over five samples.
 
 - [x] `curl -sI https://cass.towardpcc.com/up` → `200`.
 - [ ] `curl -sI https://cass.towardpcc.com/ | grep -i content-security-policy`
@@ -229,6 +234,9 @@ probes through Traefik; no other line was re-run with it.
 - [ ] Restore that dump into a scratch database and count rows against
       production (the procedure is in the runbook under **Backups**). **A
       backup nobody has restored is not a backup.**
+- [ ] Restore the off-host copy on the PC and compare it with production
+      (runbook **Restore drill from the off-host copy**); its date and the
+      next one go into `docs/HANDOVER.md`.
 - [x] `APP=$(cass_container app)`,
       `DB=$(cass_container mysql)`,
       then `docker stats --no-stream "$APP" "$DB"` → the app container's steady
