@@ -518,8 +518,11 @@ echo '  - the file cron runs'
 FIRST_LINE="$(head -n 1 "$SCRIPT" 2> /dev/null || true)"
 if [ "$FIRST_LINE" = '#!/usr/bin/env bash' ]; then ok 'its first line is #!/usr/bin/env bash'
 else bad "its first line is #!/usr/bin/env bash, not [$FIRST_LINE]"; fi
+# -U: grep under MSYS drops a CR before it matches unless told the file is binary; GNU grep
+# elsewhere ignores the option.
+CR=$'\r'
 if [ ! -f "$SCRIPT" ]; then bad "it holds no CR: there is no file at $SCRIPT"
-elif grep -q $'\r' "$SCRIPT"; then bad 'it holds no CR, which cron would run as part of every line'
+elif grep -qU -- "$CR" "$SCRIPT"; then bad 'it holds no CR, which cron would run as part of every line'
 else ok 'it holds no CR'; fi
 
 scenario 'S1 first run: the three backups go, the decoys stay'
