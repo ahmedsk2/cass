@@ -83,7 +83,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 
 ## Every release
 
-1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying. If the release changes the `mysql` image digest in `docker-compose.production.yml`, run `sudo /usr/local/bin/cass-backup` on the host by hand before deploying: the deploy recreates the database container, and the script backs up only when a migration is pending.
+1. Merge to `main` with CI green. Check the commit's run and its `image` job: `gh run list --workflow ci.yml --branch main --commit "$(git rev-parse origin/main)" --json databaseId,conclusion --jq '.[0]'` prints the run's id and `"conclusion":"success"`, and `gh run view <id> --json jobs --jq '.jobs[]|select(.name=="image").conclusion'` prints `success` or `skipped`. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying. If the release changes the `mysql` image digest in `docker-compose.production.yml`, run `sudo /usr/local/bin/cass-backup` on the host by hand before deploying: the deploy recreates the database container, and the script backs up only when a migration is pending.
 2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL. Coolify clones and builds the branch's HEAD at that moment, not your checkout: run `git fetch origin main` and compare `origin/main` with the commit you announced immediately before the command below, and merge nothing to `main` while the deploy runs. On 2026-10-17 a merge sixteen minutes before the start shipped Plan 8 together with Plan 7. The script waits `CASS_DEPLOY_TIMEOUT` seconds (default 1500) for the new container, and Coolify has its own build limit of 3600 s (Server, Advanced, Builds). A healthy host has this image built and healthy in about 3.5 minutes; a wait past ten minutes means the host, not the release: read **When the host itself is slow** before retrying. The Auto Deploy switch on the application was found on, and inert, on 2026-11-05 (no GitHub webhook reaches this Coolify) and has been off since 2026-11-06. **Restart is a deploy too.** For this Docker Compose application Coolify's Restart builds the branch's HEAD of that moment, as Redeploy does, and runs none of the script's checks: no `migrate:status`, no probes. On 2026-11-05 at 22:11 UTC the Restart that applied `CASS_HEARTBEAT_URL` put `06d8dea`, then `main`'s head, into production while `docs/HANDOVER.md` still named `0786a0e`; nothing was pending, so nothing broke. Apply an environment change by running this script, never by Restart. Set the variable first with `cass-set-env` and check it through the API (**One-time setup** step 4): on 2026-11-14 Coolify's environment screen dropped every save, as it had on 2026-11-05. A session's command that reaches the host runs only while production is unlocked: `.claude/hooks/guard-production.mjs` refuses it unless `.claude/deploy-unlocked` was touched in the last 60 minutes, and that touch is the owner's (`tools/claude/README.md`, review point 3). On 2026-11-14 the owner told the session in chat to make the unlock itself ("unlock it your self"), and the session touched the file at 14:28 and 17:46 UTC, before that day's two deploys, at that instruction.
 
    ```bash
@@ -307,6 +307,7 @@ in the code, not an outage — and is only in `queue:failed`. Check both:
 ```bash
 C=$(cass_container app)
 sudo docker exec "$C" supervisorctl status          # four programs, all RUNNING
+sudo docker exec "$C" su-exec app php artisan queue:monitor database:default   # [N] OK, N falling
 sudo docker exec "$C" su-exec app php artisan queue:failed
 sudo docker exec "$C" supervisorctl restart queue   # only if the worker is not RUNNING
 ```
@@ -1210,7 +1211,18 @@ When the first touch of pages, syscalls and plain compute are normal and only th
 
 ## Rollback
 
-Coolify -> Deployments -> redeploy the previous successful build. Migrations are additive; do not roll back the schema without a backup restore.
+Coolify -> Deployments -> redeploy the previous successful build. **Unverified:** no rollback has been recorded, and for this application Coolify's Restart and Redeploy build `main`'s head of that moment (**Every release** step 2), so that redeploy may build the head again rather than the previous release. Migrations are additive; do not roll back the schema without a backup restore.
+
+The route known to work is a revert of the release's merge, made like any other change, then a deploy through the script:
+
+```bash
+git fetch origin && git switch -c revert-<sha> origin/main
+git revert -m 1 <merge sha>
+git push -u origin revert-<sha>
+gh pr create --base main --title "Revert <sha>" --body "<why>"
+```
+
+Then CI green, the owner's approval and the merge, and **Every release** from step 1.
 
 Rolling back to an image older than Plan 7: every queued notification travels
 in `App\Notifications\SendQueuedNotificationsWithLog`, which an older image
@@ -1647,15 +1659,15 @@ C=$(cass_container app)
 sudo docker exec "$C" su-exec app php artisan cass:health
 ```
 
-| Row | Red means |
-|---|---|
-| `database` | the connection named by `DB_CONNECTION` does not answer `select 1`. Every page is 500ing. |
-| `migrations` | the image deployed and nobody ran `migrate --force`. Every page touching a new column is 500ing. |
-| `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. |
-| `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. |
-| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
-| `disk` | the filesystem the `cass-storage` volume lives on has less than 15% of its size free, or less than 2 GiB, whichever comes first; the detail names the floor it crossed, and its figures are `df`'s available space and size there. Uploads still work; `private disk` is the row that turns red once they cannot. Make room with "Author uploads and private storage" (`du -sh`, `cass:sweep-uploads`) and, on the host, the backups' rotation (**Backups**) and Docker's images and build cache, which live on the same filesystem as the volume: `sudo docker system df` shows them. Free the build cache first (`sudo docker builder prune`). `sudo docker image prune -a` is the last resort: it deletes every image no container uses, the previous release's included, so a rollback (**Rollback**) would then have to rebuild it. Coolify's Docker cleanup does both. |
-| `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. |
+| Row | Red means | First move |
+|---|---|---|
+| `database` | the connection named by `DB_CONNECTION` does not answer `select 1`. Every page is 500ing. | `sudo docker ps`; **Rollback** if a release did it, otherwise **When the host itself is slow** |
+| `migrations` | the image deployed and nobody ran `migrate --force`. Every page touching a new column is 500ing. | the by-hand block in **Every release** step 3 |
+| `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. | `supervisorctl status`, then `queue:failed` (**Email triage**) |
+| `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. | `supervisorctl status`; a stale overlap lock: `schedule:clear-cache` (**Reviewer reminders**) |
+| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. | `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
+| `disk` | the filesystem the `cass-storage` volume lives on has less than 15% of its size free, or less than 2 GiB, whichever comes first; the detail names the floor it crossed, and its figures are `df`'s available space and size there. Uploads still work; `private disk` is the row that turns red once they cannot. | Make room with "Author uploads and private storage" (`du -sh`, `cass:sweep-uploads`) and, on the host, the backups' rotation (**Backups**) and Docker's images and build cache, which live on the same filesystem as the volume: `sudo docker system df` shows them. Free the build cache first (`sudo docker builder prune`). `sudo docker image prune -a` is the last resort: it deletes every image no container uses, the previous release's included, so a rollback (**Rollback**) would then have to rebuild it. Coolify's Docker cleanup does both. |
+| `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. | the `MAIL_*` variables in the application's environment (**One-time setup** step 4), then a deploy through the script (**Every release** step 2) |
 
 The `disk` row's two floors are settings, each a whole number, and 0 turns that floor off:
 
