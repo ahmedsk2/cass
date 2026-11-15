@@ -139,7 +139,8 @@ it('stores a per-conference email template override and an email log row', funct
 it('names its organization through its conference, lazily and eagerly', function () {
     // A six-argument hasOneThrough read child-to-grandparent - the key roles
     // are inverted relative to the usual direction - is exactly the relation
-    // that silently returns the wrong tenant, and nothing read it or tested it.
+    // that silently returns the wrong tenant, and the organizer panel's tenancy
+    // scope runs on it.
     // The decoy rows give a transposed key pair something wrong to land on: the
     // conference id and the organization id differ for both submissions.
     $theirs = Organization::factory()->create(['name' => 'Another Society']);

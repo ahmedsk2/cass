@@ -97,10 +97,10 @@ class SubmissionActions
             ->action(function (HasTable $livewire, ExportSubmissionsCsv $export): ?StreamedResponse {
                 Gate::authorize('export', Submission::class);
 
-                // The table's own query: already tenant-scoped by
-                // SubmissionResource::getEloquentQuery() and already carrying
-                // whatever filters and search the organizer is looking at, so
-                // the file matches the screen. Filament types it `?Builder`
+                // The table's own query: already tenant-scoped by the panel's
+                // tenancy scope and already carrying whatever filters and
+                // search the organizer is looking at, so the file matches the
+                // screen. Filament types it `?Builder`
                 // with no generic (Tables\Contracts\HasTable), which Larastan
                 // level 6 will not hand to a `Builder<Submission>` parameter -
                 // hence the annotation and the null guard.

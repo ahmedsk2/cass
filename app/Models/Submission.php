@@ -93,14 +93,13 @@ class Submission extends Model
      * grandparent direction: `conference_id` on this row points at a conference
      * whose `organization_id` points at the organization.
      *
-     * It exists because the house rule is that every tenant-owned model can
-     * name its organization. Nothing in Plan 3 reads it - the infolist and
-     * ExportSubmissionsCsv both go through `conference` - so
-     * tests/Unit/SubmissionTest.php pins it lazily and eagerly instead: an
-     * inverted key pair in a six-argument hasOneThrough does not fail, it
-     * quietly answers with the wrong tenant. **Filament is deliberately not
-     * told to use it for tenancy** - see the comment on
-     * SubmissionResource::$isScopedToTenant.
+     * The organizer panel's tenancy runs on it: SubmissionResource names it as
+     * the ownership relation, and Filament turns that into a whereHas, which
+     * joins conferences and so also requires a live conference. An inverted key
+     * pair in a six-argument hasOneThrough does not fail, it quietly answers
+     * with the wrong tenant, so tests/Unit/SubmissionTest.php pins it lazily and
+     * eagerly, and tests/Feature/Organizer/SubmissionTenancyTest.php through the
+     * scope.
      *
      * @return HasOneThrough<Organization, Conference, $this>
      */

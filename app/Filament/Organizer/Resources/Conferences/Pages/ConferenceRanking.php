@@ -40,10 +40,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * conference (its "fewer than N reviews" default is this conference's
  * `reviewers_per_submission`; its summary strip's denominator is this
  * conference's abstracts), SubmissionResource is already the panel-wide list,
- * and a second Resource over Submission would need a second copy of that
- * resource's `$isScopedToTenant = false` override and its HasOneThrough
- * warning. A page inherits ConferenceResource's real tenancy through
- * resolveRecord() and then scopes by conference_id, which needs no override.
+ * and a second Resource over Submission would be a second list of the same
+ * rows. A page inherits ConferenceResource's tenancy through resolveRecord()
+ * and then scopes by conference_id.
  *
  * **Unlike ConferenceEmailTemplates, the table is query-backed.** `Table::query()`
  * rather than `Table::records()`, so sorting, filtering, searching, pagination
