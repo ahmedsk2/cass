@@ -36,7 +36,7 @@ return [
     'heartbeat_url' => env('CASS_HEARTBEAT_URL'),
     // cass:health's disk row is red when the filesystem holding the private disk has less than this share of its
     // size free, or less than this many GiB, whichever a filling disk reaches first: the share on a large volume,
-    // the GiB on a small one.
+    // the GiB on a small one. Both are whole numbers, and 0 turns that floor off.
     'health' => [
         'disk_min_percent' => (int) env('CASS_HEALTH_DISK_MIN_PERCENT', 15),
         'disk_min_gib' => (int) env('CASS_HEALTH_DISK_MIN_GIB', 2),
