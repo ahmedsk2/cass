@@ -17,6 +17,13 @@ it('will not set the password of an account that is not a platform admin', funct
         ->toBe(['That account is not a platform admin, and only a platform admin\'s password is replaced here.']);
 });
 
+it('gives a password under twelve characters one sentence about its length, not Profile\'s ten as well', function () {
+    $admin = User::factory()->platformAdmin()->create();
+
+    expect(app(ResetPlatformAdminPassword::class)->blockers($admin, 'removed'))
+        ->toBe(['The password field must be at least 12 characters.']);
+});
+
 it('throws on a password the rule refuses, and changes nothing', function () {
     $admin = User::factory()->platformAdmin()->create();
 

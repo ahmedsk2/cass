@@ -37,9 +37,11 @@ class ResetPlatformAdminPassword
             ? []
             : ['That account is not a platform admin, and only a platform admin\'s password is replaced here.'];
 
+        // bail: the first rule that fails speaks alone, so a password under MIN_LENGTH hears that, and not also
+        // the shorter minimum inside Password::defaults(). Its other rules are heard once the length passes.
         $validator = Validator::make(
             ['password' => $password],
-            ['password' => ['required', 'string', 'min:'.self::MIN_LENGTH, Password::defaults()]],
+            ['password' => ['bail', 'required', 'string', 'min:'.self::MIN_LENGTH, Password::defaults()]],
         );
 
         foreach ($validator->errors()->all() as $message) {
