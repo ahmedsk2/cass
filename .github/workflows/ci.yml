@@ -301,10 +301,15 @@ jobs:
   # commits were scanned on its pull request. The Monday schedule and a manual
   # run scan the whole history of every branch and tag instead, which also
   # covers a pull request's commits after its 30th (the action reads one page
-  # of the commit list). Default rules, no .gitleaks.toml: a false positive goes
-  # into .gitleaksignore as the Fingerprint line the job log prints for it. The
-  # action wants a licence key from organisation accounts only, and this
-  # repository belongs to a personal account.
+  # of the commit list). No mode reads a merge commit's own diff, such as a
+  # conflict resolution: the pull request and push scans pass --no-merges, and
+  # `git log -p` without -m prints no diff for a merge. Default rules, no
+  # .gitleaks.toml: a false positive goes into .gitleaksignore as the
+  # Fingerprint line the job log prints for it. The action wants a licence key
+  # from organisation accounts only, and this repository belongs to a personal
+  # account. The SHA pin fixes the action's code, not the gitleaks 8.24.3
+  # tarball it downloads from GitHub's release page and caches with no
+  # checksum.
   secret-scan:
     runs-on: ubuntu-24.04
     # Under a minute. The cap is for a stuck download of the gitleaks binary.
@@ -327,6 +332,12 @@ jobs:
           # every run would only repeat the summary.
           GITLEAKS_ENABLE_COMMENTS: false
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+      # What a merge commit's own diff left in the tree: on the schedule, the
+      # checked-out files too, read by the binary the action put on PATH,
+      # which skips .git/.
+      - name: gitleaks over the checked-out files (schedule)
+        if: github.event_name == 'schedule'
+        run: gitleaks detect --no-git --source . --redact --verbose
 
   # Spec section 12's one end-to-end browser run. Its own job so the `test` job
   # stays fast and so a Playwright flake never hides a real unit failure. No
