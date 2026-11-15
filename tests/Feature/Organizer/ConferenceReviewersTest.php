@@ -21,6 +21,7 @@ use App\Models\Submission;
 use App\Models\User;
 use App\Support\Invitations\InvitationLookup;
 use App\Support\Reviews\ReviewerList;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -195,8 +196,8 @@ it('re-invites by refreshing the live row instead of creating a second link', fu
     $first = ReviewerInvitation::query()->firstOrFail();
 
     reviewersPage($this->conference->fresh())
-        ->callTableAction('resend', 'invitation:'.$first->getKey())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('resend')->table('invitation:'.$first->getKey()))
+        ->assertHasNoFormErrors();
 
     expect(ReviewerInvitation::query()->count())->toBe(1)
         ->and($first->fresh()?->token_hash)->not->toBe($first->token_hash);
@@ -208,8 +209,8 @@ it('withdraws an invitation and drops it off the list', function () {
     $invitation = ReviewerInvitation::factory()->for($this->conference)->create(['email' => 'omar@example.org']);
 
     reviewersPage($this->conference)
-        ->callTableAction('revoke', 'invitation:'.$invitation->getKey())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('revoke')->table('invitation:'.$invitation->getKey()))
+        ->assertHasNoFormErrors();
 
     expect($invitation->fresh()?->revoked_at)->not->toBeNull();
 
@@ -227,7 +228,7 @@ it('lists accepted reviewers with their state', function () {
         ->assertSee('omar@example.org')
         ->assertSee('KFSH')
         ->assertSee(ReviewerStatus::Active->getLabel())
-        ->assertTableActionVisible('remove', 'reviewer:'.$reviewer->getKey());
+        ->assertActionVisible(TestAction::make('remove')->table('reviewer:'.$reviewer->getKey()));
 });
 
 it('removes a reviewer, deletes their assignments, keeps their reviews and logs it', function () {
@@ -238,8 +239,8 @@ it('removes a reviewer, deletes their assignments, keeps their reviews and logs 
     $review = Review::factory()->for($submission)->submitted()->create(['reviewer_user_id' => $user->id]);
 
     reviewersPage($this->conference)
-        ->callTableAction('remove', 'reviewer:'.$reviewer->getKey())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('remove')->table('reviewer:'.$reviewer->getKey()))
+        ->assertHasNoFormErrors();
 
     expect($reviewer->fresh()?->status)->toBe(ReviewerStatus::Removed)
         ->and($reviewer->fresh()?->removed_at)->not->toBeNull()
@@ -257,8 +258,8 @@ it('invites a removed reviewer again in one click', function () {
     $reviewer = ConferenceReviewer::factory()->for($this->conference)->removed()->create(['user_id' => $user->id]);
 
     reviewersPage($this->conference)
-        ->callTableAction('reinvite', 'reviewer:'.$reviewer->getKey())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('reinvite')->table('reviewer:'.$reviewer->getKey()))
+        ->assertHasNoFormErrors();
 
     expect(ReviewerInvitation::query()->where('email', 'omar@example.org')->count())->toBe(1);
 
@@ -307,7 +308,7 @@ it('lists and acts on only this conference, not a sibling conference of the same
     // mechanism with the same required outcome.
     foreach ([['revoke', 'invitation:'.$theirInvitation->getKey()], ['remove', 'reviewer:'.$theirReviewer->getKey()]] as [$action, $key]) {
         try {
-            reviewersPage($this->conference)->callTableAction($action, $key);
+            reviewersPage($this->conference)->callAction(TestAction::make($action)->table($key));
         } catch (Throwable) {
             // Whatever Filament answers for a key that is not in the table.
         }

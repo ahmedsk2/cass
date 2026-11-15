@@ -32,6 +32,7 @@ use App\Models\User;
 use App\Policies\SubmissionFilePolicy;
 use App\Policies\SubmissionPolicy;
 use Carbon\Carbon;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
@@ -268,16 +269,17 @@ it('exports the visible rows as csv and neutralises a spreadsheet formula', func
     $this->submission->forceFill(['title' => '=HYPERLINK("https://evil.example","click")'])->save();
     withoutTenant(fn () => Submission::factory()->submitted()->create(['title' => 'Another tenant']));
 
-    // callTableAction, not callAction: `export` is a table *header* action, and
-    // the table helpers are what add the table context Filament resolves the
-    // action name in (vendor/filament/tables/src/Testing/TestsActions.php).
+    // ->table() with no record, not a bare callAction('export'): `export` is a
+    // table *header* action, and ->table() is what adds the table context
+    // Filament resolves the action name in
+    // (vendor/filament/actions/src/Testing/TestAction.php).
     //
     // Livewire turns the StreamedResponse the action returns into a `download`
     // effect, running the stream callback and base64-encoding what it wrote
     // (SupportFileDownloads::call()) - so the assertion below is on the real
     // bytes a browser would have saved, not on a response object.
     $component = livewire(ListSubmissions::class)
-        ->callTableAction('export')
+        ->callAction(TestAction::make('export')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
@@ -442,7 +444,7 @@ it('names the export file after the moment it was taken', function () {
     Carbon::setTestNow('2026-09-11 08:30:00');
 
     livewire(ListSubmissions::class)
-        ->callTableAction('export')
+        ->callAction(TestAction::make('export')->table())
         ->assertFileDownloaded('submissions-2026-09-11-083000.csv');
 
     Carbon::setTestNow();
