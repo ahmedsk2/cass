@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Policies\ConferencePolicy;
 use App\Policies\OrganizationPolicy;
 use Filament\Facades\Filament;
-use Illuminate\Support\Facades\Schema;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Livewire\livewire;
@@ -90,7 +89,7 @@ it('does not gate on the demo flag', function () {
         ->assertHasNoTableActionErrors();
 
     expect(Organization::withTrashed()->whereKey($organization->getKey())->exists())->toBeFalse();
-})->skip(fn (): bool => ! Schema::hasColumn('organizations', 'is_demo'), 'The demo branch has not merged.');
+});
 
 it('offers no purge to an organization owner, and no force delete to anybody', function () {
     $owner = User::factory()->create();
