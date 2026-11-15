@@ -540,12 +540,19 @@ it('exports a row whose conference is gone instead of dying mid-stream', functio
     $orphan = Submission::factory()->for($this->conference)->submitted()->create(['title' => 'Orphaned abstract']);
     $this->conference->delete();
 
-    $response = app(ExportSubmissionsCsv::class)
-        ->handle(Submission::query()->whereKey($orphan->getKey()), 'submissions.csv');
+    // Outside the tenant: inside it, the panel's tenancy scope reaches the
+    // organization through the conference, so it leaves out an abstract whose
+    // conference is gone, and the plain query this case is about would find
+    // nothing.
+    $csv = withoutTenant(function () use ($orphan): string {
+        $response = app(ExportSubmissionsCsv::class)
+            ->handle(Submission::query()->whereKey($orphan->getKey()), 'submissions.csv');
 
-    ob_start();
-    $response->sendContent();
-    $csv = (string) ob_get_clean();
+        ob_start();
+        $response->sendContent();
+
+        return (string) ob_get_clean();
+    });
 
     expect($csv)->toContain('Orphaned abstract');
 });

@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Support\Scoring\RankedSubmissions;
 use Carbon\Carbon;
 use Filament\Actions\Testing\TestAction;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Gate;
 
 use function Pest\Laravel\actingAs;
@@ -140,7 +141,10 @@ it('scopes the file itself, whatever query it is handed', function () {
     Submission::factory()->for($this->conference)->create(['title' => 'An unfinished draft']);
     Submission::factory()->for($this->conference)->withdrawn()->create(['title' => 'A withdrawn abstract']);
 
-    $response = app(ExportRankingCsv::class)->handle(Submission::query(), $this->conference, 'ranking.csv');
+    // Unscoped on purpose, the panel's tenancy scope included: the writer's own
+    // constraint is what this case is about.
+    $unscoped = Submission::query()->withoutGlobalScope(Filament::getPanel('organizer')->getTenancyScopeName());
+    $response = app(ExportRankingCsv::class)->handle($unscoped, $this->conference, 'ranking.csv');
 
     ob_start();
     $response->sendContent();

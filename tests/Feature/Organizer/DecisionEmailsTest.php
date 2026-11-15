@@ -440,5 +440,10 @@ it('sends nothing for another organization conference', function () {
     app(SendDecisionEmails::class)->handle($this->conference, $this->user);
 
     Mail::assertNotQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('stranger@example.org'));
-    expect($theirs->submissions()->first()?->decision_notified_at)->toBeNull();
+
+    // Read past the panel's tenancy scope: inside it another organization's
+    // abstract is not there to read, and a null from no row would pass this for
+    // the wrong reason.
+    $row = withoutTenant(fn () => $theirs->submissions()->first());
+    expect($row)->not->toBeNull()->and($row?->decision_notified_at)->toBeNull();
 });
