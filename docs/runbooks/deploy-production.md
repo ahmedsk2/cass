@@ -1630,7 +1630,17 @@ sudo docker exec "$C" su-exec app php artisan cass:health
 | `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. |
 | `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. |
 | `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
+| `disk` | the filesystem the `cass-storage` volume lives on has less than 15% of its size free, or less than 2 GiB, whichever comes first; the detail names the floor it crossed, and its figures are what `df` calls Avail and Size there. Uploads still work; `private disk` is the row that turns red once they cannot. Make room with "Author uploads and private storage" (`du -sh`, `cass:sweep-uploads`) and, on the host, the backups' rotation (**Backups**). |
 | `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. |
+
+The `disk` row's two floors are settings:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CASS_HEALTH_DISK_MIN_PERCENT` | 15 | `disk` is red below this percentage of the filesystem free |
+| `CASS_HEALTH_DISK_MIN_GIB` | 2 | `disk` is red below this many GiB free |
+
+`docker-compose.production.yml` passes neither, so production runs the defaults: a Coolify variable reaches the container only through a `${...}` line in that file.
 
 `--json` for a cron. It exits 1 if any row is red, so
 `cass:health --json || mail -s 'CASS unhealthy' you@example.org` is a monitor.
