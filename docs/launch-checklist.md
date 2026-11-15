@@ -258,8 +258,9 @@ page timings after it: not recorded.
       `DB=$(cass_container mysql)`,
       then `docker stats --no-stream "$APP" "$DB"` → the app container's steady
       state well under 768 MiB and MySQL's under 512 MiB. Record both in the
-      runbook. (`cass_container` is the helper at the top of
-      `docs/runbooks/deploy-production.md` — paste it into the session first.
+      runbook. (`cass_container` is the helper in the runbook section
+      "Finding the containers" of `docs/runbooks/deploy-production.md` — paste
+      it into the session first.
       The names are Coolify's, not `cass-app`/`cass-mysql`; neither compose file
       sets `container_name`, and neither the names nor the labels contain
       "cass", which is why the lookup goes through the container's environment.)

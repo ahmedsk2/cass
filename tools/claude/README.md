@@ -37,9 +37,9 @@ digest; reads `Legacy/`; raises a major version constraint; runs a `tinker` writ
 enforce the production, data, force-push and push-to-`main` items; `gh pr merge` always asks.
 
 Length budget for briefs and outputs: a task file under 150 lines; a review report under 40
-lines plus its findings list; a backlog entry of three lines plus a link to a decision file; a
-runbook procedure under 40 lines. Anything longer becomes a file in `docs/decisions/` and is
-linked.
+lines plus its findings list; a backlog entry, one table row with its trigger, the one-line
+change and a link to a decision file; a runbook procedure under 40 lines. Anything longer
+becomes a file in `docs/decisions/` and is linked.
 
 | File | Runs where | What it does |
 |---|---|---|
