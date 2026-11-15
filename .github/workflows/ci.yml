@@ -278,7 +278,7 @@ jobs:
       # for branch protection, and the Workflow scripts' refusal to start
       # without their path args. The runner's preinstalled Node is enough.
       - name: Guardrail hooks
-        run: node --test .claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs tools/claude/workflow-args.test.mjs
+        run: node --test .claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs tools/claude/workflow-args.test.mjs tools/docs/check-pointers.test.mjs
       # The MySQL service in `test` and `smoke` is pinned to the digest both
       # compose files pin. Dependabot moves the compose digest but never a
       # workflow's service image, so a compose bump alone fails here until this
