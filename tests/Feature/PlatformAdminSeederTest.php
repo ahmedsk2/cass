@@ -33,3 +33,55 @@ it('is idempotent and keeps an existing name', function () {
         ->and(User::query()->where('email', 'admin@example.org')->value('name'))->toBe('Ahmed')
         ->and(User::query()->where('email', 'admin@example.org')->value('is_platform_admin'))->toBeTruthy();
 });
+
+it('leaves an existing platform admin\'s password as it is when seeded again with another one', function () {
+    config(['cass.admin_email' => 'admin@example.org', 'cass.admin_password' => 'the-first-admin-password']);
+    $this->seed(PlatformAdminSeeder::class);
+    $hash = User::query()->where('email', 'admin@example.org')->value('password');
+
+    config(['cass.admin_password' => 'a-different-admin-password']);
+    $this->seed(PlatformAdminSeeder::class);
+
+    $admin = User::query()->where('email', 'admin@example.org')->sole();
+    expect($admin->password)->toBe($hash)
+        ->and(password_verify('the-first-admin-password', $admin->password))->toBeTrue()
+        ->and($admin->is_platform_admin)->toBeTrue();
+});
+
+it('runs db:seed without CASS_ADMIN_PASSWORD once the platform admin exists, and names the command that replaces the password', function () {
+    config(['cass.admin_email' => 'admin@example.org', 'cass.admin_password' => null]);
+    $admin = User::factory()->platformAdmin()->create(['email' => 'admin@example.org']);
+
+    $this->artisan('db:seed')
+        ->expectsOutputToContain('cass:admin-password --force')
+        ->assertExitCode(0);
+
+    expect($admin->fresh()?->password)->toBe($admin->password)
+        ->and($admin->fresh()?->is_platform_admin)->toBeTrue();
+});
+
+it('makes an existing account the platform admin only with CASS_ADMIN_PASSWORD, which replaces its password', function () {
+    // An account somebody registered with the admin's address before the first seed: its password is theirs.
+    config(['cass.admin_email' => 'admin@example.org', 'cass.admin_password' => null]);
+    $account = User::factory()->unverified()->create(['email' => 'admin@example.org']);
+
+    expect(fn () => $this->seed(PlatformAdminSeeder::class))->toThrow(RuntimeException::class);
+    expect($account->fresh()?->is_platform_admin)->toBeFalse()
+        ->and($account->fresh()?->hasVerifiedEmail())->toBeFalse();
+
+    config(['cass.admin_password' => 'a-long-admin-password']);
+    $this->seed(PlatformAdminSeeder::class);
+
+    $admin = User::query()->whereKey($account->getKey())->sole();
+    expect($admin->is_platform_admin)->toBeTrue()
+        ->and($admin->hasVerifiedEmail())->toBeTrue()
+        ->and(password_verify('a-long-admin-password', $admin->password))->toBeTrue()
+        ->and(password_verify('password', $admin->password))->toBeFalse();
+});
+
+it('refuses to create the platform admin with a password under twelve characters', function () {
+    config(['cass.admin_email' => 'admin@example.org', 'cass.admin_password' => 'elevenchars']);
+
+    expect(fn () => $this->seed(PlatformAdminSeeder::class))->toThrow(RuntimeException::class);
+    expect(User::query()->count())->toBe(0);
+});
