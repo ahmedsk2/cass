@@ -88,9 +88,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('file-download', fn (Request $request): Limit => Limit::perMinute(60)
             ->by(ClientIp::from($request)));
 
-        // Spec section 9: the author status page, 20/min/IP. The key is the
-        // client address only - not the token - so that enumerating tokens
-        // counts against one budget instead of getting a fresh one per guess.
+        // The author status page: CASS_STATUS_PAGE_RATE_LIMIT a minute per client
+        // address, 20 by default (the design names no limit for this page). The
+        // key is the client address only - not the token - so that enumerating
+        // tokens counts against one budget instead of getting a fresh one per guess.
         RateLimiter::for('submission-status', fn (Request $request): Limit => Limit::perMinute(
             (int) config('cass.status_page_rate_limit')
         )->by(ClientIp::from($request)));
