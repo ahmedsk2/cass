@@ -12,6 +12,7 @@ use App\Filament\Organizer\Resources\Conferences\Pages\ListConferences;
 use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\get;
@@ -247,13 +248,14 @@ it('offers bulk delete to owners but not to plain members', function () {
     $this->organization->addMember($member, OrganizationRole::Member);
 
     actingAs($member);
-    livewire(ListConferences::class)->assertTableBulkActionHidden('delete');
+    livewire(ListConferences::class)->assertActionHidden(TestAction::make('delete')->table()->bulk());
     expect($member->can('deleteAny', Conference::class))->toBeFalse();
 
     actingAs($this->user);
     livewire(ListConferences::class)
-        ->assertTableBulkActionVisible('delete')
-        ->callTableBulkAction('delete', [$conference]);
+        ->assertActionVisible(TestAction::make('delete')->table()->bulk())
+        ->selectTableRecords([$conference])
+        ->callAction(TestAction::make('delete')->table()->bulk());
 
     expect($conference->fresh()?->trashed())->toBeTrue();
 });

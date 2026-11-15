@@ -16,6 +16,7 @@ use App\Models\Review;
 use App\Models\Submission;
 use App\Models\User;
 use Carbon\Carbon;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\DB;
 
 use function Pest\Laravel\actingAs;
@@ -78,8 +79,8 @@ it('refuses the same forged change through the view page and the list table', fu
         ->mountAction('edit')->setActionData(['blind_review' => false])->callMountedAction()
         ->assertNotified(__('organizer.update.refused'));
     livewire(ListConferences::class)
-        ->mountTableAction('edit', $conference)->setTableActionData(['review_mode' => ReviewMode::Assigned->value])
-        ->callMountedTableAction()->assertNotified(__('organizer.update.refused'));
+        ->mountAction(TestAction::make('edit')->table($conference))->fillForm(['review_mode' => ReviewMode::Assigned->value])
+        ->callMountedAction()->assertNotified(__('organizer.update.refused'));
 
     expect($conference->fresh()?->blind_review)->toBeTrue()
         ->and($conference->fresh()?->review_mode)->toBe(ReviewMode::OpenPool);
@@ -121,6 +122,6 @@ it('puts a refused review setting back to its stored value, so the next save kee
 it('does not open the edit action of the list table on another organization conference', function () {
     $theirs = withoutTenant(fn () => Conference::factory()->create(['name' => 'Theirs']));
 
-    livewire(ListConferences::class)->mountTableAction('edit', $theirs)->assertActionNotMounted();
+    livewire(ListConferences::class)->mountAction(TestAction::make('edit')->table($theirs))->assertActionNotMounted();
     expect($theirs->fresh()?->name)->toBe('Theirs');
 });

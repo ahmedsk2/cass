@@ -20,6 +20,7 @@ use App\Models\ReviewAssignment;
 use App\Models\Submission;
 use App\Models\User;
 use App\Support\Reviews\AssignmentPlan;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\DB;
 use Mockery\MockInterface;
 
@@ -76,10 +77,10 @@ it('lists the submitted abstracts with their reviewers and the coverage summary'
 
 it('assigns a set of reviewers and logs the change', function () {
     assignmentsPage($this->conference)
-        ->callTableAction('assign', $this->submission, data: [
+        ->callAction(TestAction::make('assign')->table($this->submission), data: [
             'reviewers' => [$this->omar->id, $this->sara->id],
         ])
-        ->assertHasNoTableActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->submission->reviewAssignments()->pluck('reviewer_user_id')->sort()->values()->all())
         ->toBe([$this->omar->id, $this->sara->id])
@@ -124,7 +125,7 @@ it('offers only this conference active reviewers in the picker', function () {
     ConferenceReviewer::factory()->create(['user_id' => $elsewhere->id]);
 
     assignmentsPage($this->conference)
-        ->mountTableAction('assign', $this->submission)
+        ->mountAction(TestAction::make('assign')->table($this->submission))
         // assertSee() here would read the component HTML from BEFORE the action
         // mounted - Livewire's SubsequentRender forwards the previous html, and
         // Filament's own helpers read effects.partials, which is where the modal
@@ -144,8 +145,8 @@ it('unassigns, keeps a draft review and keeps a submitted one', function () {
     $submitted = Review::factory()->for($this->submission)->submitted()->create(['reviewer_user_id' => $this->sara->id]);
 
     assignmentsPage($this->conference)
-        ->callTableAction('assign', $this->submission, data: ['reviewers' => [$this->sara->id]])
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('assign')->table($this->submission), data: ['reviewers' => [$this->sara->id]])
+        ->assertHasNoFormErrors();
 
     expect($this->submission->reviewAssignments()->pluck('reviewer_user_id')->all())->toBe([$this->sara->id])
         // Neither review is touched. A draft simply leaves the queue, because
@@ -174,7 +175,7 @@ it('refuses to unassign a reviewer who has already submitted a review of the abs
         ->toThrow(ReviewNotAcceptable::class);
 
     assignmentsPage($this->conference)
-        ->callTableAction('assign', $this->submission, data: ['reviewers' => [$this->omar->id]])
+        ->callAction(TestAction::make('assign')->table($this->submission), data: ['reviewers' => [$this->omar->id]])
         ->assertNotified(__('reviewer.notices.refused'));
 
     expect($this->submission->reviewAssignments()->pluck('reviewer_user_id')->sort()->values()->all())
