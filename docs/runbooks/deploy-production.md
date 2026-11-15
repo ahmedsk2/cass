@@ -81,7 +81,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
    ssh -i <ssh-key> <ssh-user>@<origin-ip> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh
    ```
 
-   It queues the deploy, waits for a NEW healthy `app` container (stopping early if Coolify reports the deployment failed), then runs `migrate:status` inside it as user `app`. When anything is Pending it first runs `sudo /usr/local/bin/cass-backup` on the host (see **Backups**) and migrates only if that succeeded; in every case it then runs `migrate:status` again. Then it probes eight pages through Traefik for their expected status codes and runs `cass:health`, showing every output in full. It prints `DEPLOY_DONE` only when all of that passed. **Any line starting `DEPLOY_FAILED:` means stop and read**: it names the step that failed, nothing after that step ran, and the exit codes are listed at the top of the script (4: the backup failed and nothing was migrated).
+   It queues the deploy, waits for a NEW healthy `app` container (stopping early if Coolify reports the deployment failed), then runs `migrate:status` inside it as user `app`. When anything is Pending it first runs `sudo /usr/local/bin/cass-backup` on the host (see **Backups**) and migrates only if that succeeded; in every case it then runs `migrate:status` again. Then it probes eight pages through Traefik for their expected status codes and runs `cass:health`, showing every output in full. It prints `DEPLOY_DONE` only when all of that passed. **Any line starting `DEPLOY_FAILED:` means stop and read**: it names the step that failed, nothing after that step ran, and the exit codes are listed at the top of the script (4: the backup failed and nothing was migrated; 7: the closing `cass:health` found a red row with the release already live, and when that row is `disk` a rollback frees nothing: make room as **Health** says, then run `cass:health` again).
 3. Migrations are additive: expand now (new tables, new nullable columns), contract (drop, rename, tighten) in a later release, once no deployed code reads the old shape. A migration release begins with a hand-run `cass-backup` and ends with `migrate:status` and `cass:health` clean; the script backs up again just before `migrate --force` and prints `DEPLOY_DONE` only on that clean end. The migration files exist only in the new image, and Coolify's Docker Compose deploys stop the old container before the new one starts (no rolling update), so the pages that need the new schema return 500 until the script's `migrate --force` has run. Never run step 6's `db:seed` on a release: the seeder resets the platform admin's password back to `CASS_ADMIN_PASSWORD`. By hand, if the script cannot run:
 
    ```bash
@@ -1630,7 +1630,19 @@ sudo docker exec "$C" su-exec app php artisan cass:health
 | `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. |
 | `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. |
 | `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
+| `disk` | the filesystem the `cass-storage` volume lives on has less than 15% of its size free, or less than 2 GiB, whichever comes first; the detail names the floor it crossed, and its figures are `df`'s available space and size there. Uploads still work; `private disk` is the row that turns red once they cannot. Make room with "Author uploads and private storage" (`du -sh`, `cass:sweep-uploads`) and, on the host, the backups' rotation (**Backups**) and Docker's images and build cache, which live on the same filesystem as the volume: `sudo docker system df` shows them. Free the build cache first (`sudo docker builder prune`). `sudo docker image prune -a` is the last resort: it deletes every image no container uses, the previous release's included, so a rollback (**Rollback**) would then have to rebuild it. Coolify's Docker cleanup does both. |
 | `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. |
+
+The `disk` row's two floors are settings, each a whole number, and 0 turns that floor off:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CASS_HEALTH_DISK_MIN_PERCENT` | 15 | `disk` is red below this percentage of the filesystem free |
+| `CASS_HEALTH_DISK_MIN_GIB` | 2 | `disk` is red below this many GiB free |
+
+Both are optional: set one in the application's environment (**One-time setup** step 4), then redeploy through the script (**Every release** step 2).
+
+Before the first deploy that ships the `disk` row, look once at the filesystem it measures, the one holding the `cass-storage` volume: `C=$(cass_container app)`, then `sudo docker exec "$C" df -h /var/www/html/storage/app`. If the space available there is under 15% of its size or under 2 GiB, make room first (the `disk` row above), or that deploy ends at exit 7.
 
 `--json` for a cron. It exits 1 if any row is red, so
 `cass:health --json || mail -s 'CASS unhealthy' you@example.org` is a monitor.
