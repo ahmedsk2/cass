@@ -78,6 +78,12 @@ function bootReviewerPanel(): void
  * organization would silently be re-parented while the panel is booted. Wrap
  * cross-tenant fixtures in this.
  *
+ * A model reached through another (Submission, through its conference) is
+ * never re-parented, but reads need this too: inside a booted organizer panel
+ * every Conference and Submission query is tenant-scoped, so read another
+ * organization's rows in here, or with fresh() or refresh(), which skip global
+ * scopes.
+ *
  * @template TReturn
  *
  * @param  Closure(): TReturn  $callback

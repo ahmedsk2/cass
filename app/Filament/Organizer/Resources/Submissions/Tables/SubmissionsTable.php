@@ -22,8 +22,7 @@ class SubmissionsTable
         // Filament::getTenant() is typed Model|null, so narrow before calling
         // anything Organization-specific: without this, $tenant->conferences()
         // is a call on Illuminate\Database\Eloquent\Model and Larastan level 6
-        // reports method.notFound. Same narrowing as
-        // SubmissionResource::getEloquentQuery() and ConferenceForm.
+        // reports method.notFound. Same narrowing as ConferenceForm.
         $tenant = Filament::getTenant();
         $tenant = $tenant instanceof Organization ? $tenant : null;
 
@@ -70,10 +69,9 @@ class SubmissionsTable
             ->filters([
                 SelectFilter::make('conference_id')
                     ->label('Conference')
-                    // The tenant's conferences only. `->relationship()` would
-                    // query every conference on the platform, because this
-                    // resource is not tenant-scoped by Filament (see
-                    // SubmissionResource::$isScopedToTenant).
+                    // The tenant's conferences, asked of the tenant itself, so
+                    // this option list never depends on how another resource
+                    // is scoped.
                     ->options(fn (): array => $tenant === null
                         ? []
                         : $tenant->conferences()->orderBy('name')->pluck('name', 'id')->all())
@@ -81,6 +79,8 @@ class SubmissionsTable
                 SelectFilter::make('status')->options(SubmissionStatus::class)->multiple(),
                 SelectFilter::make('track_id')
                     ->label('Track')
+                    // Tracks have no organization of their own: through the
+                    // conference.
                     ->options(fn (): array => $tenant === null
                         ? []
                         : Track::query()

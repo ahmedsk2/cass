@@ -9,17 +9,25 @@ use App\Filament\Organizer\Resources\Submissions\Pages\ViewSubmission;
 use App\Filament\Organizer\Resources\Submissions\Schemas\SubmissionInfolist;
 use App\Filament\Organizer\Resources\Submissions\Tables\SubmissionsTable;
 use App\Models\Conference;
-use App\Models\Organization;
 use App\Models\Submission;
 use BackedEnum;
-use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-/** @extends \Filament\Resources\Resource<Submission> */
+/**
+ * Every abstract of the tenant, under Filament's tenancy like ConferenceResource.
+ * The ownership relation is Submission::organization(), a has-one-through the
+ * conference, so the panel's global scope is a whereHas on every Submission
+ * query in an organizer request: this list and its search, filters and export,
+ * the view page and its route binding, global search, and every
+ * ConferenceResource page that reads abstracts. SubmissionPolicy is the second,
+ * independent gate.
+ *
+ * @extends \Filament\Resources\Resource<Submission>
+ */
 class SubmissionResource extends Resource
 {
     protected static ?string $model = Submission::class;
@@ -30,30 +38,10 @@ class SubmissionResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
-    /**
-     * **Read the comment before changing this.**
-     *
-     * Filament's tenancy is a global scope *and* two model observers
-     * (Resource/Concerns/BelongsToTenant). The `created` observer ends in
-     * `$relationship->save($tenant)` for any ownership relation that is not
-     * BelongsTo, BelongsToThrough or BelongsToMany. `Submission` has no
-     * `organization_id`; it reaches the tenant through `conference`, so its
-     * `organization()` is a HasOneThrough - which would scope queries correctly
-     * (the scope's default branch is a whereHas) and then fatal on creation,
-     * because HasOneThrough has no save(). That fires on every submission
-     * created while this panel is booted with a tenant, which is every panel
-     * test.
-     *
-     * So scoping is done by hand, once, in getEloquentQuery() below - which is
-     * also what resolveRecordRouteBinding() uses
-     * (HasRoutes::getRecordRouteBindingEloquentQuery()), so the list, the view
-     * page and every generated record URL are all covered. SubmissionPolicy is
-     * the second, independent gate.
-     */
-    protected static bool $isScopedToTenant = false;
+    protected static ?string $tenantOwnershipRelationshipName = 'organization';
 
     // No $recordRouteKeyName: the model's route key is the ULID and Filament
-    // builds URLs from getRouteKey(), so the two agree (Plan 2 fact 16).
+    // builds URLs from getRouteKey(), so the two agree.
 
     public static function infolist(Schema $schema): Schema
     {
@@ -66,26 +54,20 @@ class SubmissionResource extends Resource
     }
 
     /**
+     * Tenancy is the panel's scope, not this method. What stays here is the
+     * conference: an abstract whose conference was deleted is neither listed
+     * nor opened, because the timezone column and the infolist read the
+     * conference, and ExportSubmissionsCsv relies on the same exclusion. Inside
+     * the panel this whereHas also carries the Conference model's own tenancy
+     * scope, so it is a second filter on the tenant as well.
+     *
      * @return Builder<Submission>
      */
     public static function getEloquentQuery(): Builder
     {
-        $tenant = Filament::getTenant();
-
-        $query = parent::getEloquentQuery()->with(['conference', 'track', 'authors']);
-
-        // whereRaw(false) rather than an empty result by luck: outside a tenant
-        // this resource has no meaning, and returning every submission on the
-        // platform because getTenant() happened to be null is the failure mode
-        // this whole comment exists to prevent.
-        if (! $tenant instanceof Organization) {
-            return $query->whereRaw('1 = 0');
-        }
-
-        return $query->whereHas(
-            'conference',
-            fn (Builder $conference): Builder => $conference->where('organization_id', $tenant->getKey()),
-        );
+        return parent::getEloquentQuery()
+            ->whereHas('conference')
+            ->with(['conference', 'track', 'authors']);
     }
 
     public static function getPages(): array

@@ -76,9 +76,8 @@ class SubmissionsTable
                     ->label(__('admin.submissions.filters.organization'))
                     ->options(fn (): array => Organization::query()->orderBy('name')->pluck('name', 'id')->all())
                     ->searchable()
-                    // Through the conference: submissions have no
-                    // organization_id, which is the same fact that made the
-                    // organizer resource override tenancy.
+                    // Through the conference: a submission has no
+                    // organization_id of its own.
                     ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
                         ? $query->whereHas('conference', fn (Builder $inner): Builder => $inner->where('organization_id', $data['value']))
                         : $query),

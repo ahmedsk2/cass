@@ -35,10 +35,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * deleteAny(): false does not apply to a platform admin. Two pages, no header
  * actions, no bulk actions, one row action.
  *
- * No tenancy override. Plan 3's backlog entry about $isScopedToTenant and the
- * HasOneThrough fatal was written for the ORGANIZER panel, which has a tenant;
- * AdminPanelProvider never calls ->tenant(), so there is nothing here to scope
- * and nothing for Filament's tenancy observer to do.
+ * No tenancy here: AdminPanelProvider never calls ->tenant(), so Filament
+ * registers no scope and no observer for this resource, and the organizer
+ * panel's scope on Submission does nothing while this panel is the current one.
  *
  * @extends \Filament\Resources\Resource<Submission>
  */
