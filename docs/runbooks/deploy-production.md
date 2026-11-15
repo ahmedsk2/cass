@@ -5,6 +5,71 @@ Host address, SSH user and key path live in the owner's private ops notes, not i
 Host: OCI `hosting-1`, `<ssh-user>@<origin-ip>` (key `<ssh-key>`), Coolify + Traefik, Cloudflare in front.
 App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, branch `main`.
 
+## Quick procedures
+
+Each procedure is the shortest correct path; the section a step links holds the reasons, the edge cases and the incidents. When a section changes, its quick procedure changes in the same commit. Host steps run after `ssh -i <ssh-key> <ssh-user>@<origin-ip>` with the [`cass_container` helper](#finding-the-containers) pasted. A session reaches the host only while the owner has unlocked production.
+
+| When | Procedure |
+|---|---|
+| Shipping `main` | [Q1. Every release](#q1-every-release) |
+| A release broke production | [Q2. Roll back](#q2-roll-back) |
+| Proving a backup restores | [Q3. Restore check](#q3-restore-check) |
+| A red `cass:health` row, or a quiet heartbeat | [Q4. Health](#q4-health) |
+| Mail is late, or email-log rows sit at `queued` | [Q5. A stuck queue](#q5-a-stuck-queue) |
+| The off-host copy's alert or log line | [Q6. The off-host copy](#q6-the-off-host-copy) |
+
+### Q1. Every release
+
+- **a.** On the PC, the release's run and its `image` job ([Every release](#every-release) step 1): `gh run list --workflow ci.yml --branch main --commit "$(git rev-parse origin/main)" --json databaseId,conclusion --jq '.[0]'` prints `"conclusion":"success"`, and `gh run view <id> --json jobs --jq '.jobs[]|select(.name=="image").conclusion'` prints `success`. On `skipped`, `gh workflow run ci.yml --ref main` and wait for green.
+- **b.** No open conference is within 48 hours of its submission or review deadline (`CLAUDE.md`): `/admin/conferences` lists the first, each conference's page in it shows the second.
+- **c.** If the release changes the `mysql` digest (`git diff <running>..origin/main -- docker-compose.production.yml` changes its `image: mysql:8.4@sha256:` line) or adds a migration (`git diff --name-only <running>..origin/main -- database/migrations` lists a file), on the host: `sudo /usr/local/bin/cass-backup`, which ends `[cass-backup] /srv/backups/cass/cass-<date>-<time>.sql.gz (<n> bytes), keeping 14 days` ([Every release](#every-release) steps 1 and 3).
+- **d.** Right before the deploy, `git fetch origin main`: `origin/main` must still be the commit of a, and nothing merges until the deploy ends ([Every release](#every-release) step 2).
+- **e.** The owner unlocks production, then on the PC, from a checkout of that commit (`git switch --detach origin/main`): `ssh -i <ssh-key> <ssh-user>@<origin-ip> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh` ([Every release](#every-release) step 2). Its last line is `DEPLOY_DONE`. A line starting `DEPLOY_FAILED:` means stop: exit 2 is often the host ([When the host itself is slow](#when-the-host-itself-is-slow)), 4 a failed backup with nothing migrated, 7 a red `cass:health` row with the release live.
+- **f.** `/up` answers 200 and `/org/login` is styled ([Every release](#every-release) step 4).
+- **g.** The page timings: the loop in [Every release](#every-release) step 5, a median of 0.300 s or less.
+- **h.** Record the release in `docs/HANDOVER.md`'s Production row. Never Restart or Redeploy in Coolify, and never run `db:seed` on a release ([Every release](#every-release) steps 2 and 3).
+
+### Q2. Roll back
+
+- **a.** Did a release do it? `/up`, `sudo docker ps` and Coolify's deployment list ([When an alert fires](#when-an-alert-fires)).
+- **b.** On the PC ([Rollback](#rollback)): `git fetch origin && git switch -c revert-<sha> origin/main`; then, newest first, `git revert -m 1 <merge sha>` for each merge `git log --first-parent --merges <running>..origin/main` lists, or only the culprit's when it is known; then `git push -u origin revert-<sha>` and `gh pr create --base main --title "Revert <sha>" --body "<why>"`.
+- **c.** CI green, the owner's approval and the merge, then [Q1](#q1-every-release) from a. If Q1 b's 48-hour rule stops it, ask the owner whether a rollback is an exception.
+- **d.** Coolify's "redeploy the previous successful build" is unverified ([Rollback](#rollback)).
+- **e.** Never roll the schema back: migrations are additive.
+
+### Q3. Restore check
+
+- **a.** On the host: `C=$(cass_container mysql)`, then `NEWEST=$(sudo sh -c 'ls -1t /srv/backups/cass/cass-*.sql.gz | head -1')`, the newest dump: last night's 03:17 or a later hand run ([Verifying one on the host](#verifying-one-on-the-host)).
+- **b.** Run that section's block from its `DROP DATABASE IF EXISTS` line to its last: the load prints nothing, and each table's live and restored counts are close, and zero only where production's is (`email_logs` is empty as of 2026-11-15).
+- **c.** Monthly, the owner's and never in a Claude session: [Restore drill from the off-host copy](#restore-drill-from-the-off-host-copy--monthly-and-not-optional).
+- **d.** Restoring over production is not written down: stop and ask the engineer (backlog "Backups").
+
+### Q4. Health
+
+- **a.** `C=$(cass_container app)`, then `sudo docker exec "$C" su-exec app php artisan cass:health`: a Check, Status and Detail table, every Status `OK`, exit 0 ([Health](#health)).
+- **b.** A `FAIL` row: that row's First move in [Health](#health).
+- **c.** A quiet hourly heartbeat ([Heartbeats](#heartbeats)): `sudo docker exec "$C" grep WARNING storage/logs/cass-health.log | tail -n 5` shows failed pings, and `sudo docker logs --since 3h "$C" 2>&1 | grep 'cass:health'` shows each run as `DONE` or `FAIL`.
+
+### Q5. A stuck queue
+
+Mail is late, `cass:health` shows `queue` FAIL, or `/admin/email-logs` holds `queued` rows for hours.
+
+- **a.** `C=$(cass_container app)`, then `sudo docker exec "$C" su-exec app php artisan cass:health`: `queue` reads `oldest waiting job is <age> old`, FAIL past 15 minutes ([Health](#health)).
+- **b.** `sudo docker exec "$C" supervisorctl status`: `nginx`, `php-fpm`, `queue` and `scheduler` RUNNING; if `queue` is not, `sudo docker exec "$C" supervisorctl restart queue` ([Email triage](#email-triage)).
+- **c.** `sudo docker exec "$C" su-exec app php artisan queue:monitor database:default`: `[N] OK`, N falling; a bare `database` watches a queue nothing uses ([Email triage](#email-triage), [Secret rotation](#secret-rotation)).
+- **d.** `sudo docker exec "$C" su-exec app php artisan queue:failed`: no rows, or each failure. Fix the cause, then `sudo docker exec "$C" su-exec app php artisan queue:retry all`; judge it by the worker and the mailbox, not the log's status ([Sending decision emails](#sending-decision-emails)).
+- **e.** Reminders still unsent while the queue drains: `sudo docker exec -it "$C" su-exec app php artisan schedule:clear-cache` ([Reviewer reminders](#reviewer-reminders)).
+
+Never `cache:clear`: with the database cache store it empties the scheduler heartbeat and every rate limit too.
+
+### Q6. The off-host copy
+
+- **a.** On the host, `sudo tail -n 40 /var/log/cass-backup.log`: the last `[cass-backup-offsite]` line reads `OK: <n> uploaded, <m> already off-host; newest dump <file>, <h> h old; pinged` ([Heartbeats](#heartbeats)).
+- **b.** On `FAILED (exit N): …`, that exit's row in [Off-host copies](#off-host-copies), then `sudo /usr/local/bin/cass-backup-offsite` by hand.
+- **c.** After a hand-run `cass-backup`, `sudo /usr/local/bin/cass-backup-offsite` sends that dump at once ([Off-host copies](#off-host-copies)).
+- **d.** Kuma's `cass offsite copy` is up and the alarm `cass-offsite-filling` is quiet ([When an alert fires](#when-an-alert-fires)).
+- **e.** The monthly drill is the owner's: [Restore drill from the off-host copy](#restore-drill-from-the-off-host-copy--monthly-and-not-optional).
+
 ## Finding the containers
 
 Almost every block below starts by resolving a container name. **Paste this
@@ -49,7 +114,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 ## One-time setup
 
 1. DNS (Cloudflare, owner): A record `cass` -> `<origin-ip>`, proxied (orange cloud).
-2. Coolify: New resource -> Private Repository (with deploy key) -> `git@github.com:ahmedsk2/cass.git`, branch `main`, compose file `docker-compose.production.yml`, build pack Docker Compose. The repository is private, so Coolify clones it with the private key `cass-deploy-key` (Keys & Tokens, id 9); its public half is the repository's read-only deploy key "coolify cass (read-only)" on GitHub. To rotate it: generate a new pair, add the public half on GitHub, store the private half in Coolify, attach it on the application's Source screen ("Select another Private Key"), check `git ls-remote` with it, then delete the old key on both sides. The application ran from the public source until 2026-10-16, when the repository went private and was switched to this key.
+2. Coolify: New resource -> Private Repository (with deploy key) -> `git@github.com:ahmedsk2/cass.git`, branch `main`, compose file `docker-compose.production.yml`, build pack Docker Compose. The repository has been public again since 2026-10-16 (decision 0011). Coolify still clones it with the private key `cass-deploy-key` (Keys & Tokens, id 9), to which the application was switched that day while the repository was briefly private; a deploy key works either way. Its public half is the repository's read-only deploy key "coolify cass (read-only)" on GitHub. To rotate it: generate a new pair, add the public half on GitHub, store the private half in Coolify, attach it on the application's Source screen ("Select another Private Key"), check `git ls-remote` with it, then delete the old key on both sides. The application ran from the public source until 2026-10-16. The switch itself was a one-row edit of Coolify's `applications` table, because neither the API nor the UI can attach a first key to a public-source app (old values saved on the host as `~/cass-app-source-backup-20261016-185435.txt`).
 3. Coolify domain for the `app` service: `https://cass.towardpcc.com:8080`.
 4. Environment variables in Coolify (all required unless marked optional): `APP_KEY` (generate locally with `php artisan key:generate --show`), optional `APP_PREVIOUS_KEYS` (former keys after a rotation, see **Secret rotation**), `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, optional `MAIL_SCHEME` (`smtps` for implicit TLS on port 465; leave it unset on 587, where the connection upgrades with STARTTLS when the server offers it; `MAIL_ENCRYPTION` is not read by Laravel 13 and should be deleted from Coolify), `MAIL_FROM_ADDRESS`, `CASS_CONTACT_EMAIL`, `CASS_ADMIN_EMAIL`, `CASS_ADMIN_PASSWORD` (12+ characters; only for step 6's first seed, then overwritten with a placeholder, see step 6), optional `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, optional `CASS_HEARTBEAT_URL` and `SENTRY_LARAVEL_DSN` (both secrets, see **Monitoring**). Set each with `~/bin/cass-set-env` on the host, check through the API that it is there, and never trust Coolify's environment screen: two saves there on 2026-11-05, and every save of five variables on 2026-11-14, never reached Coolify's database. The helper (installed 2026-11-14, mode 700, owner `ubuntu`) takes `application` or `service`, the resource's uuid and the variable's name, reads the value from stdin, hidden on a terminal, and sets it through Coolify's API (`PATCH /applications/<uuid>/envs`, or `/services/<uuid>/envs` for a service such as GlitchTip). Run it from your own terminal over `ssh -t`, never from a session, so the value never passes through one; then, on the host, the check prints the value's length for each row of that name, never the value (an empty list or a 0: not set):
 
@@ -83,15 +148,15 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 
 ## Every release
 
-1. Merge to `main` with CI green. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying. If the release changes the `mysql` image digest in `docker-compose.production.yml`, run `sudo /usr/local/bin/cass-backup` on the host by hand before deploying: the deploy recreates the database container, and the script backs up only when a migration is pending.
-2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit, with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL. Coolify clones and builds the branch's HEAD at that moment, not your checkout: run `git fetch origin main` and compare `origin/main` with the commit you announced immediately before the command below, and merge nothing to `main` while the deploy runs. On 2026-10-17 a merge sixteen minutes before the start shipped Plan 8 together with Plan 7. The script waits `CASS_DEPLOY_TIMEOUT` seconds (default 1500) for the new container, and Coolify has its own build limit of 3600 s (Server, Advanced, Builds). A healthy host has this image built and healthy in about 3.5 minutes; a wait past ten minutes means the host, not the release: read **When the host itself is slow** before retrying. The Auto Deploy switch on the application was found on, and inert, on 2026-11-05 (no GitHub webhook reaches this Coolify) and has been off since 2026-11-06. **Restart is a deploy too.** For this Docker Compose application Coolify's Restart builds the branch's HEAD of that moment, as Redeploy does, and runs none of the script's checks: no `migrate:status`, no probes. On 2026-11-05 at 22:11 UTC the Restart that applied `CASS_HEARTBEAT_URL` put `06d8dea`, then `main`'s head, into production while `docs/HANDOVER.md` still named `0786a0e`; nothing was pending, so nothing broke. Apply an environment change by running this script, never by Restart. Set the variable first with `cass-set-env` and check it through the API (**One-time setup** step 4): on 2026-11-14 Coolify's environment screen dropped every save, as it had on 2026-11-05. A session's command that reaches the host runs only while production is unlocked: `.claude/hooks/guard-production.mjs` refuses it unless `.claude/deploy-unlocked` was touched in the last 60 minutes, and that touch is the owner's (`tools/claude/README.md`, review point 3). On 2026-11-14 the owner told the session in chat to make the unlock itself ("unlock it your self"), and the session touched the file at 14:28 and 17:46 UTC, before that day's two deploys, at that instruction.
+1. Merge to `main` with CI green. Check the commit's run and its `image` job: `gh run list --workflow ci.yml --branch main --commit "$(git rev-parse origin/main)" --json databaseId,conclusion --jq '.[0]'` prints the run's id and `"conclusion":"success"`, and `gh run view <id> --json jobs --jq '.jobs[]|select(.name=="image").conclusion'` prints `success` or `skipped`. If that commit's `image` job was skipped, run `gh workflow run ci.yml --ref main` and wait for green before deploying. If the release changes the `mysql` image digest in `docker-compose.production.yml` (`git diff <running>..origin/main -- docker-compose.production.yml` changes its `image: mysql:8.4@sha256:` line), run `sudo /usr/local/bin/cass-backup` on the host by hand before deploying: the deploy recreates the database container, and the script backs up only when a migration is pending.
+2. Deploy with `tools/claude/deploy.sh` from a checkout of that commit (`git switch --detach origin/main` after the fetch), with Coolify's auto-deploy off: a deploy the script did not start runs no migration. `<uuid>` is the application's, from its Coolify URL. Coolify clones and builds the branch's HEAD at that moment, not your checkout: run `git fetch origin main` and compare `origin/main` with the commit you announced immediately before the command below, and merge nothing to `main` while the deploy runs. On 2026-10-17 a merge sixteen minutes before the start shipped Plan 8 together with Plan 7. The script waits `CASS_DEPLOY_TIMEOUT` seconds (default 1500) for the new container, and Coolify has its own build limit of 3600 s (Server, Advanced, Builds). A healthy host has this image built and healthy in about 3.5 minutes; a wait past ten minutes means the host, not the release: read **When the host itself is slow** before retrying. The Auto Deploy switch on the application was found on, and inert, on 2026-11-05 (no GitHub webhook reaches this Coolify) and has been off since 2026-11-06. **Restart is a deploy too.** For this Docker Compose application Coolify's Restart builds the branch's HEAD of that moment, as Redeploy does, and runs none of the script's checks: no `migrate:status`, no probes. On 2026-11-05 at 22:11 UTC the Restart that applied `CASS_HEARTBEAT_URL` put `06d8dea`, then `main`'s head, into production while `docs/HANDOVER.md` still named `0786a0e`; nothing was pending, so nothing broke. Apply an environment change by running this script, never by Restart. Set the variable first with `cass-set-env` and check it through the API (**One-time setup** step 4): on 2026-11-14 Coolify's environment screen dropped every save, as it had on 2026-11-05. A session's command that reaches the host runs only while production is unlocked: `.claude/hooks/guard-production.mjs` refuses it unless `.claude/deploy-unlocked` was touched in the last 60 minutes, and that touch is the owner's (`tools/claude/README.md`, review point 3). On 2026-11-14 the owner told the session in chat to make the unlock itself ("unlock it your self"), and the session touched the file at 14:28 and 17:46 UTC, before that day's two deploys, at that instruction. The same evening it touched it five more times, at 20:41, 21:06, 21:19, 21:45 and 21:50 UTC, for the OCI API calls and the host commands of the off-host copy's install, at the owner's standing instruction of that afternoon: the exception to review point 3 of `tools/claude/README.md`, where the unlock is the owner's.
 
    ```bash
    ssh -i <ssh-key> <ssh-user>@<origin-ip> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh
    ```
 
    It queues the deploy, waits for a NEW healthy `app` container (stopping early if Coolify reports the deployment failed), then runs `migrate:status` inside it as user `app`. When anything is Pending it first runs `sudo /usr/local/bin/cass-backup` on the host (see **Backups**) and migrates only if that succeeded; in every case it then runs `migrate:status` again. Then it probes eight pages through Traefik for their expected status codes and runs `cass:health`, showing every output in full. It prints `DEPLOY_DONE` only when all of that passed. **Any line starting `DEPLOY_FAILED:` means stop and read**: it names the step that failed, nothing after that step ran, and the exit codes are listed at the top of the script (4: the backup failed and nothing was migrated; 7: the closing `cass:health` found a red row with the release already live, and when that row is `disk` a rollback frees nothing: make room as **Health** says, then run `cass:health` again).
-3. Migrations are additive: expand now (new tables, new nullable columns), contract (drop, rename, tighten) in a later release, once no deployed code reads the old shape. A migration release begins with a hand-run `cass-backup` and ends with `migrate:status` and `cass:health` clean; the script backs up again just before `migrate --force` and prints `DEPLOY_DONE` only on that clean end. The migration files exist only in the new image, and Coolify's Docker Compose deploys stop the old container before the new one starts (no rolling update), so the pages that need the new schema return 500 until the script's `migrate --force` has run. Never run step 6's `db:seed` on a release: it ran once, at the first deploy, and a release gives it nothing to do. It leaves an existing admin's password alone; a password change is `cass:admin-password` (**Platform admin password**). By hand, if the script cannot run:
+3. Migrations are additive: expand now (new tables, new nullable columns), contract (drop, rename, tighten) in a later release, once no deployed code reads the old shape. A migration release, one for which `git diff --name-only <running>..origin/main -- database/migrations` lists a file (`<running>` is the commit production runs, in `docs/HANDOVER.md`'s Production row), begins with a hand-run `cass-backup` and ends with `migrate:status` and `cass:health` clean; the script backs up again just before `migrate --force` and prints `DEPLOY_DONE` only on that clean end. The migration files exist only in the new image, and Coolify's Docker Compose deploys stop the old container before the new one starts (no rolling update), so the pages that need the new schema return 500 until the script's `migrate --force` has run. Never run step 6's `db:seed` on a release: it ran once, at the first deploy, and a release gives it nothing to do. It leaves an existing admin's password alone; a password change is `cass:admin-password` (**Platform admin password**). By hand, if the script cannot run:
 
    ```bash
    C=$(cass_container app)
@@ -307,6 +372,7 @@ in the code, not an outage — and is only in `queue:failed`. Check both:
 ```bash
 C=$(cass_container app)
 sudo docker exec "$C" supervisorctl status          # four programs, all RUNNING
+sudo docker exec "$C" su-exec app php artisan queue:monitor database:default   # [N] OK, N falling
 sudo docker exec "$C" su-exec app php artisan queue:failed
 sudo docker exec "$C" supervisorctl restart queue   # only if the worker is not RUNNING
 ```
@@ -368,8 +434,9 @@ the same day.
 **Checking it by hand.**
 
 ```bash
-docker exec cass su-exec app php artisan schedule:list
-docker exec cass su-exec app php artisan cass:reviewer-reminders
+C=$(cass_container app)
+sudo docker exec "$C" su-exec app php artisan schedule:list
+sudo docker exec "$C" su-exec app php artisan cass:reviewer-reminders
 ```
 
 The command is idempotent, so running it by hand is safe. It prints one line per
@@ -398,6 +465,7 @@ SQL — the row's key carries the cache prefix (`cass-cache-framework/schedule-<
 so a hand-written `LIKE 'framework/%'` query finds nothing:
 
 ```bash
+C=$(cass_container app)
 sudo docker exec -it "$C" su-exec app php artisan schedule:list
 sudo docker exec -it "$C" su-exec app php artisan schedule:clear-cache
 ```
@@ -1208,7 +1276,19 @@ When the first touch of pages, syscalls and plain compute are normal and only th
 
 ## Rollback
 
-Coolify -> Deployments -> redeploy the previous successful build. Migrations are additive; do not roll back the schema without a backup restore.
+Coolify -> Deployments -> redeploy the previous successful build. **Unverified:** no rollback has been recorded, and for this application Coolify's Restart and Redeploy build `main`'s head of that moment (**Every release** step 2), so that redeploy may build the head again rather than the previous release. Migrations are additive; do not roll back the schema without a backup restore.
+
+The route known to work is a revert, made like any other change, then a deploy through the script. A release is `main`'s head, so it carries every merge since the commit production runs (`<running>`, in `docs/HANDOVER.md`'s Production row): revert them newest first, each merge the second line lists, or only the culprit's merge when it is known.
+
+```bash
+git fetch origin && git switch -c revert-<sha> origin/main
+git log --first-parent --merges <running>..origin/main
+git revert -m 1 <merge sha>        # once per merge, newest first
+git push -u origin revert-<sha>
+gh pr create --base main --title "Revert <sha>" --body "<why>"
+```
+
+Then CI green, the owner's approval and the merge, and **Every release** from step 1.
 
 Rolling back to an image older than Plan 7: every queued notification travels
 in `App\Notifications\SendQueuedNotificationsWithLog`, which an older image
@@ -1295,14 +1375,14 @@ the app container cannot see `/srv/backups`, which is the point of putting them
 there. The monthly drill restores from the off-host copy instead (**Restore drill from the off-host copy**); this check of the host's own copy is the quick one, after a migration release for instance.
 
 ```bash
-NEWEST=$(ls -1t /srv/backups/cass/cass-*.sql.gz | head -1)
+NEWEST=$(sudo sh -c 'ls -1t /srv/backups/cass/cass-*.sql.gz | head -1')
 C=$(cass_container mysql)
 
 sudo docker exec "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE IF EXISTS cass_restore_check; CREATE DATABASE cass_restore_check;"'
-gunzip -c "$NEWEST" | sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass_restore_check'
+sudo gunzip -c "$NEWEST" | sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass_restore_check'
 
 # Row counts, live against restored. They will differ by whatever happened
-# since the dump; they must not differ by an order of magnitude or be zero.
+# since the dump; they must not differ by an order of magnitude, nor be zero where live is not.
 for T in organizations conferences submissions reviews email_logs; do
   sudo docker exec "$C" sh -c "MYSQL_PWD=\"\$MYSQL_ROOT_PASSWORD\" mysql -uroot -N -e \
     'SELECT \"$T\", (SELECT COUNT(*) FROM cass.$T), (SELECT COUNT(*) FROM cass_restore_check.$T);'"
@@ -1467,6 +1547,8 @@ $O os bucket list --compartment-id <cass-backups OCID> 2>&1 | grep -qF "$NN" && 
 sudo rm /root/cass-canary.txt
 ```
 
+Then delete the canary object, before the retention rule: the host cannot, and once the rule stands nobody can for 30 days. On 2026-11-14 the session deleted it through the OCI API (`ObjectStorageClient.delete_object`).
+
 Now the retention rule: the session creates it with `ObjectStorageClient.create_retention_rule` on `cass-offsite` (display name `keep-30-days`, 30 days, no lock), or the owner in the Console: Buckets, `cass-offsite`, Retention rules, Create rule. Then the script, from a commit of `main` whose push run is green, both ends' SHA-256 compared; the commit and the digest go into the project memory:
 
 ```bash
@@ -1556,6 +1638,8 @@ a visitor already had open posts to the old path and gets a 404 until they
 reload, and `php artisan route:list --path=livewire` is how you read the new
 one.
 
+The application's four manual webhook secrets, which the engineer's pre-flight printed into the session by mistake, were replaced on 2026-11-06 with 64-character random values by a one-row update in Coolify's database, values never shown, so the printed ones are dead.
+
 ## Platform admin password
 
 The admin changes their own password under Profile. The seeder sets it only when it creates the admin (**One-time setup** step 6) and never changes it afterwards, whatever `CASS_ADMIN_PASSWORD` holds. To replace it from the host, for a lost password or one somebody else may know:
@@ -1643,15 +1727,15 @@ C=$(cass_container app)
 sudo docker exec "$C" su-exec app php artisan cass:health
 ```
 
-| Row | Red means |
-|---|---|
-| `database` | the connection named by `DB_CONNECTION` does not answer `select 1`. Every page is 500ing. |
-| `migrations` | the image deployed and nobody ran `migrate --force`. Every page touching a new column is 500ing. |
-| `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. |
-| `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. |
-| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
-| `disk` | the filesystem the `cass-storage` volume lives on has less than 15% of its size free, or less than 2 GiB, whichever comes first; the detail names the floor it crossed, and its figures are `df`'s available space and size there. Uploads still work; `private disk` is the row that turns red once they cannot. Make room with "Author uploads and private storage" (`du -sh`, `cass:sweep-uploads`) and, on the host, the backups' rotation (**Backups**) and Docker's images and build cache, which live on the same filesystem as the volume: `sudo docker system df` shows them. Free the build cache first (`sudo docker builder prune`). `sudo docker image prune -a` is the last resort: it deletes every image no container uses, the previous release's included, so a rollback (**Rollback**) would then have to rebuild it. Coolify's Docker cleanup does both. |
-| `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. |
+| Row | Red means | First move |
+|---|---|---|
+| `database` | the connection named by `DB_CONNECTION` does not answer `select 1`. Every page is 500ing. | `sudo docker ps`; **Rollback** if a release did it, otherwise **When the host itself is slow** |
+| `migrations` | the image deployed and nobody ran `migrate --force`. Every page touching a new column is 500ing. | the by-hand block in **Every release** step 3 |
+| `queue` | `queue:work` is dead under supervisord. Nothing has been emailed since it died, and nothing else notices. The check reads the age of the oldest waiting job, so a decision-email burst is not a failure and a fifteen-minute-old job is. | `supervisorctl status`, then `queue:failed` (**Email triage**) |
+| `scheduler` | `schedule:work` is dead. No reviewer reminders, no pruning. The check reads a heartbeat `routes/console.php` writes every five minutes. | `supervisorctl status`; a stale overlap lock: `schedule:clear-cache` (**Reviewer reminders**) |
+| `private disk` | the `cass-storage` volume is full or unmounted. The next abstract upload fails. The check writes, reads back and deletes a probe file. | `cass:sweep-uploads` frees what temporary uploads hold (see "Author uploads and private storage"). |
+| `disk` | the filesystem the `cass-storage` volume lives on has less than 15% of its size free, or less than 2 GiB, whichever comes first; the detail names the floor it crossed, and its figures are `df`'s available space and size there. Uploads still work; `private disk` is the row that turns red once they cannot. | Make room with "Author uploads and private storage" (`du -sh`, `cass:sweep-uploads`) and, on the host, the backups' rotation (**Backups**) and Docker's images and build cache, which live on the same filesystem as the volume: `sudo docker system df` shows them. Free the build cache first (`sudo docker builder prune`). `sudo docker image prune -a` is the last resort: it deletes every image no container uses, the previous release's included, so a redeploy of the previous build (**Rollback**, which marks that path unverified) would have to rebuild it. Coolify's Docker cleanup does both. |
+| `mail` | `MAIL_MAILER` is `log` or `array` in production, or the mailer has no host. Mail queues perfectly and delivers nothing. Only enforced when `APP_ENV=production`. | the `MAIL_*` variables in the application's environment (**One-time setup** step 4), then a deploy through the script (**Every release** step 2) |
 
 The `disk` row's two floors are settings, each a whole number, and 0 turns that floor off:
 

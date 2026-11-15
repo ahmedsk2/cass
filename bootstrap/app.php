@@ -31,10 +31,10 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    // `withRouting(commands: routes/console.php)` registers that *file* only;
-    // app/Console/Commands is NOT scanned without this (fact 2). The class is
-    // named rather than the directory, so the registration is greppable and a
-    // second command has to be declared on purpose.
+    // Redundant, and kept only as an index for grep: Application::configure()
+    // already calls withCommands() with no arguments, which registers every
+    // command in app/Console/Commands, all eight of them, so removing a class
+    // from this list unregisters nothing.
     ->withCommands([
         SendReviewerRemindersCommand::class,
         RescoreConferenceCommand::class,
@@ -56,7 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Global, not a group: this has to run before routing, so that a
         // request for /about on a custom domain never reaches the route that
-        // serves the platform's about page (fact 15).
+        // serves the platform's about page.
         $middleware->append(ResolveCustomDomain::class);
 
         // GET /{conference} is registered inside the `web` group, so on the
@@ -64,8 +64,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // whatever a scanner is asking for this minute - matched that route and
         // ran EncryptCookies, StartSession and ValidateCsrfToken before
         // RequireCustomDomain aborted. With SESSION_DRIVER=database that is one
-        // INSERT and one Set-Cookie per scan, which no unmatched path produced
-        // before this branch.
+        // INSERT and one Set-Cookie per scan, which a path that matches no
+        // route does not cost.
         //
         // prependToPriorityList, not priority(): it inserts one entry into
         // Laravel's own default list rather than replacing the list, so
@@ -90,7 +90,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO,
         );
-        // Spec 5.8 and the Plan 1 backlog item: a verified custom domain has
+        // Spec 5.8: a verified custom domain has
         // to be a trusted host or TrustHosts answers 400 before any route
         // runs. The platform's own host is first and unconditional, so a
         // database failure inside verifiedHosts() (which returns [] and
@@ -144,9 +144,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         // At most ten reports of one exception class an hour, to the server log and the tracker alike, so one
-        // error raised on every request spends neither Sentry's 5,000 a month nor a worker per request; another
+        // error raised on every request neither floods the tracker nor holds a worker per request; another
         // class still gets through. A Limit without a key is counted per class; the typed parameter is how the
-        // handler matches the callback to an exception. The DSN's own rate limit in Sentry caps the total
-        // (runbook "Error tracker").
+        // handler matches the callback to an exception (runbook "Error tracker").
         $exceptions->throttle(static fn (Throwable $e): Limit => Limit::perHour(10));
     })->create();

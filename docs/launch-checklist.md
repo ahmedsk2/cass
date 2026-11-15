@@ -14,7 +14,8 @@ person with a browser and the production host can see.
 
 Eight questions Plans 3, 4 and 5 recorded and deliberately did not answer.
 Each has a one-line change either way. Leaving one unanswered ships whichever
-answer a plan author happened to choose.
+answer a plan author happened to choose. The answers are recorded in
+`docs/decisions/` (0001 to 0008).
 
 - [x] **Turnstile fails open when Cloudflare is unreachable.**
       **Decided (owner, 2026-10-01): keep failing open.** A connection
@@ -159,8 +160,8 @@ answer a plan author happened to choose.
       at the edge for 7 days, everything else bypassed. `theme-CqWSRzWm.css`
       answered `MISS` then `HIT`; `/up` and `/org/login` answered `DYNAMIC`
       (runbook "Monitoring").
-- [x] **OCI security list: restrict port 22 to known addresses.** The backlog
-      records that the origin IP and SSH details existed in early commits of
+- [x] **OCI security list: restrict port 22 to known addresses.** The origin
+      IP and SSH details existed in early commits of
       the public repository. Ports 80 and 443 stay open to Cloudflare's ranges
       only.
       **Closed by decision (owner, 2026-09-25, re-affirmed 2026-11-06): port 22
@@ -257,8 +258,9 @@ page timings after it: not recorded.
       `DB=$(cass_container mysql)`,
       then `docker stats --no-stream "$APP" "$DB"` → the app container's steady
       state well under 768 MiB and MySQL's under 512 MiB. Record both in the
-      runbook. (`cass_container` is the helper at the top of
-      `docs/runbooks/deploy-production.md` — paste it into the session first.
+      runbook. (`cass_container` is the helper in the runbook section
+      "Finding the containers" of `docs/runbooks/deploy-production.md` — paste
+      it into the session first.
       The names are Coolify's, not `cass-app`/`cass-mysql`; neither compose file
       sets `container_name`, and neither the names nor the labels contain
       "cass", which is why the lookup goes through the container's environment.)
@@ -332,7 +334,7 @@ break when they follow each other.
 ## 6. Sign-off
 
 - [ ] Every box above is ticked or has a written reason beside it.
-- [x] The eight owner decisions in section 1 are answered in
-      `docs/superpowers/plans/backlog.md`, not only in somebody's head.
+- [x] The eight owner decisions in section 1 are recorded in
+      `docs/decisions/` (0001 to 0008), not only in somebody's head.
 - [ ] `CASS_CSP_REPORT_ONLY=false` and the site has been walked once with it
       that way.

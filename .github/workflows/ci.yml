@@ -275,10 +275,13 @@ jobs:
       - name: Off-host backup script
         run: bash -n tools/backup/cass-backup-offsite.sh && bash tools/backup/cass-backup-offsite.test.sh
       # The Claude Code production guard, the pre-push hook that stands in
-      # for branch protection, and the Workflow scripts' refusal to start
-      # without their path args. The runner's preinstalled Node is enough.
-      - name: Guardrail hooks
-        run: node --test .claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs tools/claude/workflow-args.test.mjs
+      # for branch protection, the Workflow scripts' refusal to start
+      # without their path args, and the documentation pointer checker, whose
+      # last case runs it over this repository: a broken link, path, section
+      # title or quick-procedure command in the docs fails here. The runner's
+      # preinstalled Node is enough.
+      - name: Guardrail hooks and documentation pointers
+        run: node --test .claude/hooks/guard-production.test.mjs tools/git-hooks/pre-push.test.mjs tools/claude/workflow-args.test.mjs tools/docs/check-pointers.test.mjs
       # The MySQL service in `test` and `smoke` is pinned to the digest both
       # compose files pin. Dependabot moves the compose digest but never a
       # workflow's service image, so a compose bump alone fails here until this
