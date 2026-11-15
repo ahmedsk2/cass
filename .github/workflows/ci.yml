@@ -228,6 +228,38 @@ jobs:
           fi
           echo "Four references, one digest."
 
+  # gitleaks over the commits a run brings in: a pull request's own commits; on
+  # a push to main, the commits on main's own line, since a merged branch's
+  # commits were scanned on its pull request. The Monday schedule and a manual
+  # run scan the whole history of every branch and tag instead, which also
+  # covers a pull request's commits after its 30th (the action reads one page
+  # of the commit list). Default rules, no .gitleaks.toml: a false positive goes
+  # into .gitleaksignore as the Fingerprint line the job log prints for it. The
+  # action wants a licence key from organisation accounts only, and this
+  # repository belongs to a personal account.
+  secret-scan:
+    runs-on: ubuntu-24.04
+    # Under a minute. The cap is for a stuck download of the gitleaks binary.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The action reads a pull request's commit list through the API.
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every scanned commit has to be in the clone.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A finding fails the job and is listed by rule, commit, file and
+          # line in the job summary; the log prints the secret redacted. The
+          # token cannot comment on a pull request, and a SARIF artifact from
+          # every run would only repeat the summary.
+          GITLEAKS_ENABLE_COMMENTS: false
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+
   # Spec section 12's one end-to-end browser run. Its own job so the `test` job
   # stays fast and so a Playwright flake never hides a real unit failure. No
   # MySQL service: phpunit.browser.xml pins SQLite in memory, and the `test`
