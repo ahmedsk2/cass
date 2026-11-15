@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Contracts\DiskSpace;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Migrations\Migrator;
@@ -26,7 +27,8 @@ use Throwable;
  *
  *   - a dead `queue:work` under supervisord means no email is ever sent;
  *   - a dead `schedule:work` means no reviewer reminders and no pruning;
- *   - a full or unmounted `cass-storage` volume fails an author's upload;
+ *   - a full or unmounted `cass-storage` volume fails an author's upload,
+ *     and a filling one gives no sign of it until it is full;
  *   - migrations are never run at boot (the host rule in CLAUDE.md), so
  *     "deployed but not migrated" is a normal state that 500s every page
  *     touching a new column;
@@ -46,13 +48,15 @@ class HealthCommand extends Command
      */
     private const int STALE_SECONDS = 900;
 
+    private const int GIB = 1024 ** 3;
+
     protected $signature = 'cass:health
         {--json : Machine-readable output}
         {--ping : GET the heartbeat URL (CASS_HEARTBEAT_URL) when every check passed}';
 
-    protected $description = 'Check the things /up deliberately does not: the queue, the scheduler, the private disk and pending migrations';
+    protected $description = 'Check the things /up deliberately does not: the queue, the scheduler, the private disk and its free space, and pending migrations';
 
-    public function handle(): int
+    public function handle(DiskSpace $disks): int
     {
         $rows = [
             $this->checkDatabase(),
@@ -60,6 +64,7 @@ class HealthCommand extends Command
             $this->checkQueue(),
             $this->checkScheduler(),
             $this->checkPrivateDisk(),
+            $this->checkDiskSpace($disks),
             $this->checkMail(),
         ];
 
@@ -272,6 +277,59 @@ class HealthCommand extends Command
         }
 
         return ['name' => 'private disk', 'ok' => true, 'detail' => 'wrote, read and deleted a probe file'];
+    }
+
+    /**
+     * Room left on the filesystem that holds the private disk. The row above
+     * sees a full volume only when its probe write fails, which is when an
+     * author's upload fails too; this one turns red while there is still room,
+     * under either floor in config/cass.php (`health`).
+     *
+     * @return array{name: string, ok: bool, detail: string}
+     */
+    private function checkDiskSpace(DiskSpace $disks): array
+    {
+        try {
+            $root = Storage::disk('local')->path('');
+        } catch (Throwable $e) {
+            return ['name' => 'disk', 'ok' => false, 'detail' => $e->getMessage()];
+        }
+
+        $reading = $disks->measure($root);
+
+        if ($reading === null) {
+            return ['name' => 'disk', 'ok' => false, 'detail' => "could not measure the free space at [{$root}]"];
+        }
+
+        $minPercent = (int) config('cass.health.disk_min_percent');
+        $minGib = (int) config('cass.health.disk_min_gib');
+        $percent = $reading['free'] * 100 / $reading['total'];
+        $freeGib = $reading['free'] / self::GIB;
+
+        // The free space and its share are rounded down, so that a reading
+        // just under a floor never prints as if it sat on it.
+        $detail = sprintf(
+            '%.1f GiB free of %.1f GiB (%d%%)',
+            floor($freeGib * 10) / 10,
+            $reading['total'] / self::GIB,
+            (int) floor($percent),
+        );
+
+        $crossed = [];
+
+        if ($percent < $minPercent) {
+            $crossed[] = "the {$minPercent}% minimum";
+        }
+
+        if ($freeGib < $minGib) {
+            $crossed[] = "the {$minGib} GiB minimum";
+        }
+
+        if ($crossed !== []) {
+            return ['name' => 'disk', 'ok' => false, 'detail' => $detail.' - below '.implode(' and ', $crossed)];
+        }
+
+        return ['name' => 'disk', 'ok' => true, 'detail' => $detail];
     }
 
     /**

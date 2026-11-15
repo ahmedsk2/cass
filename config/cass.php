@@ -34,6 +34,13 @@ return [
     // The dead-man heartbeat: `cass:health --ping`, hourly, GETs this URL only when every check passed and
     // the service alerts when the GETs stop. A secret, only in the deployment's environment. Unset or empty: no ping.
     'heartbeat_url' => env('CASS_HEARTBEAT_URL'),
+    // cass:health's disk row is red when the filesystem holding the private disk has less than this share of its
+    // size free, or less than this many GiB, whichever a filling disk reaches first: the share on a large volume,
+    // the GiB on a small one.
+    'health' => [
+        'disk_min_percent' => (int) env('CASS_HEALTH_DISK_MIN_PERCENT', 15),
+        'disk_min_gib' => (int) env('CASS_HEALTH_DISK_MIN_GIB', 2),
+    ],
     'qr' => [
         // The PNG is rendered at whole-module scale, so the real width is the
         // smallest multiple of the module count that reaches this size.
