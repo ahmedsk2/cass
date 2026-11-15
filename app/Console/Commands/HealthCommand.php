@@ -56,7 +56,7 @@ class HealthCommand extends Command
 
     protected $description = 'Check the things /up deliberately does not: the queue, the scheduler, the private disk and its free space, and pending migrations';
 
-    public function handle(DiskSpace $disks): int
+    public function handle(DiskSpace $diskSpace): int
     {
         $rows = [
             $this->checkDatabase(),
@@ -64,7 +64,7 @@ class HealthCommand extends Command
             $this->checkQueue(),
             $this->checkScheduler(),
             $this->checkPrivateDisk(),
-            $this->checkDiskSpace($disks),
+            $this->checkDiskSpace($diskSpace),
             $this->checkMail(),
         ];
 
@@ -287,7 +287,7 @@ class HealthCommand extends Command
      *
      * @return array{name: string, ok: bool, detail: string}
      */
-    private function checkDiskSpace(DiskSpace $disks): array
+    private function checkDiskSpace(DiskSpace $diskSpace): array
     {
         try {
             $root = Storage::disk('local')->path('');
@@ -295,7 +295,7 @@ class HealthCommand extends Command
             return ['name' => 'disk', 'ok' => false, 'detail' => $e->getMessage()];
         }
 
-        $reading = $disks->measure($root);
+        $reading = $diskSpace->measure($root);
 
         if ($reading === null) {
             return ['name' => 'disk', 'ok' => false, 'detail' => "could not measure the free space at [{$root}]"];
