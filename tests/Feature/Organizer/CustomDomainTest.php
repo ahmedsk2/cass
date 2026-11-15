@@ -70,7 +70,7 @@ it('shows the section with nothing claimed', function () {
 it('saves a domain and then prints the two records', function () {
     livewire(EditOrganizationProfile::class)
         ->callAction(domainAction('claimCustomDomain'), ['domain' => ' Abstracts.Example.ORG '])
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     $this->organization->refresh();
@@ -92,7 +92,7 @@ it('saves a domain and then prints the two records', function () {
 it('refuses a domain that is not a domain, without touching the row', function () {
     livewire(EditOrganizationProfile::class)
         ->callAction(domainAction('claimCustomDomain'), ['domain' => 'localhost'])
-        ->assertHasActionErrors(['domain']);
+        ->assertHasFormErrors(['domain']);
 
     expect($this->organization->fresh()?->custom_domain)->toBeNull();
 });
@@ -100,7 +100,7 @@ it('refuses a domain that is not a domain, without touching the row', function (
 it('refuses the platform host', function () {
     livewire(EditOrganizationProfile::class)
         ->callAction(domainAction('claimCustomDomain'), ['domain' => 'org.cass.towardpcc.com'])
-        ->assertHasActionErrors(['domain']);
+        ->assertHasFormErrors(['domain']);
 });
 
 it('refuses a domain another organization already holds', function () {
@@ -109,7 +109,7 @@ it('refuses a domain another organization already holds', function () {
 
     livewire(EditOrganizationProfile::class)
         ->callAction(domainAction('claimCustomDomain'), ['domain' => 'abstracts.example.org'])
-        ->assertHasActionErrors(['domain']);
+        ->assertHasFormErrors(['domain']);
 
     expect($this->organization->fresh()?->custom_domain)->toBeNull();
 });
@@ -123,7 +123,7 @@ it('verifies, tells the organizer the platform team has been emailed, and logs i
 
     livewire(EditOrganizationProfile::class)
         ->callAction(domainAction('verifyCustomDomain'))
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     expect($this->organization->fresh()?->hasVerifiedCustomDomain())->toBeTrue();

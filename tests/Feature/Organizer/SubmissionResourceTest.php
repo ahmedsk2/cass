@@ -169,7 +169,7 @@ it('links a file through a signed url that actually works', function () {
 it('withdraws on the organizer side and records who did it', function () {
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
 
@@ -191,7 +191,7 @@ it('still withdraws an abstract that is under review, but only for the organizer
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->assertActionVisible('withdraw')
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
 });
@@ -216,7 +216,7 @@ it('still withdraws an accepted presenter who pulls out, but only for the organi
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->assertActionVisible('withdraw')
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     $withdrawn = $this->submission->fresh();
 
@@ -255,7 +255,7 @@ it('resends a status link with a new token and kills the old one', function () {
 
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('resendLink')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('sara@example.org')
         && $mail->templateKey === 'submission_received');
@@ -549,7 +549,7 @@ it('resends a status link however many the public form has sent the author today
 
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('resendLink')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('sara@example.org'));
 });

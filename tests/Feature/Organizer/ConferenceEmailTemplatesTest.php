@@ -84,7 +84,7 @@ it('edits a template and stores it against this conference only', function () {
             'subject' => 'We have your abstract, {{author_name}}',
             'body' => 'Dear {{author_name}}, your reference is {{reference}}.',
         ])
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     $template = EmailTemplate::query()->firstOrFail();
 
@@ -96,7 +96,7 @@ it('edits a template and stores it against this conference only', function () {
 it('refuses a subject or body that is empty', function () {
     templatesPage($this->conference)
         ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value), ['subject' => '', 'body' => ''])
-        ->assertHasActionErrors(['subject', 'body']);
+        ->assertHasFormErrors(['subject', 'body']);
 
     expect(EmailTemplate::query()->count())->toBe(0);
 });
@@ -107,7 +107,7 @@ it('warns about a placeholder the key does not declare', function () {
             'subject' => 'Hello {{reviewer_name}}',
             'body' => 'Body',
         ])
-        ->assertHasActionErrors(['subject']);
+        ->assertHasFormErrors(['subject']);
 });
 
 it('resets a template back to the platform default by deleting the override', function () {
@@ -119,7 +119,7 @@ it('resets a template back to the platform default by deleting the override', fu
 
     templatesPage($this->conference)
         ->callAction(TestAction::make('reset')->table(EmailTemplateKey::SubmissionReceived->value))
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect(EmailTemplate::query()->count())->toBe(0);
 
@@ -223,7 +223,7 @@ it('lets a plain member edit templates, because spec section 4 says so', functio
             'subject' => 'Member subject',
             'body' => 'Member body',
         ])
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect(EmailTemplate::query()->where('key', 'submission_draft_saved')->exists())->toBeTrue();
 });
@@ -246,7 +246,7 @@ it('refuses a link placeholder in a subject line', function () {
             'subject' => 'Your abstract {{status_link}}',
             'body' => 'Open {{status_link}} to edit it.',
         ])
-        ->assertHasActionErrors(['subject']);
+        ->assertHasFormErrors(['subject']);
 
     expect(EmailTemplate::query()->where('key', 'submission_draft_saved')->exists())->toBeFalse();
 });
@@ -260,7 +260,7 @@ it('warns about a placeholder the key does not declare in the body as well', fun
             'subject' => 'We have your abstract, {{author_name}}',
             'body' => 'Dear {{author_name}}, ask {{reviewer_name}} about it.',
         ])
-        ->assertHasActionErrors(['body']);
+        ->assertHasFormErrors(['body']);
 
     expect(EmailTemplate::query()->count())->toBe(0);
 });
@@ -301,7 +301,7 @@ it('still authorizes a first override as a create', function () {
             'subject' => 'A first subject',
             'body' => 'A first body',
         ])
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect(EmailTemplate::query()->firstOrFail()->subject)->toBe('A first subject');
 });

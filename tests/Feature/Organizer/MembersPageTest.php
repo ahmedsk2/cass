@@ -74,7 +74,7 @@ it('does not list another organization members or invitations', function () {
 it('invites by email and role, queues the notification and logs it', function () {
     livewire(Members::class)
         ->callAction('invite', data: ['email' => 'New@Example.ORG', 'role' => OrganizationRole::Admin->value])
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     $invitation = OrganizationInvitation::query()->where('email', 'new@example.org')->firstOrFail();

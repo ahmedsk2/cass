@@ -263,7 +263,7 @@ it('notifies rather than 500s when auto-assign is refused as it saves', function
 
     assignmentsPage($this->conference)
         ->callAction('autoAssign')
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     expect(ReviewAssignment::query()->count())->toBe(0);
@@ -345,7 +345,7 @@ it('previews the auto-assign plan before saving it', function () {
 
     assignmentsPage($this->conference)
         ->callAction('autoAssign')
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     expect($this->submission->reviewAssignments()->count())->toBe(2)

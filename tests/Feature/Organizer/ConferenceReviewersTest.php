@@ -58,7 +58,7 @@ it('invites one reviewer, queues the templated email and logs it', function () {
             'email' => 'Omar@Example.ORG',
             'affiliation' => 'KFSH',
         ])
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     $invitation = ReviewerInvitation::query()->firstOrFail();
@@ -120,7 +120,7 @@ it('invites a pasted list, reports the bad lines and skips the duplicates', func
             'rubbish',
             'already@example.org',
         ])])
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     expect(ReviewerInvitation::query()->pluck('email')->sort()->values()->all())
@@ -142,7 +142,7 @@ it('caps one paste at a hundred and says what it did not send', function () {
 
     reviewersPage($this->conference)
         ->callAction('inviteList', data: ['list' => $text])
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     expect(ReviewerInvitation::query()->count())->toBe(ReviewerList::MAX_ENTRIES);

@@ -270,7 +270,7 @@ it('never deletes another organization\'s logo through another spelling of its p
 it('claims, verifies and releases a custom domain for the organization, naming the admin in the log', function () {
     livewire(EditOrganization::class, ['record' => $this->organization->getRouteKey()])
         ->callAction(adminDomainAction('claimCustomDomain'), ['domain' => 'abstracts.example.org'])
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     $this->organization->refresh();
@@ -280,7 +280,7 @@ it('claims, verifies and releases a custom domain for the organization, naming t
 
     livewire(EditOrganization::class, ['record' => $this->organization->getRouteKey()])
         ->callAction(adminDomainAction('verifyCustomDomain'))
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->organization->fresh()?->hasVerifiedCustomDomain())->toBeTrue();
     Notification::assertSentTo($this->admin, CustomDomainVerified::class);

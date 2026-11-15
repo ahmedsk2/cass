@@ -76,7 +76,7 @@ it('refuses the same forged change through the view page and the list table', fu
     $conference = ($this->make)(ConferenceStatus::Reviewing);
 
     livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
-        ->mountAction('edit')->setActionData(['blind_review' => false])->callMountedAction()
+        ->mountAction('edit')->fillForm(['blind_review' => false])->callMountedAction()
         ->assertNotified(__('organizer.update.refused'));
     livewire(ListConferences::class)
         ->mountAction(TestAction::make('edit')->table($conference))->fillForm(['review_mode' => ReviewMode::Assigned->value])
