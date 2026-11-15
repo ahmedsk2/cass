@@ -49,7 +49,7 @@ container's environment by hand, or use the Coolify UI terminal for the service.
 ## One-time setup
 
 1. DNS (Cloudflare, owner): A record `cass` -> `<origin-ip>`, proxied (orange cloud).
-2. Coolify: New resource -> Private Repository (with deploy key) -> `git@github.com:ahmedsk2/cass.git`, branch `main`, compose file `docker-compose.production.yml`, build pack Docker Compose. The repository is private, so Coolify clones it with the private key `cass-deploy-key` (Keys & Tokens, id 9); its public half is the repository's read-only deploy key "coolify cass (read-only)" on GitHub. To rotate it: generate a new pair, add the public half on GitHub, store the private half in Coolify, attach it on the application's Source screen ("Select another Private Key"), check `git ls-remote` with it, then delete the old key on both sides. The application ran from the public source until 2026-10-16, when the repository went private and was switched to this key.
+2. Coolify: New resource -> Private Repository (with deploy key) -> `git@github.com:ahmedsk2/cass.git`, branch `main`, compose file `docker-compose.production.yml`, build pack Docker Compose. The repository has been public again since 2026-10-16 (decision 0011). Coolify still clones it with the private key `cass-deploy-key` (Keys & Tokens, id 9), to which the application was switched that day while the repository was briefly private; a deploy key works either way. Its public half is the repository's read-only deploy key "coolify cass (read-only)" on GitHub. To rotate it: generate a new pair, add the public half on GitHub, store the private half in Coolify, attach it on the application's Source screen ("Select another Private Key"), check `git ls-remote` with it, then delete the old key on both sides. The application ran from the public source until 2026-10-16. The switch itself was a one-row edit of Coolify's `applications` table, because neither the API nor the UI can attach a first key to a public-source app (old values saved on the host as `~/cass-app-source-backup-20261016-185435.txt`).
 3. Coolify domain for the `app` service: `https://cass.towardpcc.com:8080`.
 4. Environment variables in Coolify (all required unless marked optional): `APP_KEY` (generate locally with `php artisan key:generate --show`), optional `APP_PREVIOUS_KEYS` (former keys after a rotation, see **Secret rotation**), `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, optional `MAIL_SCHEME` (`smtps` for implicit TLS on port 465; leave it unset on 587, where the connection upgrades with STARTTLS when the server offers it; `MAIL_ENCRYPTION` is not read by Laravel 13 and should be deleted from Coolify), `MAIL_FROM_ADDRESS`, `CASS_CONTACT_EMAIL`, `CASS_ADMIN_EMAIL`, `CASS_ADMIN_PASSWORD` (12+ characters; only for step 6's first seed, then overwritten with a placeholder, see step 6), optional `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, optional `CASS_HEARTBEAT_URL` and `SENTRY_LARAVEL_DSN` (both secrets, see **Monitoring**). Set each with `~/bin/cass-set-env` on the host, check through the API that it is there, and never trust Coolify's environment screen: two saves there on 2026-11-05, and every save of five variables on 2026-11-14, never reached Coolify's database. The helper (installed 2026-11-14, mode 700, owner `ubuntu`) takes `application` or `service`, the resource's uuid and the variable's name, reads the value from stdin, hidden on a terminal, and sets it through Coolify's API (`PATCH /applications/<uuid>/envs`, or `/services/<uuid>/envs` for a service such as GlitchTip). Run it from your own terminal over `ssh -t`, never from a session, so the value never passes through one; then, on the host, the check prints the value's length for each row of that name, never the value (an empty list or a 0: not set):
 
@@ -368,8 +368,9 @@ the same day.
 **Checking it by hand.**
 
 ```bash
-docker exec cass su-exec app php artisan schedule:list
-docker exec cass su-exec app php artisan cass:reviewer-reminders
+C=$(cass_container app)
+sudo docker exec "$C" su-exec app php artisan schedule:list
+sudo docker exec "$C" su-exec app php artisan cass:reviewer-reminders
 ```
 
 The command is idempotent, so running it by hand is safe. It prints one line per
@@ -398,6 +399,7 @@ SQL — the row's key carries the cache prefix (`cass-cache-framework/schedule-<
 so a hand-written `LIKE 'framework/%'` query finds nothing:
 
 ```bash
+C=$(cass_container app)
 sudo docker exec -it "$C" su-exec app php artisan schedule:list
 sudo docker exec -it "$C" su-exec app php artisan schedule:clear-cache
 ```
@@ -1295,11 +1297,11 @@ the app container cannot see `/srv/backups`, which is the point of putting them
 there. The monthly drill restores from the off-host copy instead (**Restore drill from the off-host copy**); this check of the host's own copy is the quick one, after a migration release for instance.
 
 ```bash
-NEWEST=$(ls -1t /srv/backups/cass/cass-*.sql.gz | head -1)
+NEWEST=$(sudo sh -c 'ls -1t /srv/backups/cass/cass-*.sql.gz | head -1')
 C=$(cass_container mysql)
 
 sudo docker exec "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE IF EXISTS cass_restore_check; CREATE DATABASE cass_restore_check;"'
-gunzip -c "$NEWEST" | sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass_restore_check'
+sudo gunzip -c "$NEWEST" | sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass_restore_check'
 
 # Row counts, live against restored. They will differ by whatever happened
 # since the dump; they must not differ by an order of magnitude or be zero.
@@ -1555,6 +1557,8 @@ Rotating it also **moves Livewire's endpoint prefix**, which is
 a visitor already had open posts to the old path and gets a 404 until they
 reload, and `php artisan route:list --path=livewire` is how you read the new
 one.
+
+The application's four manual webhook secrets, which the engineer's pre-flight printed into the session by mistake, were replaced on 2026-11-06 with 64-character random values by a one-row update in Coolify's database, values never shown, so the printed ones are dead.
 
 ## Platform admin password
 
