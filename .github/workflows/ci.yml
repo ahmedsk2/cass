@@ -338,14 +338,20 @@ jobs:
       # above writes its report, results.sarif, into the checkout, and with a
       # finding in it every commit SHA it names reads as a token. It runs
       # whatever the history scan found, so a finding there cannot hide one
-      # here.
+      # here. pipefail, because a run step's bash has only -e and a failing
+      # `git ls-files` would otherwise pass a partial tree; -P copies a
+      # symlink as a link, which gitleaks skips, as it would in the checkout.
+      # Scanned from inside the copy, so a finding's fingerprint is the
+      # repository path that .gitleaksignore takes.
       - name: gitleaks over the tracked files (schedule and manual runs)
         if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
         run: |
+          set -o pipefail
           tree="$RUNNER_TEMP/tracked-files"
           mkdir "$tree"
-          git ls-files -z | xargs -0 cp --parents -t "$tree"
-          gitleaks detect --no-git --source "$tree" --redact --verbose
+          git ls-files -z | xargs -0 cp -P --parents -t "$tree" --
+          cd "$tree"
+          gitleaks detect --no-git --source . --redact --verbose
 
   # Spec section 12's one end-to-end browser run. Its own job so the `test` job
   # stays fast and so a Playwright flake never hides a real unit failure. No
