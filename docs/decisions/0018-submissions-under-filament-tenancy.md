@@ -1,7 +1,7 @@
 # Submissions use Filament tenancy through their conference; no organization_id column
 
 - **Context.** The organizer `SubmissionResource` was scoped by hand (`$isScopedToTenant = false`, a `whereHas` on the conference's organization, and a `1 = 0` fallback outside a tenant). The hand scoping existed because a has-one-through ownership relation used to fail when a submission was created under Filament's tenancy. The outside review asked for a different fix (`docs/reviews/2026-10-16-expert-brief.md`, work order C5 and Question 6 point 1): copy the organization onto every submission as `submissions.organization_id`, backfill it from `conferences`, return the resource to Filament tenancy on that column, and let the policies simplify.
-- **Decision.** Proposed by engineering, accepted by the owner on <merge date> (#NN).
+- **Decision.** Proposed by engineering, accepted by the owner on <merge date> (#80).
   - **There is no column.** `Submission::organization()`, the existing has-one-through the conference, becomes the resource's ownership relation, and the hand scoping and its fallback go.
   - **Filament 5.11.1 handles that relation.** It scopes it with a `whereHas`, its creating observer associates only a BelongsTo, and its created observer returns early for a has-one-or-many-through.
   - **Why not the copied column.** The value would become load-bearing for every organizer read of abstracts, `StartReviewing`, `MarkDecided`, `SendDecisionEmails`, `TrackPolicy`, `CustomFieldPolicy` and `UpdateConference` among them. A missing or wrong value would drop rows from those reads without a word. Keeping it right would need a migration release, and model events outside the Actions.
