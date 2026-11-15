@@ -43,8 +43,8 @@ Route::get('/register', RegisterOrganization::class)->name('register');
 // The model's route key is the ULID (panel URLs use it), so the slug is asked
 // for explicitly here. Scoped binding resolves {conference:slug} through
 // $organization->conferences(), which is what makes a slug that is unique only
-// per organization safe in a URL. Plan 3 registers
-// /c/{organization}/{conference:slug}/submit with the same binding field.
+// per organization safe in a URL. conference.submit below uses the same
+// binding field.
 //
 // No AuthenticateSession here. The page is public, and that middleware throws
 // AuthenticationException for *any* signed-in visitor whose session password
@@ -74,11 +74,10 @@ Route::get('/c/{organization}/{conference:slug}/submit', SubmissionForm::class)
 // short. Binding is by ULID because the conference slug is only unique inside
 // one organization.
 //
-// No .svg/.png/.pdf suffix on these paths: docker/nginx.conf answers any URI
-// ending in a static-file extension from disk, so such a route would 404 in
-// production while passing every test (Task 1 Step 6 fixes the fallback as
-// well, but a download route should not depend on it). The saved file name
-// comes from Content-Disposition.
+// No .svg/.png/.pdf suffix on these paths: docker/nginx.conf serves a URI
+// ending in a static-file extension from disk first and reaches Laravel only
+// through its fallback, which a download route should not depend on. The
+// saved file name comes from Content-Disposition.
 //
 // The panel runs Filament's AuthenticateSession and EnsureEmailIsVerified on
 // every tenant route; these downloads live outside the panel, so they repeat
@@ -111,9 +110,9 @@ Route::get('/q/{code}', ShortLinkController::class)
 // disk.
 //
 // No file extension in the path, for the same reason the conference asset
-// routes have none: docker/nginx.conf answers any URI ending in a static-file
-// extension from disk before PHP sees it. The saved file name comes from
-// Content-Disposition.
+// routes have none: docker/nginx.conf serves a URI ending in a static-file
+// extension from disk first and reaches PHP only through its fallback. The
+// saved file name comes from Content-Disposition.
 //
 // The constraint is the Crockford base32 alphabet a ULID uses - no I, L, O or
 // U - so a path that could not be a ULID never reaches the database.
@@ -122,20 +121,11 @@ Route::get('/files/{ulid}', SubmissionFileController::class)
     ->where('ulid', '[0-9A-HJKMNP-TV-Z]{26}')
     ->name('files.download');
 
-// Registered here rather than with the component (Task 8) because
-// Submission::statusUrl() resolves this name from Task 5 onwards, and every
-// Task 5 test that touches SubmissionLink::url(), SubmitAbstract's placeholders
-// or SendSubmissionStatusLink would otherwise die on RouteNotFoundException.
-// The class this names is a placeholder until Task 8 writes the real page.
-// It has to be a real class today: RouteAction::makeInvokable() calls
-// method_exists() on a string action at *registration*, and
-// RouteListCommand::isVendorRoute() reflects on it, so a dangling name would
-// throw here and break `php artisan route:list` for the whole app.
-//
 // No AuthenticateSession and no auth: there is no account here at all.
-// The throttle is spec section 9's 20/min/IP, and it is on the route rather
-// than in the component because a page *view* has to be counted too - guessing
-// tokens is a GET loop, not a Livewire action.
+// The throttle is CASS_STATUS_PAGE_RATE_LIMIT requests a minute per client
+// address (20 by default; the submission-status limiter in AppServiceProvider),
+// and it is on the route rather than in the component because a page *view*
+// has to be counted too - guessing tokens is a GET loop, not a Livewire action.
 Route::get('/s/{token}', SubmissionStatus::class)
     ->where('token', '[A-Za-z0-9]{64}')
     ->middleware('throttle:submission-status')
@@ -152,8 +142,9 @@ Route::get('/s/{token}', SubmissionStatus::class)
 // page *view* is what an enumeration attack loops; the component spends the
 // same budget again for its own POSTs, which reach /livewire/update instead.
 //
-// The constraint is the hex alphabet InvitationToken mints, so a path that
-// could not be a token never reaches the database.
+// The constraint admits 64 letters and digits, which every token
+// InvitationToken mints (lowercase hex) matches, so a path of any other length
+// or alphabet never reaches the database.
 Route::get('/invite/{token}', AcceptInvitation::class)
     ->where('token', '[A-Za-z0-9]{64}')
     ->middleware('throttle:invitation-accept')
@@ -168,10 +159,11 @@ Route::get('/invite/{token}', AcceptInvitation::class)
 // for each of them.
 //
 // {conference} is a plain string, NOT an implicit {conference:slug} binding.
-// (conference_id, slug) is unique per organization, not globally, so implicit
-// binding would resolve the first matching row in the database and serve
-// another society's meeting from this domain. RequireCustomDomain resolves it
-// through $organization->conferences() and substitutes both models.
+// (organization_id, slug) is the unique key, so a slug is unique per
+// organization, not globally, and implicit binding would resolve the first
+// matching row in the database and serve another society's meeting from this
+// domain. RequireCustomDomain resolves it through $organization->conferences()
+// and substitutes both models.
 //
 // /s/{token}, /files/{ulid} and /q/{code} are deliberately NOT here: a status
 // token is a bearer credential, a file URL is a signature bound to its host,
@@ -186,7 +178,7 @@ Route::get('/invite/{token}', AcceptInvitation::class)
 // Conference::getRouteKeyName() (the ULID) and throws ModelNotFoundException:
 // a 404 before this middleware is ever reached. Excluding it is safe precisely
 // because this group does its own binding, and Livewire re-runs
-// substituteImplicitBindings() at mount (Drawer/ImplicitRouteBinding.php:83),
+// substituteImplicitBindings() at mount (Livewire\Drawer\ImplicitRouteBinding),
 // where both parameters are already models and are skipped.
 Route::middleware(RequireCustomDomain::class)
     ->withoutMiddleware(SubstituteBindings::class)

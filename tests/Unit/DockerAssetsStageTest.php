@@ -8,8 +8,8 @@ declare(strict_types=1);
  * directory named by an @source line is missing - it scans nothing there and
  * builds green - so a stylesheet that reads a directory the stage never copied
  * ships without every class used only in it, in production and nowhere else.
- * Plan 6 found app/Livewire in exactly that state (backlog, "The production
- * image builds its CSS without app/Livewire in scope").
+ * app/Livewire was once outside that stage's scope, and production CSS lacked
+ * every class used only there.
  *
  * These cases read the Dockerfile and the stylesheets as text, so they run in
  * the ordinary suite with no Docker. The CI `smoke` job is what proves the
