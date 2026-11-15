@@ -115,13 +115,8 @@ it('changes the password of a platform admin and of nobody else', function (Clos
 
     expect($this->admin->fresh()?->password)->toBe($this->admin->password);
 })->with([
-    'an account that is not a platform admin' => fn (): Closure => function (User $admin): void {
-        $admin->forceFill(['is_platform_admin' => false])->save();
-    },
-    'an address no account has' => fn (): Closure => function (): void {
-        config(['cass.admin_email' => 'nobody@example.org']);
-    },
-    'an empty CASS_ADMIN_EMAIL' => fn (): Closure => function (): void {
-        config(['cass.admin_email' => '']);
-    },
+    // Pest hands a closure to a parameter typed Closure as it is, without calling it first.
+    'an account that is not a platform admin' => [fn (User $admin): bool => $admin->forceFill(['is_platform_admin' => false])->save()],
+    'an address no account has' => [fn (): mixed => config(['cass.admin_email' => 'nobody@example.org'])],
+    'an empty CASS_ADMIN_EMAIL' => [fn (): mixed => config(['cass.admin_email' => ''])],
 ]);
