@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\Review;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * Ownership only. Every *rule* about reviews - whether the submission is in the
@@ -22,6 +21,8 @@ use Filament\Facades\Filament;
  */
 class ReviewPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -50,7 +51,7 @@ class ReviewPolicy
 
         $organization = $review->submission?->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 
     /** Whether this person may ever write a review at all. */
@@ -103,12 +104,5 @@ class ReviewPolicy
     public function forceDeleteAny(User $user): bool
     {
         return false;
-    }
-
-    private function isMemberOfCurrentTenant(User $user): bool
-    {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
     }
 }

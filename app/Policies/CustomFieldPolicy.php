@@ -5,19 +5,18 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\CustomField;
-use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 use Illuminate\Auth\Access\Response;
 
 class CustomFieldPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function viewAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        return $this->isMemberOfCurrentTenant($user);
     }
 
     public function create(User $user): bool
@@ -30,7 +29,7 @@ class CustomFieldPolicy
     {
         $organization = $customField->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 
     public function update(User $user, CustomField $customField): bool

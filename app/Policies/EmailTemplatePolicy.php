@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\EmailTemplate;
-use App\Models\Organization;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * Spec section 4 puts "create / edit conferences, forms, templates" in reach of
@@ -16,6 +15,8 @@ use Filament\Facades\Filament;
  */
 class EmailTemplatePolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -23,9 +24,7 @@ class EmailTemplatePolicy
 
     public function viewAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        return $this->isMemberOfCurrentTenant($user);
     }
 
     /**
@@ -39,7 +38,7 @@ class EmailTemplatePolicy
     {
         $organization = $template->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 
     public function create(User $user): bool

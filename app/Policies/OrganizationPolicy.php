@@ -6,6 +6,7 @@ namespace App\Policies;
 
 use App\Models\Organization;
 use App\Models\User;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * The first OrganizationPolicy in this application, and it exists mainly to
@@ -29,6 +30,8 @@ use App\Models\User;
  */
 class OrganizationPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function viewAny(User $user): bool
     {
         return (bool) $user->is_platform_admin;
@@ -36,7 +39,7 @@ class OrganizationPolicy
 
     public function view(User $user, Organization $organization): bool
     {
-        return (bool) $user->is_platform_admin || $user->roleIn($organization) !== null;
+        return (bool) $user->is_platform_admin || $this->isMemberOf($user, $organization);
     }
 
     /** Organizations are created by RegisterOrganization, never from a panel. */
@@ -51,7 +54,7 @@ class OrganizationPolicy
      */
     public function update(User $user, Organization $organization): bool
     {
-        return (bool) $user->is_platform_admin || ($user->roleIn($organization)?->canManageOrganization() ?? false);
+        return (bool) $user->is_platform_admin || $this->managesOrganization($user, $organization);
     }
 
     public function delete(User $user, Organization $organization): bool

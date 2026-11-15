@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\SubmissionDecision;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * The decision history is **append-only** for everyone the panel lets in.
@@ -29,6 +28,8 @@ use Filament\Facades\Filament;
  */
 class SubmissionDecisionPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -36,9 +37,7 @@ class SubmissionDecisionPolicy
 
     public function viewAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        return $this->isMemberOfCurrentTenant($user);
     }
 
     /**
@@ -51,7 +50,7 @@ class SubmissionDecisionPolicy
     {
         $organization = $decision->submission?->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 
     public function create(User $user): bool
