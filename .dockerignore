@@ -9,6 +9,7 @@ storage/logs
 database/*.sqlite*
 bootstrap/cache/*.php
 tests
+tools
 Legacy
 legacy-review.md
 assets

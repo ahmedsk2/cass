@@ -20,6 +20,7 @@ use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\SubmissionAuthor;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Mail;
 use Mockery\MockInterface;
@@ -360,16 +361,16 @@ it('stops at the chunk size and says how many are left', function () {
 
 it('sends every letter from the ranking page behind a typed confirmation', function () {
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('sendDecisionEmails', data: ['confirm' => __('decisions.send.confirm_word')])
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('sendDecisionEmails')->table(), data: ['confirm' => __('decisions.send.confirm_word')])
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, 2);
 });
 
 it('refuses the send when the confirmation word is wrong', function () {
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('sendDecisionEmails', data: ['confirm' => 'yes please'])
-        ->assertHasTableActionErrors(['confirm']);
+        ->callAction(TestAction::make('sendDecisionEmails')->table(), data: ['confirm' => 'yes please'])
+        ->assertHasFormErrors(['confirm']);
 
     Mail::assertNothingQueued();
 });
@@ -381,8 +382,8 @@ it('resends one letter from its own row', function () {
     $this->travel(1)->minutes();
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('resendDecision', $this->accepted->fresh())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('resendDecision')->table($this->accepted->fresh()))
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, 3);
 
@@ -403,8 +404,8 @@ it('offers the send and the per-row resend only to an owner or an admin', functi
     app(SendDecisionEmails::class)->handle($this->conference, $this->user);
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->assertTableActionVisible('sendDecisionEmails')
-        ->assertTableActionVisible('resendDecision', $this->accepted->fresh());
+        ->assertActionVisible(TestAction::make('sendDecisionEmails')->table())
+        ->assertActionVisible(TestAction::make('resendDecision')->table($this->accepted->fresh()));
 
     $member = User::factory()->create();
     $this->organization->addMember($member, OrganizationRole::Member);
@@ -416,9 +417,9 @@ it('offers the send and the per-row resend only to an owner or an admin', functi
     // owner question. The per-row resend does the same thing to one author -
     // including rotating their status link - so it is gated the same way.
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->assertTableActionHidden('sendDecisionEmails')
-        ->assertTableActionHidden('resendDecision', $this->accepted->fresh())
-        ->assertTableActionVisible('decide', $this->undecided);
+        ->assertActionHidden(TestAction::make('sendDecisionEmails')->table())
+        ->assertActionHidden(TestAction::make('resendDecision')->table($this->accepted->fresh()))
+        ->assertActionVisible(TestAction::make('decide')->table($this->undecided));
 
     // And the gate the action BODY re-asks, pinned on its own: visible() is the
     // nicety, Gate::authorize('sendDecisions') inside resendDecision() is the
@@ -439,5 +440,10 @@ it('sends nothing for another organization conference', function () {
     app(SendDecisionEmails::class)->handle($this->conference, $this->user);
 
     Mail::assertNotQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('stranger@example.org'));
-    expect($theirs->submissions()->first()?->decision_notified_at)->toBeNull();
+
+    // Read past the panel's tenancy scope: inside it another organization's
+    // abstract is not there to read, and a null from no row would pass this for
+    // the wrong reason.
+    $row = withoutTenant(fn () => $theirs->submissions()->first());
+    expect($row)->not->toBeNull()->and($row?->decision_notified_at)->toBeNull();
 });

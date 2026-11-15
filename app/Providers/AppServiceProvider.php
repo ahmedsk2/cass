@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Contracts\DiskSpace;
 use App\Contracts\DnsResolver;
 use App\Filament\Auth\MultiFactorChallenge;
 use App\Listeners\RecordOutgoingEmail;
 use App\Notifications\SendQueuedNotificationsWithLog;
 use App\Support\ClientIp;
 use App\Support\Domains\SystemDnsResolver;
+use App\Support\Monitoring\SystemDiskSpace;
 use Filament\Auth\MultiFactor\MultiFactorChallenge as FilamentMultiFactorChallenge;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
@@ -32,7 +34,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // The first container binding in this application, and the reason is
         // narrow: DnsResolver wraps dns_get_record(), a global function, which
-        // no test can substitute any other way. Apart from the two bindings
+        // no test can substitute any other way. Apart from the three bindings
         // below, everything else in app/ is resolved by autowiring and faked
         // with $this->mock().
         $this->app->bind(DnsResolver::class, SystemDnsResolver::class);
@@ -51,6 +53,11 @@ class AppServiceProvider extends ServiceProvider
         // MultiFactorChallenge.php:22-25), so this one line gives all three the
         // 15-minute lockout and its warning.
         $this->app->bind(FilamentMultiFactorChallenge::class, MultiFactorChallenge::class);
+
+        // The fourth, for the first one's reason: DiskSpace wraps
+        // disk_free_space() and disk_total_space(), the measurement behind
+        // cass:health's disk row.
+        $this->app->bind(DiskSpace::class, SystemDiskSpace::class);
     }
 
     /**

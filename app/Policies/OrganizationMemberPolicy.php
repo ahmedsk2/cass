@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\OrganizationMember;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * Who may act on a membership row. *What* the act may be - the last-owner rule,
@@ -23,6 +22,8 @@ use Filament\Facades\Filament;
  */
 class OrganizationMemberPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -31,9 +32,7 @@ class OrganizationMemberPolicy
     /** Every member sees the list; only some of them can change it. */
     public function viewAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        return $this->isMemberOfCurrentTenant($user);
     }
 
     /**
@@ -49,7 +48,7 @@ class OrganizationMemberPolicy
     {
         $organization = $member->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 
     /** Members arrive by accepting an invitation, never by a create form. */
@@ -63,8 +62,7 @@ class OrganizationMemberPolicy
     {
         $organization = $member->organization;
 
-        return $organization !== null
-            && ($user->roleIn($organization)?->canManageOrganization() ?? false);
+        return $organization !== null && $this->managesOrganization($user, $organization);
     }
 
     /** Removing someone from the organization. */

@@ -17,6 +17,7 @@ use App\Models\ReviewerInvitation;
 use App\Models\User;
 use App\Notifications\MemberInvitation;
 use App\Support\Invitations\InvitationLookup;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -73,7 +74,7 @@ it('does not list another organization members or invitations', function () {
 it('invites by email and role, queues the notification and logs it', function () {
     livewire(Members::class)
         ->callAction('invite', data: ['email' => 'New@Example.ORG', 'role' => OrganizationRole::Admin->value])
-        ->assertHasNoActionErrors()
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     $invitation = OrganizationInvitation::query()->where('email', 'new@example.org')->firstOrFail();
@@ -186,14 +187,14 @@ it('resends an invitation with a new token and revokes one', function () {
     $original = $invitation->token_hash;
 
     livewire(Members::class)
-        ->callTableAction('resend', 'invitation:'.$invitation->getKey())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('resend')->table('invitation:'.$invitation->getKey()))
+        ->assertHasNoFormErrors();
 
     expect($invitation->fresh()?->token_hash)->not->toBe($original);
 
     livewire(Members::class)
-        ->callTableAction('revoke', 'invitation:'.$invitation->getKey())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('revoke')->table('invitation:'.$invitation->getKey()))
+        ->assertHasNoFormErrors();
 
     expect($invitation->fresh()?->revoked_at)->not->toBeNull();
 
@@ -204,8 +205,8 @@ it('resends an invitation with a new token and revokes one', function () {
 
 it('changes a role and writes an activity entry', function () {
     livewire(Members::class)
-        ->callTableAction('changeRole', 'member:'.$this->member->getKey(), data: ['role' => OrganizationRole::Admin->value])
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('changeRole')->table('member:'.$this->member->getKey()), data: ['role' => OrganizationRole::Admin->value])
+        ->assertHasNoFormErrors();
 
     expect($this->member->fresh()?->roleIn($this->organization))->toBe(OrganizationRole::Admin)
         ->and(Activity::query()->where('description', 'organization.role_changed')->count())->toBe(1);
@@ -213,8 +214,8 @@ it('changes a role and writes an activity entry', function () {
 
 it('refuses to change your own role, from the page and from the action', function () {
     livewire(Members::class)
-        ->assertTableActionHidden('changeRole', 'member:'.$this->owner->getKey())
-        ->assertTableActionHidden('remove', 'member:'.$this->owner->getKey());
+        ->assertActionHidden(TestAction::make('changeRole')->table('member:'.$this->owner->getKey()))
+        ->assertActionHidden(TestAction::make('remove')->table('member:'.$this->owner->getKey()));
 
     expect(fn () => app(ChangeMemberRole::class)->handle($this->organization, $this->owner, OrganizationRole::Member, $this->owner))
         ->toThrow(MemberChangeRefused::class);
@@ -251,8 +252,8 @@ it('stops an admin touching an owner', function () {
 
 it('removes a member and leaves their user account alone', function () {
     livewire(Members::class)
-        ->callTableAction('remove', 'member:'.$this->member->getKey())
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('remove')->table('member:'.$this->member->getKey()))
+        ->assertHasNoFormErrors();
 
     expect($this->member->fresh()?->roleIn($this->organization))->toBeNull()
         ->and(User::query()->whereKey($this->member->getKey())->exists())->toBeTrue()
@@ -275,11 +276,11 @@ it('lets a plain member open the page and toggle only their own notifications', 
         ->assertSee('Dr Member')
         ->assertDontSee('pending@example.org')
         ->assertActionHidden('invite')
-        ->assertTableActionHidden('changeRole', 'member:'.$this->owner->getKey())
-        ->assertTableActionHidden('notifications', 'member:'.$this->owner->getKey())
-        ->assertTableActionVisible('notifications', 'member:'.$this->member->getKey())
-        ->callTableAction('notifications', 'member:'.$this->member->getKey())
-        ->assertHasNoTableActionErrors();
+        ->assertActionHidden(TestAction::make('changeRole')->table('member:'.$this->owner->getKey()))
+        ->assertActionHidden(TestAction::make('notifications')->table('member:'.$this->owner->getKey()))
+        ->assertActionVisible(TestAction::make('notifications')->table('member:'.$this->member->getKey()))
+        ->callAction(TestAction::make('notifications')->table('member:'.$this->member->getKey()))
+        ->assertHasNoFormErrors();
 
     // Default is true (Plan 1's column default), so one click turns it off -
     // and SubmitAbstract::notifiableMembers() stops reaching them.
@@ -314,7 +315,7 @@ it('refuses a role change, a removal and a revoke across the tenant boundary', f
     // tenant-scoped firstOrFail is never reached - a different mechanism with
     // the same required outcome.
     try {
-        livewire(Members::class)->callTableAction('revoke', 'invitation:'.$theirInvitation->getKey());
+        livewire(Members::class)->callAction(TestAction::make('revoke')->table('invitation:'.$theirInvitation->getKey()));
     } catch (Throwable) {
         // Whatever Filament answers for a key that is not in the table.
     }

@@ -13,6 +13,7 @@ use App\Models\EmailLog;
 use App\Models\Organization;
 use App\Models\User;
 use App\Notifications\OrganizationRegistered;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
@@ -60,7 +61,7 @@ it('approves a pending organization and emails the owner', function () {
     $org->addMember($owner, OrganizationRole::Owner);
 
     livewire(ListOrganizations::class)
-        ->callTableAction('approve', $org)
+        ->callAction(TestAction::make('approve')->table($org))
         ->assertNotified();
 
     $org->refresh();
@@ -86,7 +87,7 @@ it('rejects with a reason and emails the owner', function () {
     $org->addMember($owner, OrganizationRole::Owner);
 
     livewire(ListOrganizations::class)
-        ->callTableAction('reject', $org, data: ['reason' => 'We could not verify this society.'])
+        ->callAction(TestAction::make('reject')->table($org), data: ['reason' => 'We could not verify this society.'])
         ->assertNotified();
 
     $org->refresh();
@@ -110,7 +111,7 @@ it('tells an organization that was approved that it is suspended, not that it wa
 
     livewire(ListOrganizations::class)
         ->removeTableFilter('status')
-        ->callTableAction('reject', $org, data: ['reason' => 'Repeated policy violations.'])
+        ->callAction(TestAction::make('reject')->table($org), data: ['reason' => 'Repeated policy violations.'])
         ->assertNotified();
 
     expect(EmailLog::query()->where('to_email', $owner->email)->firstOrFail()->template_key)
@@ -133,8 +134,8 @@ it('requires a reason to reject', function () {
     $org = Organization::factory()->create();
 
     livewire(ListOrganizations::class)
-        ->callTableAction('reject', $org, data: ['reason' => ''])
-        ->assertHasTableActionErrors(['reason']);
+        ->callAction(TestAction::make('reject')->table($org), data: ['reason' => ''])
+        ->assertHasFormErrors(['reason']);
 
     expect($org->refresh()->status)->toBe(OrganizationStatus::Pending);
 });
@@ -183,7 +184,7 @@ it('clears approval fields when an approved organization is rejected', function 
 
     livewire(ListOrganizations::class)
         ->removeTableFilter('status')
-        ->callTableAction('reject', $org, data: ['reason' => 'Repeated policy violations.'])
+        ->callAction(TestAction::make('reject')->table($org), data: ['reason' => 'Repeated policy violations.'])
         ->assertNotified();
 
     $org->refresh();

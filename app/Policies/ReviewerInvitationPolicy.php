@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\ReviewerInvitation;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * Spec section 4 gives "Invite reviewers, assign, decide" to *every*
@@ -17,6 +16,8 @@ use Filament\Facades\Filament;
  */
 class ReviewerInvitationPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -48,7 +49,7 @@ class ReviewerInvitationPolicy
     {
         $organization = $invitation->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 
     public function update(User $user, ReviewerInvitation $invitation): bool
@@ -84,12 +85,5 @@ class ReviewerInvitationPolicy
     public function forceDeleteAny(User $user): bool
     {
         return false;
-    }
-
-    private function isMemberOfCurrentTenant(User $user): bool
-    {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
     }
 }

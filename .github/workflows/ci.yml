@@ -104,8 +104,9 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
-    # About five minutes. The cap is for a hung MySQL service or test, which
-    # would otherwise hold a paid runner for GitHub's six-hour default.
+    # Three and a half to five and a half minutes in recent runs. The cap is
+    # for a hung MySQL service or test, which would otherwise hold a paid
+    # runner for GitHub's six-hour default.
     timeout-minutes: 20
     services:
       mysql:
@@ -180,6 +181,73 @@ jobs:
           DB_PASSWORD: root
         run: php artisan test --compact
 
+  # Line coverage of app/ (phpunit.xml's <source>) from the SQLite suite, with
+  # no threshold, beside `test` rather than in it: `browser`, `smoke` and
+  # `image` wait for `test`, nothing waits for this job, so the time pcov adds
+  # is on no required check's path. No MySQL service; `test` runs the suite on
+  # both databases.
+  coverage:
+    runs-on: ubuntu-24.04
+    # About four minutes, nearly all of it the suite under pcov.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+          # The `browser` job's list: SQLite only, sockets for the platform
+          # check.
+          extensions: mbstring, intl, gd, zip, sqlite3, pdo_sqlite, sockets
+          coverage: pcov
+          # pcov resolves this against the working directory and records only
+          # files under it. Unset, it takes the first of src/, lib/ and app/
+          # that exists, so a src/ or lib/ added at the root would take app/'s
+          # place.
+          ini-values: pcov.directory=app
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      # The same Composer download cache as the `test` job.
+      - name: Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: npm ci
+      # The panels and the public pages link their assets through the Vite
+      # manifest, so the suite needs a build.
+      - run: npm run build
+      - run: cp .env.example .env && php artisan key:generate
+      # The per-file table goes to the log, and PHPUnit's summary of classes,
+      # methods and lines to a file the next step reads.
+      - name: Tests (SQLite) with coverage
+        run: php artisan test --compact --coverage --coverage-text="$RUNNER_TEMP/coverage.txt" --only-summary-for-coverage-text
+      # A missing report fails at the first sed (exit 2), one without a Lines
+      # or a Classes row at the check after it (exit 1).
+      - name: Coverage summary
+        run: |
+          report=$(sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/coverage.txt")
+          printf '%s\n' "$report"
+          lines=$(printf '%s\n' "$report" | sed -n 's/^ *Lines: *//p')
+          classes=$(printf '%s\n' "$report" | sed -n 's/^ *Classes: *//p')
+          if [ -z "$lines" ] || [ -z "$classes" ]; then
+            echo "::error::No Lines or Classes line in $RUNNER_TEMP/coverage.txt."
+            exit 1
+          fi
+          {
+            echo '### Coverage, SQLite run'
+            echo
+            echo '| | Covered |'
+            echo '| --- | --- |'
+            echo "| Lines | $lines |"
+            echo "| Classes | $classes |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # The two host-side backup scripts. They are shell, not PHP, so `php artisan
   # test` cannot see them - and the bug they exist to prevent (identifying the
   # Coolify-named containers by a `grep -i cass` over their names, which matched
@@ -227,6 +295,63 @@ jobs:
             exit 1
           fi
           echo "Four references, one digest."
+
+  # gitleaks over the commits a run brings in: a pull request's own commits; on
+  # a push to main, the commits on main's own line, since a merged branch's
+  # commits were scanned on its pull request. The Monday schedule and a manual
+  # run scan the whole history of every branch and tag instead, which also
+  # covers a pull request's commits after its 30th (the action reads one page
+  # of the commit list). No mode reads a merge commit's own diff, such as a
+  # conflict resolution: the pull request and push scans pass --no-merges, and
+  # `git log -p` without -m prints no diff for a merge. Default rules, no
+  # .gitleaks.toml: a false positive goes into .gitleaksignore as the
+  # Fingerprint line the job log prints for it. The action wants a licence key
+  # from organisation accounts only, and this repository belongs to a personal
+  # account. The SHA pin fixes the action's code, not the gitleaks 8.24.3
+  # tarball it downloads from GitHub's release page and caches with no
+  # checksum.
+  secret-scan:
+    runs-on: ubuntu-24.04
+    # Under a minute. The cap is for a stuck download of the gitleaks binary.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The action reads a pull request's commit list through the API.
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every scanned commit has to be in the clone.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A finding fails the job and is listed by rule, commit, file and
+          # line in the job summary; the log prints the secret redacted. The
+          # token cannot comment on a pull request, and a SARIF artifact from
+          # every run would only repeat the summary.
+          GITLEAKS_ENABLE_COMMENTS: false
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+      # What a merge commit's own diff left in the tree: on the schedule and a
+      # manual run, the full scans, the tracked files too, read by the binary
+      # the action put on PATH. A copy of them, not the checkout: the step
+      # above writes its report, results.sarif, into the checkout, and with a
+      # finding in it every commit SHA it names reads as a token. It runs
+      # whatever the history scan found, so a finding there cannot hide one
+      # here. pipefail, because a run step's bash has only -e and a failing
+      # `git ls-files` would otherwise pass a partial tree; -P copies a
+      # symlink as a link, which gitleaks skips, as it would in the checkout.
+      # Scanned from inside the copy, so a finding's fingerprint is the
+      # repository path that .gitleaksignore takes.
+      - name: gitleaks over the tracked files (schedule and manual runs)
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+        run: |
+          set -o pipefail
+          tree="$RUNNER_TEMP/tracked-files"
+          mkdir "$tree"
+          git ls-files -z | xargs -0 cp -P --parents -t "$tree" --
+          cd "$tree"
+          gitleaks detect --no-git --source . --redact --verbose
 
   # Spec section 12's one end-to-end browser run. Its own job so the `test` job
   # stays fast and so a Playwright flake never hides a real unit failure. No

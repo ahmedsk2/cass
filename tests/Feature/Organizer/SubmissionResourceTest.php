@@ -32,6 +32,9 @@ use App\Models\User;
 use App\Policies\SubmissionFilePolicy;
 use App\Policies\SubmissionPolicy;
 use Carbon\Carbon;
+use Filament\Actions\Testing\TestAction;
+use Filament\GlobalSearch\GlobalSearchResult;
+use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
@@ -168,7 +171,7 @@ it('links a file through a signed url that actually works', function () {
 it('withdraws on the organizer side and records who did it', function () {
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
 
@@ -190,7 +193,7 @@ it('still withdraws an abstract that is under review, but only for the organizer
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->assertActionVisible('withdraw')
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
 });
@@ -215,7 +218,7 @@ it('still withdraws an accepted presenter who pulls out, but only for the organi
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->assertActionVisible('withdraw')
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     $withdrawn = $this->submission->fresh();
 
@@ -254,7 +257,7 @@ it('resends a status link with a new token and kills the old one', function () {
 
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('resendLink')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('sara@example.org')
         && $mail->templateKey === 'submission_received');
@@ -268,16 +271,17 @@ it('exports the visible rows as csv and neutralises a spreadsheet formula', func
     $this->submission->forceFill(['title' => '=HYPERLINK("https://evil.example","click")'])->save();
     withoutTenant(fn () => Submission::factory()->submitted()->create(['title' => 'Another tenant']));
 
-    // callTableAction, not callAction: `export` is a table *header* action, and
-    // the table helpers are what add the table context Filament resolves the
-    // action name in (vendor/filament/tables/src/Testing/TestsActions.php).
+    // ->table() with no record, not a bare callAction('export'): `export` is a
+    // table *header* action, and ->table() is what adds the table context
+    // Filament resolves the action name in
+    // (vendor/filament/actions/src/Testing/TestAction.php).
     //
     // Livewire turns the StreamedResponse the action returns into a `download`
     // effect, running the stream callback and base64-encoding what it wrote
     // (SupportFileDownloads::call()) - so the assertion below is on the real
     // bytes a browser would have saved, not on a response object.
     $component = livewire(ListSubmissions::class)
-        ->callTableAction('export')
+        ->callAction(TestAction::make('export')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
@@ -412,6 +416,85 @@ it('keeps withdraw and resend-link to owners and admins, never a plain member or
         ->assertActionHidden('resendLink');
 });
 
+// --- Cross-tenant: every screen this resource owns ----------------------
+
+it('finds no other organization abstract through the search, the filters or their options', function () {
+    [$theirConference, $theirTrack, $theirs] = withoutTenant(function (): array {
+        $conference = Conference::factory()->published()->create(['name' => 'Beta Congress']);
+        $track = Track::factory()->for($conference)->create(['name' => 'Beta track']);
+        $submission = Submission::factory()->for($conference)->submitted()->withCorrespondingAuthor('victim@example.org')
+            ->create(['title' => 'Somebody else entirely', 'track_id' => $track->id]);
+
+        return [$conference, $track, $submission];
+    });
+
+    livewire(ListSubmissions::class)
+        ->searchTable('Somebody else')->assertCountTableRecords(0)
+        ->searchTable('victim@example.org')->assertCountTableRecords(0)
+        ->searchTable((string) $theirs->reference)->assertCountTableRecords(0)
+        ->searchTable(null)
+        ->filterTable('conference_id', $theirConference->getKey())->assertCountTableRecords(0)
+        ->resetTableFilters()
+        ->filterTable('track_id', $theirTrack->getKey())->assertCountTableRecords(0)
+        ->resetTableFilters()
+        ->assertTableFilterExists('conference_id', fn (SelectFilter $filter): bool => array_key_exists($this->conference->getKey(), $filter->getOptions())
+            && ! array_key_exists($theirConference->getKey(), $filter->getOptions()))
+        ->assertTableFilterExists('track_id', fn (SelectFilter $filter): bool => ! array_key_exists($theirTrack->getKey(), $filter->getOptions()))
+        // The positive half: the same screen still finds this organization's abstract.
+        ->searchTable('Early mobilisation')->assertCanSeeTableRecords([$this->submission]);
+});
+
+it('resolves no row action on another organization abstract', function (string $action) {
+    $theirs = withoutTenant(fn (): Submission => Submission::factory()->submitted()->withCorrespondingAuthor('victim@example.org')->create());
+
+    livewire(ListSubmissions::class)
+        ->assertActionVisible(TestAction::make($action)->table($this->submission))
+        ->assertActionDoesNotExist(TestAction::make($action)->table($theirs));
+})->with(['view', 'resendLink', 'withdraw']);
+
+it('exports no other organization abstract, even filtered to that organization conference', function () {
+    $theirConference = withoutTenant(fn (): Conference => Conference::factory()->published()->create());
+    withoutTenant(fn () => Submission::factory()->for($theirConference)->submitted()->create(['title' => 'Another tenant']));
+
+    $component = livewire(ListSubmissions::class)
+        ->filterTable('conference_id', $theirConference->getKey())
+        ->callAction(TestAction::make('export')->table())
+        ->assertFileDownloaded();
+    $csv = (string) base64_decode((string) data_get($component->effects, 'download.content'), true);
+
+    // Neither row: the filter took, so this organization's abstract is not in the file either.
+    expect($csv)->not->toContain('Another tenant')->not->toContain('AAM26-017');
+});
+
+it('answers a global search with this organization abstracts only', function () {
+    $theirs = withoutTenant(fn (): Submission => Submission::factory()->submitted()->create(['title' => 'Early mobilisation in another society']));
+
+    // The query itself, not only the answer: the answer also passes through the view policy,
+    // which drops a foreign row whatever the query returned.
+    expect(SubmissionResource::getGlobalSearchEloquentQuery()->whereKey($theirs)->exists())->toBeFalse()
+        ->and(SubmissionResource::getGlobalSearchResults('Early mobilisation')
+            ->map(fn (GlobalSearchResult $result): string => (string) $result->title)->values()->all())
+        ->toBe(['Early mobilisation after cardiac surgery']);
+});
+
+it('keeps an abstract of a deleted conference out of the list and the view page', function () {
+    $kept = Submission::factory()->for(Conference::factory()->for($this->organization)->published())->submitted()->create();
+    $this->conference->delete();
+
+    livewire(ListSubmissions::class)
+        ->assertCanSeeTableRecords([$kept])
+        ->assertCanNotSeeTableRecords([$this->submission]);
+
+    get(SubmissionResource::getUrl('view', ['record' => $this->submission->getRouteKey()], tenant: $this->organization))
+        ->assertNotFound();
+});
+
+it('has no relation manager and no widget, either of which would need a negative of its own', function () {
+    // Either one would read its own model, which this resource's tenancy does not scope.
+    expect(SubmissionResource::getRelations())->toBe([])
+        ->and(SubmissionResource::getWidgets())->toBe([]);
+});
+
 // --- Counts on the conference page --------------------------------------
 
 it('shows the four submission counts and a link on the conference view', function () {
@@ -442,7 +525,7 @@ it('names the export file after the moment it was taken', function () {
     Carbon::setTestNow('2026-09-11 08:30:00');
 
     livewire(ListSubmissions::class)
-        ->callTableAction('export')
+        ->callAction(TestAction::make('export')->table())
         ->assertFileDownloaded('submissions-2026-09-11-083000.csv');
 
     Carbon::setTestNow();
@@ -457,12 +540,19 @@ it('exports a row whose conference is gone instead of dying mid-stream', functio
     $orphan = Submission::factory()->for($this->conference)->submitted()->create(['title' => 'Orphaned abstract']);
     $this->conference->delete();
 
-    $response = app(ExportSubmissionsCsv::class)
-        ->handle(Submission::query()->whereKey($orphan->getKey()), 'submissions.csv');
+    // Outside the tenant: inside it, the panel's tenancy scope reaches the
+    // organization through the conference, so it leaves out an abstract whose
+    // conference is gone, and the plain query this case is about would find
+    // nothing.
+    $csv = withoutTenant(function () use ($orphan): string {
+        $response = app(ExportSubmissionsCsv::class)
+            ->handle(Submission::query()->whereKey($orphan->getKey()), 'submissions.csv');
 
-    ob_start();
-    $response->sendContent();
-    $csv = (string) ob_get_clean();
+        ob_start();
+        $response->sendContent();
+
+        return (string) ob_get_clean();
+    });
 
     expect($csv)->toContain('Orphaned abstract');
 });
@@ -547,7 +637,7 @@ it('resends a status link however many the public form has sent the author today
 
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('resendLink')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('sara@example.org'));
 });

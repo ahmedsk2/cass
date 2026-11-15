@@ -11,6 +11,7 @@ use App\Models\Conference;
 use App\Models\EmailTemplate;
 use App\Models\Organization;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Features\SupportTesting\Testable;
 
@@ -75,15 +76,15 @@ it('shows the platform default subject in the row', function () {
 });
 
 it('edits a template and stores it against this conference only', function () {
-    // callTableAction($name, $record, $data): the second argument is the record
-    // *key*, which for an array-backed table is the key the collection is keyed
-    // by (fact 10) - here the template key itself.
+    // TestAction::table() takes the record *key*, which for an array-backed
+    // table is the key the collection is keyed by - here the template key
+    // itself.
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value), [
             'subject' => 'We have your abstract, {{author_name}}',
             'body' => 'Dear {{author_name}}, your reference is {{reference}}.',
         ])
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     $template = EmailTemplate::query()->firstOrFail();
 
@@ -94,19 +95,19 @@ it('edits a template and stores it against this conference only', function () {
 
 it('refuses a subject or body that is empty', function () {
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, ['subject' => '', 'body' => ''])
-        ->assertHasActionErrors(['subject', 'body']);
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value), ['subject' => '', 'body' => ''])
+        ->assertHasFormErrors(['subject', 'body']);
 
     expect(EmailTemplate::query()->count())->toBe(0);
 });
 
 it('warns about a placeholder the key does not declare', function () {
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value), [
             'subject' => 'Hello {{reviewer_name}}',
             'body' => 'Body',
         ])
-        ->assertHasActionErrors(['subject']);
+        ->assertHasFormErrors(['subject']);
 });
 
 it('resets a template back to the platform default by deleting the override', function () {
@@ -117,8 +118,8 @@ it('resets a template back to the platform default by deleting the override', fu
     ]);
 
     templatesPage($this->conference)
-        ->callTableAction('reset', EmailTemplateKey::SubmissionReceived->value)
-        ->assertHasNoActionErrors();
+        ->callAction(TestAction::make('reset')->table(EmailTemplateKey::SubmissionReceived->value))
+        ->assertHasNoFormErrors();
 
     expect(EmailTemplate::query()->count())->toBe(0);
 
@@ -134,12 +135,12 @@ it('offers neither edit nor reset for the three platform-wide keys', function ()
 
     foreach ($platformWide as $key) {
         templatesPage($this->conference)
-            ->assertTableActionHidden('edit', $key->value)
-            ->assertTableActionHidden('reset', $key->value);
+            ->assertActionHidden(TestAction::make('edit')->table($key->value))
+            ->assertActionHidden(TestAction::make('reset')->table($key->value));
     }
 
     templatesPage($this->conference)
-        ->assertTableActionVisible('edit', EmailTemplateKey::SubmissionReceived->value)
+        ->assertActionVisible(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value))
         ->assertSee('Platform-wide');
 });
 
@@ -156,7 +157,7 @@ it('previews the finished email with sample values', function () {
     // html a plain assertSee() reads is the one from before the action mounted.
     // Filament's own helper reads effects.partials, which is where the modal is.
     templatesPage($this->conference)
-        ->mountTableAction('edit', EmailTemplateKey::SubmissionReceived->value)
+        ->mountAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value))
         // The sample values of EmailTemplateKey::sampleValues(), so the
         // organizer reads a finished sentence instead of braces.
         ->assertMountedActionModalSee('GPCC26-017')
@@ -177,7 +178,7 @@ it('keeps raw HTML out of the preview', function () {
     ]);
 
     templatesPage($this->conference)
-        ->mountTableAction('edit', EmailTemplateKey::SubmissionReceived->value)
+        ->mountAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value))
         ->assertMountedActionModalDontSeeHtml('<script>alert(1)</script>')
         ->assertMountedActionModalSee('alert(1)');
 });
@@ -192,8 +193,8 @@ it('previews the text on screen rather than the text that is stored', function (
     ]);
 
     templatesPage($this->conference)
-        ->mountTableAction('edit', EmailTemplateKey::SubmissionReceived->value)
-        ->setTableActionData(['body' => 'Typed {{title}}'])
+        ->mountAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value))
+        ->fillForm(['body' => 'Typed {{title}}'])
         // The sample value of {{title}}, substituted into text that exists only
         // in the form state.
         ->assertMountedActionModalSee('Typed Early mobilisation after cardiac surgery')
@@ -218,11 +219,11 @@ it('lets a plain member edit templates, because spec section 4 says so', functio
     actingAs($member);
 
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionDraftSaved->value, [
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionDraftSaved->value), [
             'subject' => 'Member subject',
             'body' => 'Member body',
         ])
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect(EmailTemplate::query()->where('key', 'submission_draft_saved')->exists())->toBeTrue();
 });
@@ -241,11 +242,11 @@ it('refuses a link placeholder in a subject line', function () {
     // in the admin panel and carried in a clear-text SMTP header, so it must
     // never be able to hold the author's bearer token.
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionDraftSaved->value, [
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionDraftSaved->value), [
             'subject' => 'Your abstract {{status_link}}',
             'body' => 'Open {{status_link}} to edit it.',
         ])
-        ->assertHasActionErrors(['subject']);
+        ->assertHasFormErrors(['subject']);
 
     expect(EmailTemplate::query()->where('key', 'submission_draft_saved')->exists())->toBeFalse();
 });
@@ -255,11 +256,11 @@ it('warns about a placeholder the key does not declare in the body as well', fun
     // own ->rule() left every test in this file green while an undeclared
     // placeholder rendered literally in an author's inbox.
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value), [
             'subject' => 'We have your abstract, {{author_name}}',
             'body' => 'Dear {{author_name}}, ask {{reviewer_name}} about it.',
         ])
-        ->assertHasActionErrors(['body']);
+        ->assertHasFormErrors(['body']);
 
     expect(EmailTemplate::query()->count())->toBe(0);
 });
@@ -281,7 +282,7 @@ it('authorizes a save over an existing override as an update of that row', funct
     );
 
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value), [
             'subject' => 'A newer subject',
             'body' => 'A newer body',
         ])
@@ -296,11 +297,11 @@ it('still authorizes a first override as a create', function () {
     );
 
     templatesPage($this->conference)
-        ->callTableAction('edit', EmailTemplateKey::SubmissionReceived->value, [
+        ->callAction(TestAction::make('edit')->table(EmailTemplateKey::SubmissionReceived->value), [
             'subject' => 'A first subject',
             'body' => 'A first body',
         ])
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect(EmailTemplate::query()->firstOrFail()->subject)->toBe('A first subject');
 });

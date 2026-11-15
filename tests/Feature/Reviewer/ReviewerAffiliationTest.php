@@ -9,6 +9,7 @@ use App\Models\ConferenceReviewer;
 use App\Models\Organization;
 use App\Models\User;
 use Filament\Actions\Exceptions\ActionNotResolvableException;
+use Filament\Actions\Testing\TestAction;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Facades\Filament;
 
@@ -94,14 +95,14 @@ it('lists one row per conference the reviewer is active in, with its organizatio
 
 it('prefills the current value and changes it for one conference only', function () {
     livewire(EditProfile::class)
-        ->mountTableAction('editAffiliation', $this->row)
-        ->assertTableActionDataSet(['affiliation' => 'Old Hospital']);
+        ->mountAction(TestAction::make('editAffiliation')->table($this->row))
+        ->assertSchemaStateSet(['affiliation' => 'Old Hospital']);
 
     // A fresh component: calling on the one above would nest the second
     // mount inside the first and look for a modal action of the same name.
     livewire(EditProfile::class)
-        ->callTableAction('editAffiliation', $this->row, data: ['affiliation' => '  New Hospital  '])
-        ->assertHasNoTableActionErrors()
+        ->callAction(TestAction::make('editAffiliation')->table($this->row), data: ['affiliation' => '  New Hospital  '])
+        ->assertHasNoFormErrors()
         ->assertNotified(__('reviewer.affiliation.saved'));
 
     expect($this->row->fresh()?->affiliation)->toBe('New Hospital')
@@ -112,8 +113,8 @@ it('prefills the current value and changes it for one conference only', function
 
 it('refuses more than 255 characters in the form, as the organizer\'s invite form does', function () {
     livewire(EditProfile::class)
-        ->callTableAction('editAffiliation', $this->row, data: ['affiliation' => str_repeat('a', 256)])
-        ->assertHasTableActionErrors(['affiliation' => 'max']);
+        ->callAction(TestAction::make('editAffiliation')->table($this->row), data: ['affiliation' => str_repeat('a', 256)])
+        ->assertHasFormErrors(['affiliation' => 'max']);
 
     expect($this->row->fresh()?->affiliation)->toBe('Old Hospital');
 });
@@ -130,7 +131,7 @@ it('neither lists nor changes another reviewer\'s row in the same conference', f
     // The exact class, not Throwable: a TypeError swallowed here would be a
     // bug passing as a refusal.
     expect(fn () => livewire(EditProfile::class)
-        ->callTableAction('editAffiliation', $theirs, data: ['affiliation' => 'Hijacked']))
+        ->callAction(TestAction::make('editAffiliation')->table($theirs), data: ['affiliation' => 'Hijacked']))
         ->toThrow(ActionNotResolvableException::class, 'no longer exists');
 
     expect($theirs->fresh()?->affiliation)->toBe('Their Hospital');
@@ -150,7 +151,7 @@ it('neither lists nor changes the reviewer\'s own removed row in another organiz
         ->assertDontSee('Beta Society');
 
     expect(fn () => livewire(EditProfile::class)
-        ->callTableAction('editAffiliation', $removedThere, data: ['affiliation' => 'New Hospital']))
+        ->callAction(TestAction::make('editAffiliation')->table($removedThere), data: ['affiliation' => 'New Hospital']))
         ->toThrow(ActionNotResolvableException::class, 'no longer exists');
 
     expect($removedThere->fresh()?->affiliation)->toBe('Old Hospital');
@@ -172,7 +173,7 @@ it('drops a conference from the list the moment the organizer removes the review
         ->assertCanNotSeeTableRecords([$this->row]);
 
     expect(fn () => livewire(EditProfile::class)
-        ->callTableAction('editAffiliation', $this->row, data: ['affiliation' => 'New Hospital']))
+        ->callAction(TestAction::make('editAffiliation')->table($this->row), data: ['affiliation' => 'New Hospital']))
         ->toThrow(ActionNotResolvableException::class, 'no longer exists');
 
     expect($this->row->fresh()?->affiliation)->toBe('Old Hospital');

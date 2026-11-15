@@ -13,6 +13,7 @@ use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
 use Filament\Actions\Exceptions\ActionNotResolvableException;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Features\SupportTesting\Testable;
@@ -61,8 +62,8 @@ function adminInvitationsManager(Organization $organization): Testable
 
 it('changes a member role and logs the platform admin as the causer', function () {
     adminMembersManager($this->organization)
-        ->callTableAction('changeRole', $this->member, data: ['role' => OrganizationRole::Admin->value])
-        ->assertHasNoTableActionErrors()
+        ->callAction(TestAction::make('changeRole')->table($this->member), data: ['role' => OrganizationRole::Admin->value])
+        ->assertHasNoFormErrors()
         ->assertNotified(__('members.notices.role_changed'));
 
     expect($this->member->roleIn($this->organization))->toBe(OrganizationRole::Admin);
@@ -78,12 +79,12 @@ it('hands ownership over: a new owner first, then the old one steps down', funct
     // owner role, and a platform admin who is not a member acts with an
     // owner's authority - so the admin can do it without joining.
     adminMembersManager($this->organization)
-        ->callTableAction('changeRole', $this->member, data: ['role' => OrganizationRole::Owner->value])
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('changeRole')->table($this->member), data: ['role' => OrganizationRole::Owner->value])
+        ->assertHasNoFormErrors();
 
     adminMembersManager($this->organization)
-        ->callTableAction('changeRole', $this->owner, data: ['role' => OrganizationRole::Member->value])
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('changeRole')->table($this->owner), data: ['role' => OrganizationRole::Member->value])
+        ->assertHasNoFormErrors();
 
     expect($this->member->roleIn($this->organization))->toBe(OrganizationRole::Owner)
         ->and($this->owner->roleIn($this->organization))->toBe(OrganizationRole::Member)
@@ -92,8 +93,8 @@ it('hands ownership over: a new owner first, then the old one steps down', funct
 
 it('removes a member, keeps their account, and logs the platform admin as the causer', function () {
     adminMembersManager($this->organization)
-        ->callTableAction('remove', $this->member)
-        ->assertHasNoTableActionErrors()
+        ->callAction(TestAction::make('remove')->table($this->member))
+        ->assertHasNoFormErrors()
         ->assertNotified(__('members.notices.removed'));
 
     expect($this->member->roleIn($this->organization))->toBeNull()
@@ -105,11 +106,11 @@ it('removes a member, keeps their account, and logs the platform admin as the ca
 
 it('will not leave an organization without an owner, and says so instead of failing', function () {
     adminMembersManager($this->organization)
-        ->callTableAction('changeRole', $this->owner, data: ['role' => OrganizationRole::Admin->value])
+        ->callAction(TestAction::make('changeRole')->table($this->owner), data: ['role' => OrganizationRole::Admin->value])
         ->assertNotified(__('members.notices.refused'));
 
     adminMembersManager($this->organization)
-        ->callTableAction('remove', $this->owner)
+        ->callAction(TestAction::make('remove')->table($this->owner))
         ->assertNotified(__('members.notices.refused'));
 
     expect($this->owner->roleIn($this->organization))->toBe(OrganizationRole::Owner)
@@ -146,7 +147,7 @@ it('cannot reach a member of another organization through this one', function ()
     // The control: the action is there for this organization's own member,
     // so the refusal below is about the boundary and not a missing button.
     adminMembersManager($this->organization)
-        ->assertTableActionVisible('changeRole', $this->member)
+        ->assertActionVisible(TestAction::make('changeRole')->table($this->member))
         ->assertCanNotSeeTableRecords([$stranger]);
 
     // The row actions themselves. The manager resolves a record only through
@@ -155,9 +156,9 @@ it('cannot reach a member of another organization through this one', function ()
     // ChangeMemberRole::blockers() refuses a target with no role here as the
     // second wall.
     expect(fn () => adminMembersManager($this->organization)
-        ->callTableAction('changeRole', $stranger, data: ['role' => OrganizationRole::Owner->value]))
+        ->callAction(TestAction::make('changeRole')->table($stranger), data: ['role' => OrganizationRole::Owner->value]))
         ->toThrow(ActionNotResolvableException::class)
-        ->and(fn () => adminMembersManager($this->organization)->callTableAction('remove', $stranger))
+        ->and(fn () => adminMembersManager($this->organization)->callAction(TestAction::make('remove')->table($stranger)))
         ->toThrow(ActionNotResolvableException::class);
 
     expect($stranger->roleIn($other))->toBe(OrganizationRole::Member)
@@ -174,9 +175,9 @@ it('withdraws a pending invitation and logs the platform admin as the causer', f
     ]);
 
     adminInvitationsManager($this->organization)
-        ->assertTableActionHidden('revoke', $accepted)
-        ->callTableAction('revoke', $pending)
-        ->assertHasNoTableActionErrors()
+        ->assertActionHidden(TestAction::make('revoke')->table($accepted))
+        ->callAction(TestAction::make('revoke')->table($pending))
+        ->assertHasNoFormErrors()
         ->assertNotified(__('members.notices.revoked'));
 
     expect($pending->fresh()?->revoked_at)->not->toBeNull()
@@ -192,10 +193,10 @@ it('cannot withdraw another organization invitation through this one', function 
     $ours = OrganizationInvitation::factory()->for($this->organization)->create(['email' => 'ours@example.org']);
 
     adminInvitationsManager($this->organization)
-        ->assertTableActionVisible('revoke', $ours)
+        ->assertActionVisible(TestAction::make('revoke')->table($ours))
         ->assertCanNotSeeTableRecords([$theirs]);
 
-    expect(fn () => adminInvitationsManager($this->organization)->callTableAction('revoke', $theirs))
+    expect(fn () => adminInvitationsManager($this->organization)->callAction(TestAction::make('revoke')->table($theirs)))
         ->toThrow(ActionNotResolvableException::class);
 
     expect($theirs->fresh()?->revoked_at)->toBeNull();
@@ -217,15 +218,15 @@ it('gives an organization owner neither the page nor the actions', function () {
     // RemoveMember would say yes to this owner - it is their organization - so
     // each action's authorize() is what keeps them in the admin panel.
     adminMembersManager($this->organization)
-        ->assertTableActionHidden('changeRole', $this->member)
-        ->assertTableActionHidden('remove', $this->member);
+        ->assertActionHidden(TestAction::make('changeRole')->table($this->member))
+        ->assertActionHidden(TestAction::make('remove')->table($this->member));
 
     // A relation manager checks canViewForRecord() before it mounts or
     // hydrates, and OrganizationInvitationPolicy::viewAny() refuses a user who
     // manages no tenant of the admin panel, so the invitations manager does not
     // even boot for the owner. Behind that, revoke refuses the owner as well.
     adminInvitationsManager($this->organization)->assertForbidden();
-    $invitations->assertTableActionHidden('revoke', $invitation);
+    $invitations->assertActionHidden(TestAction::make('revoke')->table($invitation));
 
     expect($this->member->roleIn($this->organization))->toBe(OrganizationRole::Member)
         ->and($invitation->fresh()?->revoked_at)->toBeNull();

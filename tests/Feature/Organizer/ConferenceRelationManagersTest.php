@@ -14,6 +14,7 @@ use App\Models\CustomField;
 use App\Models\Organization;
 use App\Models\Track;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Livewire\livewire;
@@ -61,10 +62,10 @@ it('lists, creates, edits and reorders tracks', function () {
         'pageClass' => EditConference::class,
     ])
         ->assertCanSeeTableRecords([$first, $second])
-        ->callTableAction('create', data: ['name' => 'Respiratory', 'description' => 'Airways and ventilation'])
-        ->assertHasNoTableActionErrors()
-        ->callTableAction('edit', $first, data: ['name' => 'Cardiology and haemodynamics'])
-        ->assertHasNoTableActionErrors()
+        ->callAction(TestAction::make('create')->table(), data: ['name' => 'Respiratory', 'description' => 'Airways and ventilation'])
+        ->assertHasNoFormErrors()
+        ->callAction(TestAction::make('edit')->table($first), data: ['name' => 'Cardiology and haemodynamics'])
+        ->assertHasNoFormErrors()
         ->call('reorderTable', [$second->getKey(), $first->getKey()]);
 
     expect($this->conference->tracks()->pluck('name')->all())
@@ -79,7 +80,7 @@ it('deletes a track', function () {
     livewire(TracksRelationManager::class, [
         'ownerRecord' => $this->conference,
         'pageClass' => EditConference::class,
-    ])->callTableAction('delete', $track);
+    ])->callAction(TestAction::make('delete')->table($track));
 
     expect(Track::count())->toBe(0);
 });
@@ -130,12 +131,12 @@ it('cannot act on another organization tracks or fields from a mounted manager',
     $mine = Track::factory()->for($this->conference)->create();
 
     livewire(TracksRelationManager::class, ['ownerRecord' => $this->conference, 'pageClass' => EditConference::class])
-        ->mountTableAction('delete', $theirTrack)
+        ->mountAction(TestAction::make('delete')->table($theirTrack))
         ->assertActionNotMounted()
         ->call('reorderTable', [$theirTrack->getKey(), $mine->getKey()]);
 
     livewire(CustomFieldsRelationManager::class, ['ownerRecord' => $this->conference, 'pageClass' => EditConference::class])
-        ->mountTableAction('edit', $theirField)
+        ->mountAction(TestAction::make('edit')->table($theirField))
         ->assertActionNotMounted();
 
     expect($theirTrack->fresh()?->sort)->toBe(7)
@@ -177,13 +178,13 @@ it('creates a custom field and derives its storage key', function () {
         'ownerRecord' => $this->conference,
         'pageClass' => EditConference::class,
     ])
-        ->callTableAction('create', data: [
+        ->callAction(TestAction::make('create')->table(), data: [
             'label' => 'Funding source',
             'type' => CustomFieldType::Select->value,
             'options' => ['None', 'Institutional', 'Industry'],
             'required' => true,
         ])
-        ->assertHasNoTableActionErrors();
+        ->assertHasNoFormErrors();
 
     $field = CustomField::query()->firstOrFail();
 
@@ -199,7 +200,7 @@ it('keeps the custom field key fixed when the label changes', function () {
     livewire(CustomFieldsRelationManager::class, [
         'ownerRecord' => $this->conference,
         'pageClass' => EditConference::class,
-    ])->callTableAction('edit', $field, data: ['label' => 'Source of funding']);
+    ])->callAction(TestAction::make('edit')->table($field), data: ['label' => 'Source of funding']);
 
     $field->refresh();
     expect($field->label)->toBe('Source of funding')

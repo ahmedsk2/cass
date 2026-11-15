@@ -9,6 +9,7 @@ use App\Filament\Admin\Resources\Organizations\Pages\ListOrganizations;
 use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -44,11 +45,11 @@ it('shows the logo in the purge modal and deletes it with the organization, and 
 
     livewire(ListOrganizations::class)
         ->removeTableFilter('status')
-        ->mountTableAction('purge', $this->organization)
+        ->mountAction(TestAction::make('purge')->table($this->organization))
         ->assertMountedActionModalSeeHtml('<strong>1</strong> '.__('admin.purge.logo'))
-        ->setTableActionData(['confirmation' => (string) $this->organization->slug])
-        ->callMountedTableAction()
-        ->assertHasNoTableActionErrors()
+        ->fillForm(['confirmation' => (string) $this->organization->slug])
+        ->callMountedAction()
+        ->assertHasNoFormErrors()
         // One row (the organization; it has nothing else) and one file (the
         // logo): the notification counts a logo as a file, not as a row.
         ->assertNotified(__('admin.purge.done', ['name' => 'Alpha Society', 'rows' => '1', 'files' => '1']));

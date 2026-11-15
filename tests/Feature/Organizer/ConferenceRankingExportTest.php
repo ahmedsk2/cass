@@ -15,6 +15,8 @@ use App\Models\Track;
 use App\Models\User;
 use App\Support\Scoring\RankedSubmissions;
 use Carbon\Carbon;
+use Filament\Actions\Testing\TestAction;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Gate;
 
 use function Pest\Laravel\actingAs;
@@ -45,7 +47,7 @@ beforeEach(function () {
 
 it('exports the visible rows as csv, with the numbers and the authors', function () {
     $component = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('exportCsv')
+        ->callAction(TestAction::make('exportCsv')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
@@ -76,7 +78,7 @@ it('exports only the rows the filters left on screen', function () {
 
     $component = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
         ->filterTable('decision', Decision::AcceptedOral->value)
-        ->callTableAction('exportCsv')
+        ->callAction(TestAction::make('exportCsv')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
@@ -96,7 +98,7 @@ it('writes both files in the ranking order on screen, not in submission-id order
     $top->forceFill(['reference' => 'AAM26-002'])->save();
 
     $component = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('exportCsv')
+        ->callAction(TestAction::make('exportCsv')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
@@ -107,7 +109,7 @@ it('writes both files in the ranking order on screen, not in submission-id order
     // The XLSX writer is a second copy of the same loop, so it needs the same
     // assertion or only half the bug is pinned.
     $workbook = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('exportXlsx')
+        ->callAction(TestAction::make('exportXlsx')->table())
         ->assertFileDownloaded();
 
     $path = sys_get_temp_dir().'/cass-ranking-order-'.bin2hex(random_bytes(6)).'.xlsx';
@@ -139,7 +141,10 @@ it('scopes the file itself, whatever query it is handed', function () {
     Submission::factory()->for($this->conference)->create(['title' => 'An unfinished draft']);
     Submission::factory()->for($this->conference)->withdrawn()->create(['title' => 'A withdrawn abstract']);
 
-    $response = app(ExportRankingCsv::class)->handle(Submission::query(), $this->conference, 'ranking.csv');
+    // Unscoped on purpose, the panel's tenancy scope included: the writer's own
+    // constraint is what this case is about.
+    $unscoped = Submission::query()->withoutGlobalScope(Filament::getPanel('organizer')->getTenancyScopeName());
+    $response = app(ExportRankingCsv::class)->handle($unscoped, $this->conference, 'ranking.csv');
 
     ob_start();
     $response->sendContent();
@@ -157,7 +162,7 @@ it('never exports another conference, whatever the filters say', function () {
     $theirs = Submission::factory()->for($other)->scored(99.0)->create(['title' => 'Winter abstract']);
 
     $component = livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('exportCsv')
+        ->callAction(TestAction::make('exportCsv')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
@@ -174,11 +179,11 @@ it('names both files after the conference and the moment they were taken', funct
     // name in config('app.timezone') produced a file whose name disagreed with
     // its own contents by the offset.
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('exportCsv')
+        ->callAction(TestAction::make('exportCsv')->table())
         ->assertFileDownloaded('ranking-alpha-annual-meeting-2026-09-13-113000.csv');
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('exportXlsx')
+        ->callAction(TestAction::make('exportXlsx')->table())
         ->assertFileDownloaded('ranking-alpha-annual-meeting-2026-09-13-113000.xlsx');
 
     Carbon::setTestNow();

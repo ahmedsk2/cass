@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\User;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 use App\Support\Reviews\ReviewerScope;
-use Filament\Facades\Filament;
 
 /**
  * Spec section 4: every organization member can view submissions and files;
@@ -19,6 +18,8 @@ use Filament\Facades\Filament;
  */
 class SubmissionPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -26,14 +27,11 @@ class SubmissionPolicy
 
     public function viewAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
         // Two panels ask this. In the organizer panel the answer is tenant
         // membership; in the reviewer panel there is no tenant at all and the
         // answer is "does this person review anywhere" - the row-level view()
         // below is what actually keeps one reviewer out of another's pool.
-        return ($tenant instanceof Organization && $user->roleIn($tenant) !== null)
-            || $user->isActiveReviewer();
+        return $this->isMemberOfCurrentTenant($user) || $user->isActiveReviewer();
     }
 
     /**
@@ -65,7 +63,7 @@ class SubmissionPolicy
             return false;
         }
 
-        if ($user->roleIn($organization) !== null) {
+        if ($this->isMemberOf($user, $organization)) {
             return true;
         }
 
@@ -167,7 +165,7 @@ class SubmissionPolicy
     {
         $organization = $submission->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 
     /** Exporting is reading every row at once, so it needs the list right. */
@@ -181,7 +179,6 @@ class SubmissionPolicy
     {
         $organization = $submission->conference?->organization;
 
-        return $organization !== null
-            && ($user->roleIn($organization)?->canManageOrganization() ?? false);
+        return $organization !== null && $this->managesOrganization($user, $organization);
     }
 }

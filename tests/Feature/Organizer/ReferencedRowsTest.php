@@ -12,6 +12,7 @@ use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\Track;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Gate;
 
 use function Pest\Laravel\actingAs;
@@ -36,8 +37,8 @@ it('keeps a track an abstract is filed under, a withdrawn or trashed abstract in
         ->and(Gate::inspect('delete', $filedTrashed)->message())->toBe(__('organizer.tracks.in_use'))
         ->and(Gate::allows('delete', $free))->toBeTrue();
     ($this->manager)(TracksRelationManager::class)
-        ->assertTableActionDisabled('delete', $filed)->assertTableActionEnabled('delete', $free)
-        ->callTableAction('delete', $filed)->callTableAction('delete', $free);
+        ->assertActionDisabled(TestAction::make('delete')->table($filed))->assertActionEnabled(TestAction::make('delete')->table($free))
+        ->callAction(TestAction::make('delete')->table($filed))->callAction(TestAction::make('delete')->table($free));
     expect($filed->fresh())->not->toBeNull()->and($free->fresh())->toBeNull();
 });
 
@@ -60,8 +61,8 @@ it('keeps a custom field an abstract of this conference answered, and lets an em
         ->and(Gate::allows('delete', $nulled))->toBeTrue()
         ->and(Gate::inspect('delete', $trashedOnly)->message())->toBe(__('organizer.custom_fields.in_use'));
     ($this->manager)(CustomFieldsRelationManager::class)
-        ->assertTableActionDisabled('delete', $answered)
-        ->callTableAction('delete', $answered)->callTableAction('delete', $blank);
+        ->assertActionDisabled(TestAction::make('delete')->table($answered))
+        ->callAction(TestAction::make('delete')->table($answered))->callAction(TestAction::make('delete')->table($blank));
     expect($answered->fresh())->not->toBeNull()->and($blank->fresh())->toBeNull();
 });
 

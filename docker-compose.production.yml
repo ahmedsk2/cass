@@ -67,6 +67,11 @@ services:
       # would hand env() an empty string, which (int) reads as a cap of 0.
       CASS_STATUS_LINK_PER_ADDRESS_PER_DAY: ${CASS_STATUS_LINK_PER_ADDRESS_PER_DAY:-3}
       CASS_STATUS_LINK_PER_IP_PER_DAY: ${CASS_STATUS_LINK_PER_IP_PER_DAY:-10}
+      # cass:health's disk-row floors (config/cass.php, health). Optional, and
+      # named here for the same reason. Keep the explicit defaults: ${VAR:-}
+      # would read as 0, which turns that floor off.
+      CASS_HEALTH_DISK_MIN_PERCENT: ${CASS_HEALTH_DISK_MIN_PERCENT:-15}
+      CASS_HEALTH_DISK_MIN_GIB: ${CASS_HEALTH_DISK_MIN_GIB:-2}
       TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     volumes:
       - cass-storage:/var/www/html/storage/app

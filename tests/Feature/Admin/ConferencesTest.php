@@ -12,6 +12,7 @@ use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 
 use function Pest\Laravel\actingAs;
@@ -58,7 +59,7 @@ it('lets the platform admin restore a soft-deleted conference', function () {
     livewire(AdminListConferences::class)
         ->filterTable('trashed', false)
         ->assertCanSeeTableRecords([$conference])
-        ->callTableAction('restore', $conference);
+        ->callAction(TestAction::make('restore')->table($conference));
 
     expect($conference->fresh()?->trashed())->toBeFalse();
 });

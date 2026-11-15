@@ -11,8 +11,8 @@ use App\Models\Submission;
 use App\Models\User;
 use App\Policies\ConferencePolicy;
 use App\Policies\OrganizationPolicy;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
-use Illuminate\Support\Facades\Schema;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Livewire\livewire;
@@ -29,7 +29,7 @@ it('shows what a purge would destroy, and refuses the wrong word', function () {
     Submission::factory()->for($conference)->submitted()->count(3)->create();
 
     livewire(AdminListConferences::class)
-        ->mountTableAction('purge', $conference)
+        ->mountAction(TestAction::make('purge')->table($conference))
         // The count is in the modal before anything is typed: a yes/no
         // confirmation for an irreversible cascade over fourteen tables is not
         // a confirmation.
@@ -42,9 +42,9 @@ it('shows what a purge would destroy, and refuses the wrong word', function () {
         ->assertMountedActionModalSee(__('admin.purge.counts_heading'))
         ->assertMountedActionModalSeeHtml('<strong>3</strong> submissions')
         ->assertMountedActionModalSeeHtml('<strong>1</strong> conferences')
-        ->setTableActionData(['confirmation' => 'not-the-slug'])
-        ->callMountedTableAction()
-        ->assertHasTableActionErrors(['confirmation']);
+        ->fillForm(['confirmation' => 'not-the-slug'])
+        ->callMountedAction()
+        ->assertHasFormErrors(['confirmation']);
 
     expect(Conference::whereKey($conference->getKey())->exists())->toBeTrue();
 });
@@ -54,8 +54,8 @@ it('purges a conference when the slug is typed', function () {
     Submission::factory()->for($conference)->submitted()->create();
 
     livewire(AdminListConferences::class)
-        ->callTableAction('purge', $conference, ['confirmation' => 'annual-meeting'])
-        ->assertHasNoTableActionErrors()
+        ->callAction(TestAction::make('purge')->table($conference), ['confirmation' => 'annual-meeting'])
+        ->assertHasNoFormErrors()
         ->assertNotified();
 
     expect(Conference::withTrashed()->whereKey($conference->getKey())->exists())->toBeFalse();
@@ -71,8 +71,8 @@ it('purges an organization, and its conferences with it', function () {
         // the idiom OrganizationApprovalTest already uses to reject an approved
         // organization.
         ->removeTableFilter('status')
-        ->callTableAction('purge', $organization, ['confirmation' => (string) $organization->slug])
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('purge')->table($organization), ['confirmation' => (string) $organization->slug])
+        ->assertHasNoFormErrors();
 
     expect(Organization::withTrashed()->whereKey($organization->getKey())->exists())->toBeFalse()
         ->and(Conference::withTrashed()->whereKey($conference->getKey())->exists())->toBeFalse();
@@ -86,11 +86,11 @@ it('does not gate on the demo flag', function () {
 
     livewire(ListOrganizations::class)
         ->removeTableFilter('status')
-        ->callTableAction('purge', $organization, ['confirmation' => (string) $organization->slug])
-        ->assertHasNoTableActionErrors();
+        ->callAction(TestAction::make('purge')->table($organization), ['confirmation' => (string) $organization->slug])
+        ->assertHasNoFormErrors();
 
     expect(Organization::withTrashed()->whereKey($organization->getKey())->exists())->toBeFalse();
-})->skip(fn (): bool => ! Schema::hasColumn('organizations', 'is_demo'), 'The demo branch has not merged.');
+});
 
 it('offers no purge to an organization owner, and no force delete to anybody', function () {
     $owner = User::factory()->create();

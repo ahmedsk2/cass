@@ -18,6 +18,7 @@ use App\Models\Organization;
 use App\Models\Review;
 use App\Models\Submission;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification;
 
 use function Pest\Laravel\actingAs;
@@ -203,7 +204,7 @@ it('publishes from the list table too', function () {
     $conference = readyConference($this->organization);
 
     livewire(ListConferences::class)
-        ->callTableAction('publish', $conference)
+        ->callAction(TestAction::make('publish')->table($conference))
         ->assertNotified();
 
     expect($conference->fresh()?->status)->toBe(ConferenceStatus::Open);
