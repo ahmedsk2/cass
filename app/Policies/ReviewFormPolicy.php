@@ -4,23 +4,22 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\ReviewForm;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 class ReviewFormPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function viewAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        return $this->isMemberOfCurrentTenant($user);
     }
 
     public function view(User $user, ReviewForm $reviewForm): bool
     {
-        return $user->roleIn($reviewForm->conference->organization) !== null;
+        return $this->isMemberOf($user, $reviewForm->conference->organization);
     }
 
     public function create(User $user): bool

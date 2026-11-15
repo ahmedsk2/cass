@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\SubmissionFile;
 use App\Models\User;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 use App\Support\Reviews\ReviewerScope;
-use Filament\Facades\Filament;
 
 /**
  * Governs where a signed download URL may be *minted* inside a panel. The
@@ -24,6 +23,8 @@ use Filament\Facades\Filament;
  */
 class SubmissionFilePolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -31,14 +32,11 @@ class SubmissionFilePolicy
 
     public function viewAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
         // Two panels ask this. In the organizer panel the answer is tenant
         // membership; in the reviewer panel there is no tenant at all and the
         // answer is "does this person review anywhere" - view() below is what
         // keeps one reviewer out of another's files.
-        return ($tenant instanceof Organization && $user->roleIn($tenant) !== null)
-            || $user->isActiveReviewer();
+        return $this->isMemberOfCurrentTenant($user) || $user->isActiveReviewer();
     }
 
     /**
@@ -62,7 +60,7 @@ class SubmissionFilePolicy
             return false;
         }
 
-        if ($user->roleIn($organization) !== null) {
+        if ($this->isMemberOf($user, $organization)) {
             return true;
         }
 

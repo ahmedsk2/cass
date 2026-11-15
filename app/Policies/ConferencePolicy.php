@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\Conference;
-use App\Models\Organization;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 class ConferencePolicy
 {
+    use ChecksOrganizationMembership;
+
     /**
      * Spec section 4 gives the platform admin every conference capability, and
      * conferences otherwise live only inside the tenant-scoped organizer
@@ -45,7 +46,7 @@ class ConferencePolicy
 
     public function view(User $user, Conference $conference): bool
     {
-        return $user->roleIn($conference->organization) !== null;
+        return $this->isMemberOf($user, $conference->organization);
     }
 
     public function update(User $user, Conference $conference): bool
@@ -137,10 +138,7 @@ class ConferencePolicy
      */
     public function deleteAny(User $user): bool
     {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization
-            && ($user->roleIn($tenant)?->canManageOrganization() ?? false);
+        return $this->managesCurrentTenant($user);
     }
 
     /** No bulk restore or purge UI exists in either panel; keep both closed. */
@@ -156,13 +154,6 @@ class ConferencePolicy
 
     private function canManage(User $user, Conference $conference): bool
     {
-        return $user->roleIn($conference->organization)?->canManageOrganization() ?? false;
-    }
-
-    private function isMemberOfCurrentTenant(User $user): bool
-    {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        return $this->managesOrganization($user, $conference->organization);
     }
 }

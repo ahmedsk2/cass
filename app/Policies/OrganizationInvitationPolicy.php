@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * Spec section 4: "Manage organization members" belongs to the platform admin,
@@ -23,6 +22,8 @@ use Filament\Facades\Filament;
  */
 class OrganizationInvitationPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -50,8 +51,7 @@ class OrganizationInvitationPolicy
     {
         $organization = $invitation->organization;
 
-        return $organization !== null
-            && ($user->roleIn($organization)?->canManageOrganization() ?? false);
+        return $organization !== null && $this->managesOrganization($user, $organization);
     }
 
     /** Resending replaces the token on the row, so it is an update. */
@@ -90,13 +90,5 @@ class OrganizationInvitationPolicy
     public function forceDeleteAny(User $user): bool
     {
         return false;
-    }
-
-    private function managesCurrentTenant(User $user): bool
-    {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization
-            && ($user->roleIn($tenant)?->canManageOrganization() ?? false);
     }
 }

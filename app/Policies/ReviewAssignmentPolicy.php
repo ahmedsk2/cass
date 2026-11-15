@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Models\Organization;
 use App\Models\ReviewAssignment;
 use App\Models\User;
-use Filament\Facades\Filament;
+use App\Policies\Concerns\ChecksOrganizationMembership;
 
 /**
  * Assignment is an organizer capability (spec section 4, "Invite reviewers,
@@ -16,6 +15,8 @@ use Filament\Facades\Filament;
  */
 class ReviewAssignmentPolicy
 {
+    use ChecksOrganizationMembership;
+
     public function before(User $user): ?bool
     {
         return $user->is_platform_admin ? true : null;
@@ -88,13 +89,6 @@ class ReviewAssignmentPolicy
     {
         $organization = $assignment->submission?->conference?->organization;
 
-        return $organization !== null && $user->roleIn($organization) !== null;
-    }
-
-    private function isMemberOfCurrentTenant(User $user): bool
-    {
-        $tenant = Filament::getTenant();
-
-        return $tenant instanceof Organization && $user->roleIn($tenant) !== null;
+        return $organization !== null && $this->isMemberOf($user, $organization);
     }
 }
