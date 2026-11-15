@@ -86,6 +86,16 @@ it('asks on a terminal even when CASS_ADMIN_PASSWORD is set, so a value left in 
         ->and(password_verify('Left-in-environment-1', $password))->toBeFalse();
 });
 
+it('says nothing of CASS_ADMIN_PASSWORD on a terminal when it holds only the runbook\'s placeholder', function () {
+    config(['cass.admin_password' => 'removed']); // gitleaks:allow
+
+    $this->artisan('cass:admin-password', ['--force' => true])
+        ->expectsQuestion('New password', 'Fresh-admin-pass-2026')
+        ->expectsQuestion('The same password again', 'Fresh-admin-pass-2026')
+        ->doesntExpectOutputToContain('CASS_ADMIN_PASSWORD')
+        ->assertExitCode(0);
+});
+
 it('takes CASS_ADMIN_PASSWORD under --no-interaction, and never prints it', function () {
     config(['cass.admin_password' => 'test-admin-password-2026']); // gitleaks:allow
 

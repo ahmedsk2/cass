@@ -17,9 +17,12 @@ use Symfony\Component\Console\Exception\RuntimeException as ConsoleInputExceptio
  * The admin is the account CASS_ADMIN_EMAIL names, and it has to be a platform admin already.
  *
  * The password is never written to the output. On a terminal it is asked for twice, hidden, and a terminal
- * that cannot hide what is typed is refused rather than echoed. CASS_ADMIN_PASSWORD is read only under
- * --no-interaction, so a value left in the environment after the first seed never becomes the password of an
- * operator who meant to type a new one.
+ * that cannot hide what is typed is refused rather than echoed. CASS_ADMIN_PASSWORD is read only when
+ * --no-interaction (-n) is given, and then as the configuration cached at the container's boot. Symfony also
+ * stops questions for --quiet, --silent and a negative SHELL_VERBOSITY; such a run is refused, so neither a
+ * quiet run nor a value left in the environment sets a password nobody typed or asked for.
+ *
+ * Refusals are written at quiet verbosity: --quiet hides every other line, but not why nothing changed.
  *
  * Exit codes: 0, replaced; 1, nothing changed (no such admin, no --force, no password, or one the rule refuses).
  */
@@ -36,10 +39,12 @@ class AdminPasswordCommand extends Command
         $admin = $email === '' ? null : $reset->admin($email);
 
         if (! $admin instanceof User) {
-            $this->error($email === ''
-                ? 'CASS_ADMIN_EMAIL is empty, so there is no platform admin to change.'
-                : "No platform admin has the address [{$email}] in CASS_ADMIN_EMAIL.");
-            $this->error('"php artisan db:seed --force" creates the platform admin. Nothing was changed.');
+            $this->refuse(
+                $email === ''
+                    ? 'CASS_ADMIN_EMAIL is empty, so there is no platform admin to change.'
+                    : "No platform admin has the address [{$email}] in CASS_ADMIN_EMAIL.",
+                '"php artisan db:seed --force" creates the platform admin. Nothing was changed.',
+            );
 
             return self::FAILURE;
         }
@@ -47,8 +52,10 @@ class AdminPasswordCommand extends Command
         // Before anything is asked for, so an operator who typed the command by mistake is not led into typing
         // a password first.
         if ($this->option('force') !== true) {
-            $this->error("This replaces the password of the platform admin [{$email}], and every session of that account ends on its next request.");
-            $this->error('Re-run with --force if that is what you want. Nothing was changed.');
+            $this->refuse(
+                "This replaces the password of the platform admin [{$email}], and every session of that account ends on its next request.",
+                'Re-run with --force if that is what you want. Nothing was changed.',
+            );
 
             return self::FAILURE;
         }
@@ -62,11 +69,7 @@ class AdminPasswordCommand extends Command
         $reasons = $reset->blockers($admin, $password);
 
         if ($reasons !== []) {
-            foreach ($reasons as $reason) {
-                $this->error($reason);
-            }
-
-            $this->error('Nothing was changed.');
+            $this->refuse(...[...$reasons, 'Nothing was changed.']);
 
             return self::FAILURE;
         }
@@ -83,9 +86,10 @@ class AdminPasswordCommand extends Command
     {
         $fromEnvironment = (string) config('cass.admin_password');
 
-        if (! $this->input->isInteractive()) {
+        // Asked by name, not by isInteractive(), which --quiet and --silent also turn false.
+        if ($this->input->hasParameterOption(['--no-interaction', '-n'], true)) {
             if ($fromEnvironment === '') {
-                $this->error('CASS_ADMIN_PASSWORD is empty, and --no-interaction stops the command asking for a password. Nothing was changed.');
+                $this->refuse('CASS_ADMIN_PASSWORD is empty, and --no-interaction stops the command asking for a password. Nothing was changed.');
 
                 return null;
             }
@@ -95,8 +99,15 @@ class AdminPasswordCommand extends Command
             return $fromEnvironment;
         }
 
-        if ($fromEnvironment !== '') {
-            $this->line('CASS_ADMIN_PASSWORD is not used on a terminal. Take it out of the environment: the seeder no longer needs it.');
+        if (! $this->input->isInteractive()) {
+            $this->refuse('This run cannot ask for the password: --quiet, --silent and a negative SHELL_VERBOSITY stop questions. Run it on a terminal, or pass --no-interaction to use CASS_ADMIN_PASSWORD. Nothing was changed.');
+
+            return null;
+        }
+
+        // Long enough to be a password, so a secret is still there; the runbook's placeholder is shorter.
+        if (mb_strlen($fromEnvironment) >= ResetPlatformAdminPassword::MIN_LENGTH) {
+            $this->line('CASS_ADMIN_PASSWORD is not used on a terminal, and only the first seed needs it: replace it with the placeholder, as the runbook\'s One-time setup step 6 says.');
         }
 
         try {
@@ -104,17 +115,25 @@ class AdminPasswordCommand extends Command
             $password = (string) $this->secret('New password', false);
             $again = (string) $this->secret('The same password again', false);
         } catch (ConsoleInputException) {
-            $this->error('No password was read: this terminal cannot hide what is typed, or there is nothing to read. Use "docker exec -it", or pass --no-interaction with CASS_ADMIN_PASSWORD set. Nothing was changed.');
+            $this->refuse('No password was read: this terminal cannot hide what is typed, or there is nothing to read. Use "docker exec -it", or pass --no-interaction with CASS_ADMIN_PASSWORD set. Nothing was changed.');
 
             return null;
         }
 
         if (! hash_equals($password, $again)) {
-            $this->error('The two passwords differ. Nothing was changed.');
+            $this->refuse('The two passwords differ. Nothing was changed.');
 
             return null;
         }
 
         return $password;
+    }
+
+    /** Each line as an error, at quiet verbosity. */
+    private function refuse(string ...$lines): void
+    {
+        foreach ($lines as $line) {
+            $this->error($line, 'quiet');
+        }
     }
 }
