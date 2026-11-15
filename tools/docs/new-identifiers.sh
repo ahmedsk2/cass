@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Prints every identifier-shaped value that the files this branch touches hold at HEAD but did not
-# hold at the base: an empty output (and exit 0) means the branch added none.
+# Prints, as "<file>: <value>", every identifier-shaped value that a file this branch touches holds
+# at HEAD but did not hold at the merge base: an empty output (and exit 0) means the branch added
+# none. The comparison is per file, so a value copied or moved from one file into another shows.
 #   bash tools/docs/new-identifiers.sh [<base>]   (from the repository root; the base defaults to origin/main)
 #   bash tools/docs/new-identifiers.sh --sample <file>   (the patterns and the allow-list over one file)
 set -euo pipefail
@@ -22,7 +23,12 @@ ALLOW='^(127\.[0-9.]+|169\.254\.169\.254|192\.0\.2\.[0-9]+|198\.51\.100\.[0-9]+|
 ALLOW="$ALLOW"'|cass\.towardpcc\.com|cass@towardp(cc|icu)\.com|noreply@anthropic\.com|[^@]*@(example\.(com|org)|cass\.test|import\.invalid))$'
 clean() { sed -E 's/^[^A-Za-z0-9.~\/]+|[^A-Za-z0-9]+$//g' | sort -u; }
 if [ "$base" = "--sample" ]; then grep -ohE "$P" "$2" | clean | grep -vE "$ALLOW" || true; exit 0; fi
-mapfile -t files < <(git diff --name-only "$base"...HEAD)
-[ "${#files[@]}" -eq 0 ] && exit 0
-values() { git grep -ohE "$P" "$1" -- "${files[@]}" 2>/dev/null | sed -E 's/^[^A-Za-z0-9.~\/]+|[^A-Za-z0-9]+$//g' | sort -u || true; }
-comm -13 <(values "$base") <(values HEAD) | grep -vE "$ALLOW" && exit 1 || exit 0
+mb="$(git merge-base "$base" HEAD)"
+mapfile -t files < <(git diff --name-only "$mb" HEAD)
+values() { { git grep -ohE "$P" "$1" -- "$2" 2>/dev/null || true; } | clean; }
+found=0
+for f in "${files[@]}"; do
+    while IFS= read -r v; do printf '%s: %s\n' "$f" "$v"; found=1; done \
+        < <(comm -13 <(values "$mb" "$f") <(values HEAD "$f") | grep -vE "$ALLOW" || true)
+done
+exit "$found"
