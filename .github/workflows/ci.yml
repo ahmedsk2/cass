@@ -128,13 +128,7 @@ jobs:
           # plain `composer install` fails the platform check without it even
           # though this job never runs a browser test.
           extensions: mbstring, intl, gd, zip, pdo_mysql, sqlite3, pdo_sqlite, sockets
-          # pcov for the SQLite run's coverage, and off for every other step:
-          # while enabled it runs every opcode of every PHP process through its
-          # own executor, recording or not, so Pint, Larastan and the MySQL run
-          # would pay for it too. setup-php writes ini-values after its own
-          # pcov.enabled=1, so the 0 wins; the SQLite step turns it back on.
-          coverage: pcov
-          ini-values: pcov.enabled=0
+          coverage: none
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -174,20 +168,66 @@ jobs:
         run: ./vendor/bin/pint --test
       - name: Larastan
         run: ./vendor/bin/phpstan analyse --no-progress --memory-limit=1G
-      # Coverage of app/ (phpunit.xml's <source>) on this run only, with no
-      # threshold: the per-file table in the log, and PHPUnit's summary of
-      # classes, methods and lines in a file the next step reads. The leading
-      # colon keeps PHP's own conf.d and reads pcov-on/ after it, so this
-      # step's PHP processes, the test runner artisan starts included, have
-      # pcov on. Without it the run stops at "Code coverage driver not
-      # available".
       - name: Tests (SQLite)
+        run: php artisan test --compact
+      - name: Tests (MySQL)
         env:
-          PHP_INI_SCAN_DIR: ':${{ runner.temp }}/pcov-on'
-        run: |
-          mkdir -p "$RUNNER_TEMP/pcov-on"
-          echo 'pcov.enabled=1' > "$RUNNER_TEMP/pcov-on/pcov.ini"
-          php artisan test --compact --coverage --coverage-text="$RUNNER_TEMP/coverage.txt" --only-summary-for-coverage-text
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: cass_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: php artisan test --compact
+
+  # Line coverage of app/ (phpunit.xml's <source>) from the SQLite suite, with
+  # no threshold, beside `test` rather than in it: `browser`, `smoke` and
+  # `image` wait for `test`, nothing waits for this job, so the time pcov adds
+  # is on no required check's path. No MySQL service; `test` runs the suite on
+  # both databases.
+  coverage:
+    runs-on: ubuntu-24.04
+    # About four minutes, nearly all of it the suite under pcov.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+          # The `browser` job's list: SQLite only, sockets for the platform
+          # check.
+          extensions: mbstring, intl, gd, zip, sqlite3, pdo_sqlite, sockets
+          coverage: pcov
+          # pcov resolves this against the working directory and records only
+          # files under it. Unset, it takes the first of src/, lib/ and app/
+          # that exists, so a src/ or lib/ added at the root would take app/'s
+          # place.
+          ini-values: pcov.directory=app
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      # The same Composer download cache as the `test` job.
+      - name: Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: npm ci
+      # The panels and the public pages link their assets through the Vite
+      # manifest, so the suite needs a build.
+      - run: npm run build
+      - run: cp .env.example .env && php artisan key:generate
+      # The per-file table goes to the log, and PHPUnit's summary of classes,
+      # methods and lines to a file the next step reads.
+      - name: Tests (SQLite) with coverage
+        run: php artisan test --compact --coverage --coverage-text="$RUNNER_TEMP/coverage.txt" --only-summary-for-coverage-text
+      # A missing report fails at the first sed (exit 2), one without a Lines
+      # or a Classes row at the check after it (exit 1).
       - name: Coverage summary
         run: |
           report=$(sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/coverage.txt")
@@ -206,15 +246,6 @@ jobs:
             echo "| Lines | $lines |"
             echo "| Classes | $classes |"
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Tests (MySQL)
-        env:
-          DB_CONNECTION: mysql
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_DATABASE: cass_test
-          DB_USERNAME: root
-          DB_PASSWORD: root
-        run: php artisan test --compact
 
   # The two host-side backup scripts. They are shell, not PHP, so `php artisan
   # test` cannot see them - and the bug they exist to prevent (identifying the
