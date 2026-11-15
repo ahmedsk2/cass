@@ -17,8 +17,7 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * The four questions `/up` deliberately does not answer, plus the two it
- * cannot.
+ * The questions `/up` deliberately does not answer, one row each.
  *
  * `/up` is Laravel's health endpoint and exists for Docker's HEALTHCHECK and
  * for Coolify: it answers "is PHP serving". Every failure below is silent —
@@ -54,7 +53,7 @@ class HealthCommand extends Command
         {--json : Machine-readable output}
         {--ping : GET the heartbeat URL (CASS_HEARTBEAT_URL) when every check passed}';
 
-    protected $description = 'Check the things /up deliberately does not: the queue, the scheduler, the private disk and its free space, and pending migrations';
+    protected $description = 'Check what /up deliberately does not: the database, pending migrations, the queue, the scheduler, the private disk, its free space and the mailer';
 
     public function handle(DiskSpace $diskSpace): int
     {
