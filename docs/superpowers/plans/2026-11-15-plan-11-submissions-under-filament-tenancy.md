@@ -220,7 +220,7 @@ it('has no relation manager and no widget, either of which would need a negative
 - [ ] **Step 2: Run them; they pin.** `php artisan test --compact tests/Feature/Organizer/SubmissionResourceTest.php > /tmp/t-task-F-4-green.log 2>&1; echo "rc=$?"`. Expected: `rc=0`, with the file's existing cases plus 8 new ones. A red here is a leak in today's code: stop and report it.
 - [ ] **Step 3: Show that they bite (mandatory).**
   1. Temporarily make `SubmissionResource::getEloquentQuery()` return `Submission::query()->withoutGlobalScopes()->with(['conference', 'track', 'authors'])`.
-  2. Run the Step 2 command to `/tmp/t-task-F-4-red.log`. Expected: `rc=1`.
+  2. Run the Step 2 command to `/tmp/t-task-F-4-red.log`. Expected: a non-zero `rc` (Pest exits 2 when errors are among the failures).
      - Every new case that mounts the list fails or errors (a foreign row has no visible conference, so its timezone column throws).
      - The global-search case fails on its query assertion.
      - Only the tripwire passes.
@@ -318,7 +318,7 @@ it('creates a submission while the panel is booted for another tenant, and leave
     $row = withoutTenant(fn () => $theirs->submissions()->first());
     expect($row)->not->toBeNull()->and($row?->decision_notified_at)->toBeNull();
 ```
-  - **`ConferenceRankingExportTest`, line 143:** hand the writer `Submission::query()->withoutGlobalScopes()`, with the comment "Unscoped on purpose, the panel's tenancy scope included: the writer's own constraint is what this case is about." The stranger row then still tests the writer, not the scope.
+  - **`ConferenceRankingExportTest`, line 143:** hand the writer `Submission::query()->withoutGlobalScope(Filament::getPanel('organizer')->getTenancyScopeName())`, with the comment "Unscoped on purpose, the panel's tenancy scope included: the writer's own constraint is what this case is about." Remove only the tenancy scope, not every global scope, so the builder keeps the soft-delete scope it had before. The stranger row then still tests the writer, not the scope.
 - [ ] **Step 5: Green, the full suite, and the gates.**
   - The Step 2 filter, to `/tmp/t-task-F-5-green.log`: `rc=0`, 2 passed.
   - The full suite, to `/tmp/t-task-F-5.log`: `rc=0`, at baseline + 10 (8 from Task 4, 2 from this task).
