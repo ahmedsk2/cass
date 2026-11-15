@@ -141,15 +141,15 @@ it('derives a reference prefix on create and freezes it once published', functio
     $conference->forceFill(['status' => ConferenceStatus::Open])->save();
 
     livewire(EditConference::class, ['record' => $conference->getRouteKey()])
-        ->assertFormFieldIsDisabled('reference_prefix');
+        ->assertFormFieldDisabled('reference_prefix');
 });
 
 it('asks for reviewers per submission only in assigned mode', function () {
     livewire(CreateConference::class)
         ->fillForm(['review_mode' => ReviewMode::OpenPool->value])
-        ->assertFormFieldIsHidden('reviewers_per_submission')
+        ->assertFormFieldHidden('reviewers_per_submission')
         ->fillForm(['review_mode' => ReviewMode::Assigned->value])
-        ->assertFormFieldIsVisible('reviewers_per_submission');
+        ->assertFormFieldVisible('reviewers_per_submission');
 });
 
 it('stores reviewers per submission for an assigned-mode conference', function () {

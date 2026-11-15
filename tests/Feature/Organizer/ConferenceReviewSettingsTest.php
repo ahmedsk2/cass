@@ -101,7 +101,7 @@ it('shows the stored review settings once Start reviewing on this page locks the
 
     // An unsaved change to blind review, then the header's Start reviewing.
     ($this->edit)($conference)->fillForm(['blind_review' => false])->callAction('startReviewing')
-        ->assertFormSet(['blind_review' => true])->assertFormFieldDisabled('blind_review')
+        ->assertSchemaStateSet(['blind_review' => true], 'form')->assertFormFieldDisabled('blind_review')
         ->fillForm(['review_deadline' => '2026-11-10 23:59:00'])->call('save')->assertHasNoFormErrors();
 
     expect($conference->fresh()?->status)->toBe(ConferenceStatus::Reviewing)
@@ -113,7 +113,7 @@ it('puts a refused review setting back to its stored value, so the next save kee
     $conference = ($this->make)(ConferenceStatus::Reviewing);
 
     ($this->edit)($conference)->fillForm(['blind_review' => false, 'name' => 'Renamed after the refusal'])
-        ->call('save')->assertNotified(__('organizer.update.refused'))->assertFormSet(['blind_review' => true])
+        ->call('save')->assertNotified(__('organizer.update.refused'))->assertSchemaStateSet(['blind_review' => true], 'form')
         ->call('save')->assertHasNoFormErrors();
     expect($conference->fresh()?->name)->toBe('Renamed after the refusal')
         ->and($conference->fresh()?->blind_review)->toBeTrue();
