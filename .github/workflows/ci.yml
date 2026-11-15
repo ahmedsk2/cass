@@ -104,8 +104,9 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
-    # About five minutes. The cap is for a hung MySQL service or test, which
-    # would otherwise hold a paid runner for GitHub's six-hour default.
+    # Three and a half to five and a half minutes in recent runs. The cap is
+    # for a hung MySQL service or test, which would otherwise hold a paid
+    # runner for GitHub's six-hour default.
     timeout-minutes: 20
     services:
       mysql:
