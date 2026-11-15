@@ -146,8 +146,8 @@ it('reads both floors from configuration', function () {
         ->and(healthRows(Artisan::output())['disk']['detail'])->toBe('25.0 GiB free of 100.0 GiB (25%) - below the 30 GiB minimum');
 });
 
-it('fails, naming the path, when the free space cannot be measured', function () {
-    app()->instance(DiskSpace::class, FakeDiskSpace::failing());
+it('fails, naming the path, when the free space cannot be measured', function (FakeDiskSpace $disk) {
+    app()->instance(DiskSpace::class, $disk);
 
     expect(Artisan::call('cass:health', ['--json' => true]))->toBe(1)
         ->and(healthRows(Artisan::output())['disk'])->toBe([
@@ -155,7 +155,11 @@ it('fails, naming the path, when the free space cannot be measured', function ()
             'ok' => false,
             'detail' => 'could not measure the free space at ['.Storage::disk('local')->path('').']',
         ]);
-});
+})->with([
+    'no reading at all' => fn (): FakeDiskSpace => FakeDiskSpace::failing(),
+    // The contract promises bytes, not a size above zero, and nothing is a share of nothing.
+    'a reading with no size' => fn (): FakeDiskSpace => FakeDiskSpace::reporting(0, 0),
+]);
 
 it('prints the disk row in --json after the private disk row, in the shape of every other row', function () {
     app()->instance(DiskSpace::class, FakeDiskSpace::reporting(12.25 * 1024 ** 3, 45 * 1024 ** 3));
