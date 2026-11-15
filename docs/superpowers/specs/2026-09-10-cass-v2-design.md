@@ -3,6 +3,8 @@
 Date: 2026-09-10
 Status: approved by owner in conversation on 2026-09-10 (approach A, both review modes, refreshed bird brand, public repo `ahmedsk2/cass`).
 
+> As approved 2026-09-10; the code is authoritative where they differ. Later decisions are in `docs/decisions/`, deferrals in the backlog (`docs/superpowers/plans/backlog.md`) and the state in `docs/HANDOVER.md`.
+
 CASS (Conference Abstract Submission System) v2 is a ground-up rebuild of the legacy PHP site as a multi-tenant platform that any conference organizer can use to collect abstracts, run peer review, and announce decisions. It replaces the legacy application reviewed in `legacy-review.md` (kept out of the public repository).
 
 ---
@@ -36,7 +38,7 @@ Arabic/RTL interface, paid attendee registration, program builder and certificat
 | Email | Owner's SMTP mailbox via Laravel mailer; every email queued. |
 | Review modes | Open pool and assigned, chosen per conference. |
 | Brand | Keep the blue bird mark, refresh the wordmark, palette derived from the bird's blues. |
-| Repository | `ahmedsk2/cass`, public now, private later. |
+| Repository | `ahmedsk2/cass`, public now, private later. *It stays public: the owner's decision of 2026-11-06 (decision 0011).* |
 | Database | MySQL 8 in a dedicated container (not the shared one on the host). |
 | Migrations | Run by the owner, never at container boot (host rule). |
 
@@ -91,7 +93,7 @@ EmailLog, ActivityLog (audit)
 
 Authorization is enforced with Laravel policies on every model plus Filament tenancy scoping in the organizer panel. Every query in panels is scoped to the current tenant; tests in section 12 assert cross-tenant isolation for each resource.
 
-Platform admin is a boolean on the user, granted only by console command or by another platform admin.
+Platform admin is a boolean on the user, granted only by console command or by another platform admin. *As built: `PlatformAdminSeeder` makes `CASS_ADMIN_EMAIL`'s account the platform admin when `db:seed` runs at the first deploy; no command and no screen grants the flag, and `cass:admin-password` only replaces that admin's password.*
 
 ---
 
