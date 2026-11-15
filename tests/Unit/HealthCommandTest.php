@@ -146,6 +146,18 @@ it('reads both floors from configuration', function () {
         ->and(healthRows(Artisan::output())['disk']['detail'])->toBe('25.0 GiB free of 100.0 GiB (25%) - below the 30 GiB minimum');
 });
 
+it('turns a floor off at 0, as the configuration documents', function (string $floor, float $freeGib, float $totalGib) {
+    // Each reading is red at the defaults, on the floor set to 0 here and on that floor alone.
+    config()->set("cass.health.{$floor}", 0);
+    app()->instance(DiskSpace::class, FakeDiskSpace::reporting($freeGib * 1024 ** 3, $totalGib * 1024 ** 3));
+
+    expect(Artisan::call('cass:health', ['--json' => true]))->toBe(0)
+        ->and(healthRows(Artisan::output())['disk']['ok'])->toBeTrue();
+})->with([
+    'the percentage, on a large disk under 15% but over 2 GiB' => ['disk_min_percent', 10, 100],
+    'the GiB, on a small disk under 2 GiB but over 15%' => ['disk_min_gib', 1.75, 10],
+]);
+
 it('fails, naming the path, when the free space cannot be measured', function (FakeDiskSpace $disk) {
     app()->instance(DiskSpace::class, $disk);
 
