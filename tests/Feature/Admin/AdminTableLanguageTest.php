@@ -20,6 +20,7 @@ use App\Models\Conference;
 use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Mail;
 
@@ -192,21 +193,21 @@ it('says the same english when an organization is approved or rejected', functio
     $second = Organization::factory()->create(['name' => 'Coastal Paediatric Society']);
 
     livewire(ListOrganizations::class)
-        ->assertTableActionHasLabel('approve', 'Approve', $first)
-        ->assertTableActionHasLabel('reject', 'Reject', $first)
-        ->mountTableAction('approve', $first)
+        ->assertActionHasLabel(TestAction::make('approve')->table($first), 'Approve')
+        ->assertActionHasLabel(TestAction::make('reject')->table($first), 'Reject')
+        ->mountAction(TestAction::make('approve')->table($first))
         ->assertMountedActionModalSee([
             'Approve this organization?',
             'The owner will be emailed and can publish conferences immediately.',
         ])
-        ->callMountedTableAction()
+        ->callMountedAction()
         ->assertNotified('Gulf Pediatric Society approved');
 
     livewire(ListOrganizations::class)
-        ->mountTableAction('reject', $second)
+        ->mountAction(TestAction::make('reject')->table($second))
         ->assertMountedActionModalSee('Reason sent to the owner')
-        ->setTableActionData(['reason' => 'We could not verify this society.'])
-        ->callMountedTableAction()
+        ->fillForm(['reason' => 'We could not verify this society.'])
+        ->callMountedAction()
         ->assertNotified('Coastal Paediatric Society rejected');
 });
 
@@ -220,7 +221,7 @@ it('escapes an organization name in the approve notification', function () {
     $organization = Organization::factory()->create(['name' => 'A <b style="x">B</b>']);
 
     livewire(ListOrganizations::class)
-        ->callTableAction('approve', $organization)
+        ->callAction(TestAction::make('approve')->table($organization))
         ->assertNotified('A &lt;b style=&quot;x&quot;&gt;B&lt;/b&gt; approved');
 });
 

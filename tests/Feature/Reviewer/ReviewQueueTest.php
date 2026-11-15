@@ -20,6 +20,7 @@ use App\Models\Submission;
 use App\Models\SubmissionFile;
 use App\Models\Track;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Storage;
 
 use function Pest\Laravel\actingAs;
@@ -63,7 +64,7 @@ it('lists the pool and offers a way into each abstract', function () {
         ->assertSee('AAM26-017')
         ->assertSee('Early mobilisation after cardiac surgery')
         ->assertSee('Neurocritical care')
-        ->assertTableActionVisible('review', $this->submission);
+        ->assertActionVisible(TestAction::make('review')->table($this->submission));
 });
 
 it('never shows an author name in the queue, blind or not', function () {
@@ -242,7 +243,7 @@ it('blinds nothing for the organizer, including the csv export', function () {
         ->and($this->conference->fresh()?->hidesAuthorsFrom($organizer))->toBeFalse();
 
     $component = livewire(OrganizerList::class)
-        ->callTableAction('export')
+        ->callAction(TestAction::make('export')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);

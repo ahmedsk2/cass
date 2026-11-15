@@ -14,6 +14,7 @@ use App\Models\Organization;
 use App\Models\Submission;
 use App\Models\User;
 use Filament\Actions\Exceptions\ActionNotResolvableException;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Gate;
 
 use function Pest\Laravel\actingAs;
@@ -41,11 +42,11 @@ beforeEach(function () {
 
 it('decides one row from the ranking', function () {
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('decide', $this->first, [
+        ->callAction(TestAction::make('decide')->table($this->first), [
             'decision' => Decision::AcceptedOral->value,
             'note' => 'Best reviewed abstract in the track.',
         ])
-        ->assertHasNoTableActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->first->fresh()?->decision)->toBe(Decision::AcceptedOral)
         ->and($this->first->fresh()?->status)->toBe(SubmissionStatus::Accepted)
@@ -57,7 +58,8 @@ it('decides a whole selection at once, skips what it may not touch, and says so'
     $notified->forceFill(['reference' => 'AAM26-003'])->save();
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableBulkAction('decideSelected', [$this->first, $this->second, $notified], [
+        ->selectTableRecords([$this->first, $this->second, $notified])
+        ->callAction(TestAction::make('decideSelected')->table()->bulk(), [
             'decision' => Decision::Rejected->value,
         ])
         ->assertNotified();
@@ -90,7 +92,8 @@ it('bounds one bulk decide to the configured chunk', function () {
     expect($component->instance()->getTable()->getMaxSelectableRecords())->toBe(2);
 
     $component
-        ->callTableBulkAction('decideSelected', [$this->first, $this->second, $third], [
+        ->selectTableRecords([$this->first, $this->second, $third])
+        ->callAction(TestAction::make('decideSelected')->table()->bulk(), [
             'decision' => Decision::Rejected->value,
         ])
         ->assertNotified();
@@ -119,7 +122,8 @@ it('ignores a foreign record id handed to the bulk decision', function () {
     $neighbour = Submission::factory()->for($sameOrgOtherConference)->submitted()->create();
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableBulkAction('decideSelected', [$this->first, $theirs, $neighbour], [
+        ->selectTableRecords([$this->first, $theirs, $neighbour])
+        ->callAction(TestAction::make('decideSelected')->table()->bulk(), [
             'decision' => Decision::Rejected->value,
         ]);
 
@@ -145,7 +149,7 @@ it('ignores a foreign record id handed to the row decision', function () {
     // than swallowed - and the row below proves nothing was written on the way
     // to it.
     expect(fn () => livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('decide', $theirs, ['decision' => Decision::Rejected->value]))
+        ->callAction(TestAction::make('decide')->table($theirs), ['decision' => Decision::Rejected->value]))
         ->toThrow(ActionNotResolvableException::class);
 
     expect($theirs->fresh()?->decision)->toBeNull()
@@ -160,11 +164,11 @@ it('hides the plain decide action once the letter has gone, and offers the chang
     ])->save();
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->assertTableActionHidden('decide', $this->first)
-        ->assertTableActionVisible('changeDecision', $this->first)
+        ->assertActionHidden(TestAction::make('decide')->table($this->first))
+        ->assertActionVisible(TestAction::make('changeDecision')->table($this->first))
         // And the row that has not been notified still has the plain one.
-        ->assertTableActionVisible('decide', $this->second)
-        ->assertTableActionHidden('changeDecision', $this->second);
+        ->assertActionVisible(TestAction::make('decide')->table($this->second))
+        ->assertActionHidden(TestAction::make('changeDecision')->table($this->second));
 });
 
 it('changes a notified decision and puts the row back in the send queue', function () {
@@ -174,16 +178,16 @@ it('changes a notified decision and puts the row back in the send queue', functi
     // forceFill would leave no history at all, and "appends to the history,
     // and the superseded row survives" is the whole of what this case pins.
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('decide', $this->first, ['decision' => Decision::AcceptedOral->value]);
+        ->callAction(TestAction::make('decide')->table($this->first), ['decision' => Decision::AcceptedOral->value]);
 
     $this->first->forceFill(['decision_notified_at' => now()])->save();
 
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('changeDecision', $this->first, [
+        ->callAction(TestAction::make('changeDecision')->table($this->first), [
             'decision' => Decision::AcceptedPoster->value,
             'note' => 'Room change.',
         ])
-        ->assertHasNoTableActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->first->fresh()?->decision)->toBe(Decision::AcceptedPoster)
         ->and($this->first->fresh()?->decision_notified_at)->toBeNull()
@@ -192,7 +196,7 @@ it('changes a notified decision and puts the row back in the send queue', functi
 
 it('shows the decision and its history on the submission view', function () {
     livewire(ConferenceRanking::class, ['record' => $this->conference->getRouteKey()])
-        ->callTableAction('decide', $this->first, ['decision' => Decision::Waitlisted->value, 'note' => 'Second round.']);
+        ->callAction(TestAction::make('decide')->table($this->first), ['decision' => Decision::Waitlisted->value, 'note' => 'Second round.']);
 
     livewire(ViewSubmission::class, ['record' => $this->first->getRouteKey()])
         ->assertSee(Decision::Waitlisted->getLabel())

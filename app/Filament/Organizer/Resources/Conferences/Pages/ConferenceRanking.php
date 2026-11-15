@@ -295,8 +295,9 @@ class ConferenceRanking extends Page implements HasTable
                 //
                 // The send sits FIRST, where an organizer looks for it, and it
                 // is a TABLE header action rather than a page one because
-                // callTableAction() and assertTableAction*() resolve only
-                // against Table::$flatActions.
+                // callAction() and assertAction*() with
+                // TestAction::make(...)->table() resolve only against
+                // Table::$flatActions.
                 DecisionActions::sendDecisionEmails($conference, $this->maySend()),
                 $this->exportAction(
                     'exportCsv',

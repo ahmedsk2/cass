@@ -32,6 +32,7 @@ use App\Models\User;
 use App\Policies\SubmissionFilePolicy;
 use App\Policies\SubmissionPolicy;
 use Carbon\Carbon;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
@@ -168,7 +169,7 @@ it('links a file through a signed url that actually works', function () {
 it('withdraws on the organizer side and records who did it', function () {
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
 
@@ -190,7 +191,7 @@ it('still withdraws an abstract that is under review, but only for the organizer
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->assertActionVisible('withdraw')
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     expect($this->submission->refresh()->status)->toBe(SubmissionStatus::Withdrawn);
 });
@@ -215,7 +216,7 @@ it('still withdraws an accepted presenter who pulls out, but only for the organi
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->assertActionVisible('withdraw')
         ->callAction('withdraw')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     $withdrawn = $this->submission->fresh();
 
@@ -254,7 +255,7 @@ it('resends a status link with a new token and kills the old one', function () {
 
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('resendLink')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('sara@example.org')
         && $mail->templateKey === 'submission_received');
@@ -268,16 +269,17 @@ it('exports the visible rows as csv and neutralises a spreadsheet formula', func
     $this->submission->forceFill(['title' => '=HYPERLINK("https://evil.example","click")'])->save();
     withoutTenant(fn () => Submission::factory()->submitted()->create(['title' => 'Another tenant']));
 
-    // callTableAction, not callAction: `export` is a table *header* action, and
-    // the table helpers are what add the table context Filament resolves the
-    // action name in (vendor/filament/tables/src/Testing/TestsActions.php).
+    // ->table() with no record, not a bare callAction('export'): `export` is a
+    // table *header* action, and ->table() is what adds the table context
+    // Filament resolves the action name in
+    // (vendor/filament/actions/src/Testing/TestAction.php).
     //
     // Livewire turns the StreamedResponse the action returns into a `download`
     // effect, running the stream callback and base64-encoding what it wrote
     // (SupportFileDownloads::call()) - so the assertion below is on the real
     // bytes a browser would have saved, not on a response object.
     $component = livewire(ListSubmissions::class)
-        ->callTableAction('export')
+        ->callAction(TestAction::make('export')->table())
         ->assertFileDownloaded();
 
     $csv = base64_decode((string) data_get($component->effects, 'download.content'), true);
@@ -442,7 +444,7 @@ it('names the export file after the moment it was taken', function () {
     Carbon::setTestNow('2026-09-11 08:30:00');
 
     livewire(ListSubmissions::class)
-        ->callTableAction('export')
+        ->callAction(TestAction::make('export')->table())
         ->assertFileDownloaded('submissions-2026-09-11-083000.csv');
 
     Carbon::setTestNow();
@@ -547,7 +549,7 @@ it('resends a status link however many the public form has sent the author today
 
     livewire(ViewSubmission::class, ['record' => $this->submission->getRouteKey()])
         ->callAction('resendLink')
-        ->assertHasNoActionErrors();
+        ->assertHasNoFormErrors();
 
     Mail::assertQueued(TemplatedMail::class, fn (TemplatedMail $mail): bool => $mail->hasTo('sara@example.org'));
 });

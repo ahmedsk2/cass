@@ -17,6 +17,7 @@ use App\Models\Organization;
 use App\Models\ReviewQuestion;
 use App\Models\Submission;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\Repeater;
 
 use function Pest\Laravel\actingAs;
@@ -48,13 +49,13 @@ it('shows the nine template questions in order', function () {
 
 it('adds a question to the active form', function () {
     reviewQuestionsManager($this->conference)
-        ->callTableAction('create', data: [
+        ->callAction(TestAction::make('create')->table(), data: [
             'prompt' => 'Is the abstract free of identifying information?',
             'type' => ReviewQuestionType::Boolean->value,
             'weight' => '0.50',
             'required' => false,
         ])
-        ->assertHasNoTableActionErrors();
+        ->assertHasNoFormErrors();
 
     $question = ReviewQuestion::query()->where('prompt', 'Is the abstract free of identifying information?')->firstOrFail();
 
@@ -77,7 +78,7 @@ it('stores the likert scale and the scored choices of a select question', functi
 
     try {
         reviewQuestionsManager($this->conference)
-            ->callTableAction('create', data: [
+            ->callAction(TestAction::make('create')->table(), data: [
                 'prompt' => 'Overall quality',
                 'type' => ReviewQuestionType::Likert->value,
                 'weight' => '2.00',
@@ -85,8 +86,8 @@ it('stores the likert scale and the scored choices of a select question', functi
                 'scale_max' => 7,
                 'required' => true,
             ])
-            ->assertHasNoTableActionErrors()
-            ->callTableAction('create', data: [
+            ->assertHasNoFormErrors()
+            ->callAction(TestAction::make('create')->table(), data: [
                 'prompt' => 'Preferred format',
                 'type' => ReviewQuestionType::Select->value,
                 'weight' => '1.00',
@@ -97,7 +98,7 @@ it('stores the likert scale and the scored choices of a select question', functi
                 ],
                 'required' => true,
             ])
-            ->assertHasNoTableActionErrors();
+            ->assertHasNoFormErrors();
     } finally {
         $undo();
     }
@@ -123,10 +124,10 @@ it('edits, reorders and deletes questions while the form is unlocked', function 
     $second = $questions->get(1);
 
     reviewQuestionsManager($this->conference)
-        ->callTableAction('edit', $first, data: ['prompt' => 'Originality of the work'])
-        ->assertHasNoTableActionErrors()
+        ->callAction(TestAction::make('edit')->table($first), data: ['prompt' => 'Originality of the work'])
+        ->assertHasNoFormErrors()
         ->call('reorderTable', [$second->getKey(), $first->getKey()])
-        ->callTableAction('delete', $questions->last());
+        ->callAction(TestAction::make('delete')->table($questions->last()));
 
     expect($first->fresh()?->prompt)->toBe('Originality of the work')
         ->and($this->form->questions()->first()?->is($second))->toBeTrue()
@@ -148,9 +149,9 @@ it('locks editing, reordering and deleting once reviews exist', function () {
 
     reviewQuestionsManager($this->conference->fresh())
         ->assertSee('Locked')
-        ->assertTableActionHidden('edit', $question)
-        ->assertTableActionHidden('delete', $question)
-        ->assertTableActionVisible('create');
+        ->assertActionHidden(TestAction::make('edit')->table($question))
+        ->assertActionHidden(TestAction::make('delete')->table($question))
+        ->assertActionVisible(TestAction::make('create')->table());
 
     expect($this->user->can('update', $question))->toBeFalse()
         ->and($this->user->can('delete', $question))->toBeFalse()
@@ -173,10 +174,10 @@ it('is locked by a real submitted review, not only by a hand-set timestamp', fun
 
     reviewQuestionsManager($this->conference->fresh())
         ->assertSee('Locked')
-        ->assertTableActionHidden('edit', $question)
-        ->assertTableActionHidden('delete', $question)
+        ->assertActionHidden(TestAction::make('edit')->table($question))
+        ->assertActionHidden(TestAction::make('delete')->table($question))
         // Spec section 3: appending is still allowed on a locked form.
-        ->assertTableActionVisible('create');
+        ->assertActionVisible(TestAction::make('create')->table());
 
     expect($this->form->fresh()?->isLocked())->toBeTrue();
 });
@@ -204,8 +205,8 @@ it('refuses to delete a question that already carries a draft answer', function 
         ->and($this->user->can('delete', $untouched->fresh()))->toBeTrue();
 
     reviewQuestionsManager($this->conference->fresh())
-        ->assertTableActionHidden('delete', $question)
-        ->assertTableActionVisible('delete', $untouched);
+        ->assertActionHidden(TestAction::make('delete')->table($question))
+        ->assertActionVisible(TestAction::make('delete')->table($untouched));
 
     // And the model refuses for every other path - console, the Plan 6 import -
     // exactly as the lock does.
@@ -233,12 +234,12 @@ it('still appends a question to a locked form', function () {
     $this->form->forceFill(['locked_at' => now()])->save();
 
     reviewQuestionsManager($this->conference->fresh())
-        ->callTableAction('create', data: [
+        ->callAction(TestAction::make('create')->table(), data: [
             'prompt' => 'Any additional comment for the committee?',
             'type' => ReviewQuestionType::Text->value,
             'required' => false,
         ])
-        ->assertHasNoTableActionErrors();
+        ->assertHasNoFormErrors();
 
     // Appended at the end, where a reviewer expects a new question - and where
     // it has to be, because reordering is disabled on a locked form.
@@ -261,9 +262,9 @@ it('does not show or mount the questions of another organization conference', fu
     reviewQuestionsManager($this->conference)
         ->assertCanSeeTableRecords([$mine])
         ->assertCanNotSeeTableRecords([$theirs])
-        ->mountTableAction('edit', $theirs)
+        ->mountAction(TestAction::make('edit')->table($theirs))
         ->assertActionNotMounted()
-        ->mountTableAction('delete', $theirs)
+        ->mountAction(TestAction::make('delete')->table($theirs))
         ->assertActionNotMounted();
 
     expect(ReviewQuestionsRelationManager::canViewForRecord($theirConference, EditConference::class))->toBeFalse()

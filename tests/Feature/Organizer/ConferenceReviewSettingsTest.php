@@ -16,6 +16,7 @@ use App\Models\Review;
 use App\Models\Submission;
 use App\Models\User;
 use Carbon\Carbon;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\DB;
 
 use function Pest\Laravel\actingAs;
@@ -75,11 +76,11 @@ it('refuses the same forged change through the view page and the list table', fu
     $conference = ($this->make)(ConferenceStatus::Reviewing);
 
     livewire(ViewConference::class, ['record' => $conference->getRouteKey()])
-        ->mountAction('edit')->setActionData(['blind_review' => false])->callMountedAction()
+        ->mountAction('edit')->fillForm(['blind_review' => false])->callMountedAction()
         ->assertNotified(__('organizer.update.refused'));
     livewire(ListConferences::class)
-        ->mountTableAction('edit', $conference)->setTableActionData(['review_mode' => ReviewMode::Assigned->value])
-        ->callMountedTableAction()->assertNotified(__('organizer.update.refused'));
+        ->mountAction(TestAction::make('edit')->table($conference))->fillForm(['review_mode' => ReviewMode::Assigned->value])
+        ->callMountedAction()->assertNotified(__('organizer.update.refused'));
 
     expect($conference->fresh()?->blind_review)->toBeTrue()
         ->and($conference->fresh()?->review_mode)->toBe(ReviewMode::OpenPool);
@@ -100,7 +101,7 @@ it('shows the stored review settings once Start reviewing on this page locks the
 
     // An unsaved change to blind review, then the header's Start reviewing.
     ($this->edit)($conference)->fillForm(['blind_review' => false])->callAction('startReviewing')
-        ->assertFormSet(['blind_review' => true])->assertFormFieldDisabled('blind_review')
+        ->assertSchemaStateSet(['blind_review' => true], 'form')->assertFormFieldDisabled('blind_review')
         ->fillForm(['review_deadline' => '2026-11-10 23:59:00'])->call('save')->assertHasNoFormErrors();
 
     expect($conference->fresh()?->status)->toBe(ConferenceStatus::Reviewing)
@@ -112,7 +113,7 @@ it('puts a refused review setting back to its stored value, so the next save kee
     $conference = ($this->make)(ConferenceStatus::Reviewing);
 
     ($this->edit)($conference)->fillForm(['blind_review' => false, 'name' => 'Renamed after the refusal'])
-        ->call('save')->assertNotified(__('organizer.update.refused'))->assertFormSet(['blind_review' => true])
+        ->call('save')->assertNotified(__('organizer.update.refused'))->assertSchemaStateSet(['blind_review' => true], 'form')
         ->call('save')->assertHasNoFormErrors();
     expect($conference->fresh()?->name)->toBe('Renamed after the refusal')
         ->and($conference->fresh()?->blind_review)->toBeTrue();
@@ -121,6 +122,6 @@ it('puts a refused review setting back to its stored value, so the next save kee
 it('does not open the edit action of the list table on another organization conference', function () {
     $theirs = withoutTenant(fn () => Conference::factory()->create(['name' => 'Theirs']));
 
-    livewire(ListConferences::class)->mountTableAction('edit', $theirs)->assertActionNotMounted();
+    livewire(ListConferences::class)->mountAction(TestAction::make('edit')->table($theirs))->assertActionNotMounted();
     expect($theirs->fresh()?->name)->toBe('Theirs');
 });
