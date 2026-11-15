@@ -76,11 +76,29 @@ it('makes an existing account the platform admin only with CASS_ADMIN_PASSWORD, 
     expect($admin->is_platform_admin)->toBeTrue()
         ->and($admin->hasVerifiedEmail())->toBeTrue()
         ->and(password_verify('a-long-admin-password', $admin->password))->toBeTrue()
-        ->and(password_verify('password', $admin->password))->toBeFalse();
+        ->and(password_verify('password', $admin->password))->toBeFalse()
+        // A browser the previous holder ticked Remember me in is not signed back in by its cookie.
+        ->and($admin->remember_token)->not->toBe($account->remember_token);
 });
 
 it('refuses to create the platform admin with a password under twelve characters', function () {
     config(['cass.admin_email' => 'admin@example.org', 'cass.admin_password' => 'elevenchars']);
+
+    expect(fn () => $this->seed(PlatformAdminSeeder::class))->toThrow(RuntimeException::class);
+    expect(User::query()->count())->toBe(0);
+});
+
+it('creates the platform admin with a password of exactly twelve characters', function () {
+    config(['cass.admin_email' => 'admin@example.org', 'cass.admin_password' => 'twelve-chars']);
+
+    $this->seed(PlatformAdminSeeder::class);
+
+    expect(password_verify('twelve-chars', User::query()->where('email', 'admin@example.org')->sole()->password))->toBeTrue();
+});
+
+it('counts the password in characters, not bytes, as the admin-password command does', function () {
+    // Eleven characters in twenty-two bytes.
+    config(['cass.admin_email' => 'admin@example.org', 'cass.admin_password' => 'ééééééééééé']);
 
     expect(fn () => $this->seed(PlatformAdminSeeder::class))->toThrow(RuntimeException::class);
     expect(User::query()->count())->toBe(0);
