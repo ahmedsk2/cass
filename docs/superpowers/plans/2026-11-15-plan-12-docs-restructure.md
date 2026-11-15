@@ -1,13 +1,15 @@
 # Plan 12: documentation restructure (C8, with D8)
 
-Branch `docs/c8-restructure`. Brief: `docs/reviews/2026-10-16-expert-brief.md`, phase C row C8, phase D row D8 and "Question 7, documentation: keep, condense, move". Written on 2026-11-15 against `main` at `2f1f78f`, and revised the same day after the plan review. It is implemented in this worktree once the open phase C and D branches have merged (Task 1). `tools/claude/split-plan.sh` cuts it into a header, one file per task and a tail.
+Branch `docs/c8-restructure`. Brief: `docs/reviews/2026-10-16-expert-brief.md`, phase C row C8, phase D row D8 and "Question 7, documentation: keep, condense, move". Written on 2026-11-15 against `main` at `2f1f78f`, and revised twice that day in review; its final form was approved at the second review. It is implemented in this worktree once the open phase C and D branches have merged (Task 1). `tools/claude/split-plan.sh` cuts it into a header, one file per task and a tail.
 
 ## Summary
 
-Docs, plus comments in three code files and two new tests. No behaviour change, no migration, no environment variable, no dependency. Sensitive files: `bootstrap/app.php`, comments only.
+Docs, plus comments in three code files, two new tests and one line of CI. No behaviour change, no migration, no environment variable, no dependency. Sensitive files:
+- `bootstrap/app.php`: comments only;
+- `.github/workflows/ci.yml`: one more `node --test` file in the `scripts` job, so CI runs the pointer checker.
 
-- **Backlog.** 144 lines and 96 entries become one table of 51 rows and 56 lines (item, area, trigger, the one-line change, link).
-- **Engineering choices.** Those whose reasoning already sits in a docblock get no decision file; their backlog row names the docblock.
+- **Backlog.** 144 lines and 96 entries become one table of 46 rows and 52 lines (item, area, trigger, the one-line change, link).
+- **Engineering choices.** Those whose reasoning already sits in a docblock get no decision file and no row: one line of the backlog's preamble names their docblocks.
 - **Decisions.** Nine new files:
   - five are the owner's;
   - four are proposed, and listed in the PR body for the owner to accept with the merge.
@@ -27,7 +29,7 @@ Docs, plus comments in three code files and two new tests. No behaviour change, 
   - the vanished backlog citation in `tests/Unit/DockerAssetsStageTest.php`.
 - **Tests and tools:**
   - a ratchet test that fails when `(Plan|Task|fact) N` comment references rise;
-  - a pointer checker run by the suite;
+  - a pointer checker that CI's `scripts` job runs, written with Node built-ins only;
   - a check that no new identifier enters a touched file.
 
 ## 0. Verified on 2026-11-15
@@ -112,7 +114,7 @@ Commit: `docs(decisions): file five of the owner's decisions the backlog and the
 
 | No. | Slug | Decided | Sources | "To reverse" from |
 |---|---|---|---|---|
-| 0018 | `custom-domain-step-is-manual` | the owner, with the design on 2026-09-10 (section 15, line 283: "Documented runbook; admin notification on verification; v2 may automate through the Coolify API") | backlog 77; runbook "What you do when the email arrives" | `grep -rni coolify app --exclude-dir=Legacy`: no client, only `VerifyCustomDomain`'s docblock. The change is an API call from `VerifyCustomDomain`, with a Coolify token in the environment (the runbook's `PATCH` call) |
+| 0018 | `custom-domain-step-is-manual` | the owner, with the design on 2026-09-10 (section 15, line 283: "Documented runbook; admin notification on verification; v2 may automate through the Coolify API") | backlog 77; runbook "What you do when the email arrives" | **the Grep tool, not Bash** (the production hook refuses a Bash command whose text names Coolify): pattern `coolify`, case-insensitive, over `app` but not `app/Actions/Legacy`. It finds no client, only `VerifyCustomDomain`'s docblock. The change is an API call from `VerifyCustomDomain`, with a Coolify token in the environment (the runbook's `PATCH` call) |
 | 0019 | `suspension-takes-public-pages-offline` | the owner, recorded on 2026-09-11 in Plan 2 (`9841e14`, its line 8324) and the backlog (`d50c826`), with no date of its own | backlog 17 | the worked example below |
 | 0020 | `qr-png-is-a-whole-module-square` | the owner, recorded on 2026-09-11 in Plan 2 (`9841e14`, line 8498: "Deviation, decided by the owner") | backlog 18; spec 5.7 ("PNG downloads (1024 px)") | `GenerateConferenceQr::png()` (`app/Actions/Conferences/GenerateConferenceQr.php`, its docblock near :51); invert `it('renders a png of at least the configured size')` in `tests/Unit/ConferenceQrTest.php` |
 | 0021 | `port-22-stays-open-key-only` | the owner, on 2026-09-25, recorded on 2026-11-06 (`303d6de`), and re-affirmed on 2026-11-06 | backlog 10; checklist section 2; HANDOVER B3 | no code: restrict tcp 22 in the VCN's security list to known addresses; no test |
@@ -135,9 +137,8 @@ Afterwards, `grep -c` confirms each file has the four bullets, and the checker p
 
 Commit: `docs(decisions): four engineering choices for the owner to accept`.
 
-These choices have their reasoning in no docblock, so each needs a file. Each file's "Decision" bullet follows 0015 and 0017, in this form: "Proposed by the session on <first-recorded date> (<commit>) and accepted by the owner on <merge date> (#NN), with the merge that adds this file."
-- `#NN` is filled in once `gh pr create` returns it (Task 13).
-- The date is the day the owner approves the merge in chat, filled in by Task 13's last commit.
+These choices have their reasoning in no docblock, so each needs a file. Each file's "Decision" bullet uses 0017's wording: "Proposed by the session on <first-recorded date> (<commit>) and accepted by the owner with the merge of #NN, which adds this file (the owner approves that pull request)."
+- `#NN` is filled in once `gh pr create` returns it (Task 13). The files carry no date of acceptance, so no commit follows the approval.
 - The PR body lists the four files as one list, the first item under "For the owner".
 
 | No. | Slug | First recorded | Sources | "To reverse" from |
@@ -177,7 +178,7 @@ Commit: `docs(runbook): the rollback that is known to work, a First move per hea
     ```
 
   - The pre-Plan-7 note stays.
-  - Backlog row 45 ("Rollback has no tested fast path", trigger C2) points here.
+  - Backlog row 40 ("Rollback has no tested fast path", trigger C2) points here.
 - **"Health".**
   - The table gains a third column, "First move". It points to existing text only:
     - database: `sudo docker ps`, then **Rollback** or **When the host itself is slow**;
@@ -185,7 +186,7 @@ Commit: `docs(runbook): the rollback that is known to work, a First move per hea
     - queue: Q5;
     - scheduler: `supervisorctl status`, then `schedule:clear-cache` (**Reviewer reminders**);
     - private disk: `cass:sweep-uploads`;
-    - disk: C3's "Make room" sentence, moved out of its "Red means" cell;
+    - disk: C3's "Make room" sentence, moved word for word out of its "Red means" cell;
     - mail: the `MAIL_*` variables (**One-time setup** step 4).
   - C3's variables table is not touched.
 - **"Every release" step 1** gains two one-line commands:
@@ -224,7 +225,7 @@ In the runbook the links become bare `#anchors`.
 - **Q2. Roll back.**
   - **a.** Find whether a release did it ([When an alert fires](../../runbooks/deploy-production.md#when-an-alert-fires)).
   - **b.** The known route: F-4's revert, one command per step, linked to Rollback.
-  - **c.** Then Q1 from a.
+  - **c.** Then Q1 from a. If Q1 b's 48-hour rule blocks, stop and ask the owner whether a rollback is an exception ("What needs the owner", item 4).
   - **d.** "Redeploy the previous successful build" is unverified (F-4).
   - **e.** Never roll the schema back.
 - **Q3. Restore check.**
@@ -232,9 +233,9 @@ In the runbook the links become bare `#anchors`.
   - **b.** F-3's `NEWEST` line: expect last night's 03:17 dump or a later hand run.
   - **c.** The restore and count block in "Verifying one on the host", linked. Live and restored are close, and neither is zero.
   - **d.** Monthly, [the drill](../../runbooks/deploy-production.md#restore-drill-from-the-off-host-copy--monthly-and-not-optional), the owner's, never run in a session.
-  - **e.** Restoring over production is not written down: stop and ask the engineer (backlog row 41).
+  - **e.** Restoring over production is not written down: stop and ask the engineer (backlog row 36).
 - **Q4. Health.**
-  - **a.** `sudo docker exec "$C" su-exec app php artisan cass:health` shows every row `OK` and exits 0.
+  - **a.** `C=$(cass_container app)`, then `sudo docker exec "$C" su-exec app php artisan cass:health`: every row `OK`, exit 0.
   - **b.** A FAIL row: its "First move" ([Health](../../runbooks/deploy-production.md#health)).
   - **c.** A quiet heartbeat: run the `grep WARNING` and `docker logs` lines of [Heartbeats](../../runbooks/deploy-production.md#heartbeats).
 - **Q5. A stuck queue.** The full text below.
@@ -250,7 +251,7 @@ Mail is late, `cass:health` shows `queue` FAIL, or `/admin/email-logs` holds `qu
 
 - **a.** `C=$(cass_container app)`, then `sudo docker exec "$C" su-exec app php artisan cass:health`: `queue` reads `oldest waiting job is <age> old`, FAIL past 15 minutes ([Health](#health)).
 - **b.** `sudo docker exec "$C" supervisorctl status`: `nginx`, `php-fpm`, `queue` and `scheduler` RUNNING; if `queue` is not, `sudo docker exec "$C" supervisorctl restart queue` ([Email triage](#email-triage)).
-- **c.** `sudo docker exec "$C" su-exec app php artisan queue:monitor database:default`: `[N] OK`, N falling; a bare `database` watches a queue nothing uses ([Email triage](#email-triage)).
+- **c.** `sudo docker exec "$C" su-exec app php artisan queue:monitor database:default`: `[N] OK`, N falling; a bare `database` watches a queue nothing uses ([Email triage](#email-triage), [Secret rotation](#secret-rotation)).
 - **d.** `sudo docker exec "$C" su-exec app php artisan queue:failed`: no rows, or each failure. Fix the cause, then `sudo docker exec "$C" su-exec app php artisan queue:retry all`; judge it by the worker and the mailbox ([Sending decision emails](#sending-decision-emails)).
 - **e.** Reminders still unsent while the queue drains: `sudo docker exec -it "$C" su-exec app php artisan schedule:clear-cache` ([Reviewer reminders](#reviewer-reminders)).
 
@@ -263,11 +264,12 @@ After this task, each Q section is under 40 lines and contains no fenced block. 
 
 Commit: `docs(backlog): one table, a row per deferred item`.
 
-The preamble is 5 lines:
+The preamble is 6 lines:
 
 ```
 # Backlog
-What is deferred, one row each: its trigger and the one-line change. Decided choices whose reasoning lives in the code have a row whose Trigger and Change read "—" and whose Link names the docblock; decisions the owner made are in `docs/decisions/`. A row is closed by the pull request that makes its change. Areas other files cite (Submissions, Reviewing, Decisions, Launch, Testing, Dependencies, Monitoring, Backups) keep their names.
+What is deferred, one row each: its trigger and the one-line change. Decisions the owner made are in `docs/decisions/`. A row is closed by the pull request that makes its change. Areas other files cite (Submissions, Reviewing, Decisions, Launch, Testing, Dependencies, Monitoring, Backups) keep their names.
+Decided in code, with the reasoning in the docblock named, so no row: a purge leaves `activity_log` (`app/Actions/Organizations/PurgeOrganization.php:62`); removing a reviewer deletes their assignments and keeps their reviews (`app/Actions/Reviewers/RemoveConferenceReviewer.php:17`); invitation status is derived, not stored (`app/Enums/InvitationStatus.php:11`); `review_count` and `score` count different reviews, and a question's weight locks with the form (`app/Support/Scoring/SubmissionScorer.php:11`, `app/Console/Commands/RescoreConferenceCommand.php:17`); backups are made by the host, outside every container (`docker/backup.sh:5`).
 
 | Item | Area | Trigger | The one-line change | Link |
 | --- | --- | --- | --- | --- |
@@ -275,59 +277,59 @@ What is deferred, one row each: its trigger and the one-line change. Decided cho
 
 **Rules:**
 - A row's text comes from its source lines on `2f1f78f`, condensed and never extended.
-- At most 400 characters a row, except rows 6 and 28, which keep D1's ten views and D2's nine files whole (at most 700).
+- **No cell reads "—".**
+  - Every Trigger comes from the row's source. Rows 1, 21 and 22 carry the triggers their sources give:
+    - row 1: Filament ships views that Livewire's CSP-safe build can parse (backlog 7);
+    - row 21: a dedicated performance runner (69);
+    - row 22: "tighten it only if" an owner reports a conference marked decided with a full queue and nobody noticing (62).
+  - The Link cell names a decision, a runbook section, a spec section, or the code file the row is about. "(its code file)" below means the file the row's own text names, found by grep.
+- At most 400 characters a row, except rows 6 and 24, which keep D1's ten views and D2's nine files whole (at most 700).
 - An escaped `\|` is the only pipe allowed inside a cell.
 - An item that other files cite keeps its wording ("Tracker events carry no release").
-- Rows the fold-in closed are left out. If C5 or D3 has not merged, rows 37 or 55 come back.
+- Rows the fold-in closed are left out. If C5 or D3 has not merged, the entries at lines 37 or 55 come back as rows.
 
-**Over budget:** if the table reaches 59 lines, merge rows 35 and 36.
+**Over budget:** if the table reaches 59 lines, merge rows 30 and 31.
 
 In the table below, a numbered range on one line is one row per source entry, in that order. Only a row whose source column names several entries merges them.
 
 | # | Item | Area | Source lines | Link |
 |---|---|---|---|---|
-| 1 | CSP keeps `'unsafe-eval'` and inline style attributes, and has no report endpoint | Security | 7, 82 | `ContentSecurityPolicy.php:49`, `:147` |
+| 1 | CSP keeps `'unsafe-eval'` and inline style attributes, and has no report endpoint | Security | 7, 82 | `app/Http/Middleware/ContentSecurityPolicy.php:49`, `:147` |
 | 2 | Three published Filament views | Security | 8, 85, 101 | runbook "Content-Security-Policy" |
 | 3 | Memory limits measured under real load | Security | 9 | runbook "Resource limits, and how to measure them" |
-| 4 | `User::roleIn()` and `canAccessTenant()` query on every call | Organizer | 15 | — |
-| 5 | Organisation names are not unique | Organizer | 16 | — |
-| 6 | Panel views still carry 69 inline `style` attributes (D1) | Organizer | 21 | — |
-| 7 | A purge leaves `activity_log` | Organizer | 20 | `PurgeOrganization.php:62`; runbook "Erasing one person's data" |
-| 8 | Scale limits: `ShortLink::dailyVisitCounts()` and the XLSX export | Scale | 19, 68 | — |
-| 9 | Pagination views outside Tailwind's `@source` | Public site | 25, 83 | — |
-| 10 | Conference `og:image`: the poster half | Public site | 26 | — |
-| 11 | Stale text in plans, and provenance in code comments | Documentation | 30, brief question 7 | `CLAUDE.md`; the ratchet test (Task 11) |
-| 12 | The status link a submit emails is not capped | Submissions | 38 | 0014 |
-| 13 | Every IP-keyed rate limit keys on the full client address | Submissions | 39 | — |
-| 14 | Spec section 14 features with a foothold in the code | v2 | 34, 47, 49 | design section 14 |
-| 15-18 | Per-row unassign; expertise and track matching; AutoAssign never removes; free-mailbox list | Reviewing | 46, 48, 50, 51 | — |
-| 19 | Removing a reviewer deletes their assignments and keeps their reviews | Reviewing | 53 | `RemoveConferenceReviewer.php:17` |
-| 20 | Invitation status is derived, not stored | Reviewing | 54 | `InvitationStatus.php:11` |
-| 21-23 | Per-track quotas; no score-to-decision rule; one template per decision | Decisions | 65, 66, 67 | — |
-| 24 | The ranking's wall-clock case is a diagnostic | Decisions | 69 | `ConferenceRankingPerformanceTest.php:26`; runbook "The 500-row budget" |
-| 25 | Unsent letters do not block marking a conference decided | Decisions | 62 | `MarkDecided.php:34` |
-| 26 | `review_count` and `score` count different reviews; weights lock with the form | Decisions | 63, 64 | `SubmissionScorer.php:11`; `RescoreConferenceCommand.php:17` |
-| 27 | Automate the custom-domain step | Launch | 77 | decision 0018 |
-| 28 | The language sweep does not cover the application (D2) | Launch | 84 | — |
-| 29 | Backups are made by the host, outside every container | Launch | 86 | `docker/backup.sh:5` |
-| 30, 31 | `SubmissionFormTest`'s fill-time case; phone readers and the 18 hard QR matrices | Testing | 90; 92 (its unverified part) | — |
-| 32 | The `image` job does not run on a `composer.lock`-only change | CI | 96 | — |
-| 33 | PHP 8.5 with Node 26 LTS | Dependencies | 102 | 0012 |
-| 34 | Tracker events carry no release | Monitoring | 106, 107 | runbook "Error tracker" |
-| 35, 36 | MySQL's duplicate-entry wording in the server log; the tracker's URL scrub names its paths | Monitoring | 109 (the open half), 110 | — |
-| 37 | The owner's monitoring checks: Kuma's ntfy notification, GlitchTip's new-issue email, the OCI support request | Monitoring | 111, 112 (what is left), 113 | runbook "Where alerts go" |
-| 38 | Bot Fight Mode and the outside probe cannot both run on the Free plan | Monitoring | 115 | runbook "Cloudflare in front" |
-| 39 | The first restore drill from the off-host copy, then the retention lock | Backups | 119, 120 | runbook "Restore drill from the off-host copy" |
-| 40 | Containers can use the instance principal | Backups | 122 | 0016 |
-| 41 | Restoring production, on this host or a new one, is not written down | Backups | 124, widened | — |
-| 42-44 | An outside signal of uploads; backup tooling refinements; weekly archives are full copies | Backups | 125; 123, 126, 130; 127 | — |
-| 45 | Rollback has no tested fast path | Deploy | new; trigger C2 | runbook "Rollback" |
-| 46 | Suspended organisations: owners' panel access, and Resend status link | Owner questions | 14, 143 | — |
-| 47-51 | Slug rename; admin invitations; emailing owners; a reviewer's affiliation (both questions); 10 links per IP | Owner questions | 136, 137, 138, 139-140, 142 | — |
+| 4, 5 | `User::roleIn()` and `canAccessTenant()` query on every call; organisation names are not unique | Organizer | 15; 16 | (its code file) |
+| 6 | Panel views still carry 69 inline `style` attributes (D1) | Organizer | 21 | (the ten views) |
+| 7 | Scale limits: `ShortLink::dailyVisitCounts()` and the XLSX export | Scale | 19, 68 | (its code files) |
+| 8, 9 | Pagination views outside Tailwind's `@source`; conference `og:image`, the poster half | Public site | 25, 83; 26 | `resources/css/app.css`; (its code file) |
+| 10 | Stale text in plans, and provenance in code comments | Documentation | 30, brief question 7 | `CLAUDE.md`; the ratchet test (Task 11) |
+| 11 | The status link a submit emails is not capped | Submissions | 38 | 0014 |
+| 12 | Every IP-keyed rate limit keys on the full client address | Submissions | 39 | `app/Support/ClientIp.php` |
+| 13 | Spec section 14 features with a foothold in the code | v2 | 34, 47, 49 | design section 14 |
+| 14-17 | Per-row unassign; expertise and track matching; AutoAssign never removes; free-mailbox list | Reviewing | 46, 48, 50, 51 | (its code file) |
+| 18-20 | Per-track quotas; no score-to-decision rule; one template per decision | Decisions | 65, 66, 67 | (its code file) |
+| 21 | The ranking's wall-clock case is a diagnostic | Decisions | 69 | `tests/Feature/Organizer/ConferenceRankingPerformanceTest.php:26`; runbook "The 500-row budget" |
+| 22 | Unsent letters do not block marking a conference decided | Decisions | 62 | `app/Actions/Conferences/MarkDecided.php:34` |
+| 23 | Automate the custom-domain step | Launch | 77 | decision 0018 |
+| 24 | The language sweep does not cover the application (D2) | Launch | 84 | `tests/Feature/LanguageCoverageTest.php` |
+| 25, 26 | `SubmissionFormTest`'s fill-time case; phone readers and the 18 hard QR matrices | Testing | 90; 92 (its unverified part) | the two test files |
+| 27 | The `image` job does not run on a `composer.lock`-only change | CI | 96 | `.github/workflows/ci.yml` |
+| 28 | PHP 8.5 with Node 26 LTS | Dependencies | 102 | 0012 |
+| 29 | Tracker events carry no release | Monitoring | 106, 107 | runbook "Error tracker" |
+| 30, 31 | MySQL's duplicate-entry wording in the server log; the tracker's URL scrub names its paths | Monitoring | 109 (the open half), 110 | (its code file) |
+| 32 | The owner's monitoring checks: Kuma's ntfy notification, GlitchTip's new-issue email, the OCI support request | Monitoring | 111, 112 (what is left), 113 | runbook "Where alerts go" |
+| 33 | Bot Fight Mode and the outside probe cannot both run on the Free plan | Monitoring | 115 | runbook "Cloudflare in front" |
+| 34 | The first restore drill from the off-host copy, then the retention lock | Backups | 119, 120 | runbook "Restore drill from the off-host copy" |
+| 35 | Containers can use the instance principal | Backups | 122 | 0016 |
+| 36 | Restoring production, on this host or a new one, is not written down | Backups | 124, widened | runbook "Backups" |
+| 37-39 | An outside signal of uploads; backup tooling refinements; weekly archives are full copies | Backups | 125; 123, 126, 130; 127 | 0016; `tools/backup/`; 0016 |
+| 40 | Rollback has no tested fast path | Deploy | new; trigger C2 | runbook "Rollback" |
+| 41 | Suspended organisations: owners' panel access, and Resend status link | Owner questions | 14, 143 | (its code file) |
+| 42-46 | Slug rename; admin invitations; emailing owners; a reviewer's affiliation (both questions); 10 links per IP | Owner questions | 136, 137, 138, 139-140, 142 | (its code file) |
 
 **Entries with no row:**
 - `0001` to `0009` (35-36, 43-45, 59-61, 81).
 - The Task 2 and Task 3 files (10, 17, 18, 52, 74-79, 100).
+- Named in the preamble with their docblocks: 20 (its decided half), 53, 54, 63, 64 and 86.
 - Answered or done entries: 73, 108, 114, 144, and the done halves of 20, 92 and 109.
 - 121: decision 0016's Consequence states the rule, and the files age out by their own rotation.
 - Closed: 80 by Task 10, 128 by F-3, and 37, 55, 129 and 141 by the merged branches.
@@ -349,12 +351,14 @@ Commit: `docs(handover): one line per open item, with links; phase C`.
     - A8: "left open" points to checklist section 3.
 - **Permalink.** Under the first Open heading:
 
-  `The rows below were condensed on <date>; their full earlier text is [HANDOVER.md at <base sha>](https://github.com/ahmedsk2/cass/blob/<base sha>/docs/HANDOVER.md).`
+  `The rows below were condensed on <date>; their full earlier text is [HANDOVER.md at <short sha>](https://github.com/ahmedsk2/cass/blob/<short sha>/docs/HANDOVER.md).`
+
+  Use the base commit's short SHA (`git rev-parse --short <base>`): a 40-hex value would fail the identifier check.
 
   Every sentence that now lives only behind that link is listed in the PR body, one per line.
 - **Paragraphs.** The phase B summary paragraph and "Also open for the owner" become two lines: the walk-through is next (checklist section 4), and the owner's open items are in backlog "Monitoring", "Backups" and "Owner questions".
 - **New `## Open — phase C, first month after launch`:** C1 to C8, one line each, from `fold-in.md`. C2 is not started and C8 is this pull request.
-- **Phase D:** one line linking the brief's table. D3 is done by its branch and D8 here; D1 and D2 are backlog rows 6 and 28.
+- **Phase D:** one line linking the brief's table. D3 is done by its branch and D8 here; D1 and D2 are backlog rows 6 and 24.
 - **A1 and A8.** Their facts are in the runbook now (Task 4), so their lines are: "Done 2026-10-16: the deploy key (runbook "One-time setup" step 2)" and "Done 2026-10-17 (checklist section 3; the webhook secrets under runbook "Secret rotation")".
 - **If C7 closed backlog 90,** "Setting up a development PC" no longer says "backlog "Testing"" about that case.
 
@@ -365,7 +369,7 @@ Commit: `docs: the design document as approved, and the checklist's pointers`.
 - **Banner.** After the design document's `Status:` line (line 4): `> As approved 2026-09-10; the code is authoritative where they differ. Later decisions are in docs/decisions/, deferrals in the backlog and the state in docs/HANDOVER.md.`
 - **Line 39.** Append: *"It stays public: the owner's decision of 2026-11-06 (decision 0011)."*
 - **Line 94.** Append, using Task 1's grep: *"As built: `PlatformAdminSeeder` makes `CASS_ADMIN_EMAIL`'s account the platform admin when `db:seed` runs at the first deploy; no command and no screen grants the flag, and `cass:admin-password` only replaces that admin's password."*
-- **Nothing else in the design changes.** The banner covers the other differences, for example section 9's hashed domain token (0022) and section 11's "backup restore" (backlog row 41).
+- **Nothing else in the design changes.** The banner covers the other differences, for example section 9's hashed domain token (0022) and section 11's "backup restore" (backlog row 36).
 - **Checklist:**
   - line 162 drops the stale "The backlog records that";
   - lines 335-336 point to `docs/decisions/` (0001 to 0008);
@@ -410,35 +414,50 @@ Commit: `test: no new Plan, Task or fact reference in a code comment`.
 
 The probe is never committed. The baseline and the red log path go in the PR body.
 
-### Task 12: The pointer checker and the identifier check, committed (one commit)
+### Task 12: The pointer checker in CI's `scripts` job, and the identifier check (one commit)
 
-Commit: `test(tools): a pointer checker the suite runs, and a check for new identifiers`.
+Commit: `test(tools): CI checks every documentation pointer, and a check for new identifiers`.
 
 **What is committed:**
-- **`tools/docs/check-pointers.mjs`:** the scratch checker's source.
+- **`tools/docs/check-pointers.mjs`:** the scratch checker's source. Node built-ins only (`node:fs`, `node:path`), because the `scripts` job runs no `npm ci`.
   - It covers links and anchors, backticked paths, and runbook and backlog titles in possessive, comma and chained forms, wrapped across lines, in markdown and in code comments and strings.
-  - It also checks `under "X"` and `(see **X**)`, `"X" step N`, decision numbers and HANDOVER ids. It refuses `backlog.md:<digit>`, and applies the quick procedures' verbatim rule.
+  - It also checks:
+    - the runbook's `under "X"`, `(see "X")` (as at its line 1632, "Author uploads and private storage") and `(see **X**)`;
+    - `"X" step N`;
+    - decision numbers;
+    - HANDOVER ids.
+  - It refuses `backlog.md:<digit>` and applies the quick procedures' verbatim rule.
   - It skips `app/Actions/Legacy/`, `Legacy/` and `legacy-review.md`.
-- **`tools/docs/check-pointers.test.mjs`:** `node:test`, with one passing and one failing fixture tree per rule, built in a temporary directory.
-- **`tools/docs/new-identifiers.sh`:** the section-8 identifier check.
-- **`tests/Unit/DocumentationPointersTest.php`:** runs `node tools/docs/check-pointers.mjs <base path>` and `node --test tools/docs/check-pointers.test.mjs` through `Process` and expects exit 0 from both. CI's `test` job already sets up Node 24, so no `.github` change is needed.
+- **`tools/docs/check-pointers.test.mjs`:** `node:test` and `node:assert` only.
+  - For each rule, one passing and one failing fixture tree, built in `os.tmpdir()`.
+  - Last, a case that runs the checker over the repository itself and expects no broken pointer, so CI checks the real tree.
+- **`tools/docs/new-identifiers.sh`:** the section-8 identifier check, run by hand in Task 13. It is not in CI.
+- **`.github/workflows/ci.yml`, one line.** The `scripts` job's "Guardrail hooks" step appends `tools/docs/check-pointers.test.mjs` to its `node --test` list. The runner's preinstalled Node runs it. This is a sensitive file; the PR lists it with that why.
 
 **Test first:**
-1. Write the node test and the Pest test, and run `node --test tools/docs/check-pointers.test.mjs > /tmp/t-task-G-checker-red.log 2>&1`: red, because the module is missing.
-2. Add the script; both tests go green.
+1. Write the node test, then run `node --test tools/docs/check-pointers.test.mjs > /tmp/t-task-G-checker-red.log 2>&1; echo "rc=$?"`. It is red, because the module is missing.
+2. Add the script. Run the same command into `/tmp/t-task-G-checker.log`: rc=0.
 
-The scratch negative test of 2026-11-15 caught every planted break: chained, wrapped, code-comment, step-number, line-reference and verbatim.
+The scratch negative tests of 2026-11-15 caught every planted break: chained, wrapped, code-comment, step-number, line-reference, verbatim, and the quoted `(see "X")` at runbook :1632.
 
 ### Task 13: Checks, gates and the pull request
 
 1. Run every check in the tail and every gate, and collect the logs.
-2. `git push -u origin docs/c8-restructure`, then `gh pr create --base main`.
-3. Fill `#NN` into Task 3's four files. On the day the owner approves the merge in chat, a last commit fills the date. CI is green again before the merge.
-4. The PR body:
+2. **No local gitleaks run.** The PR relies on CI's `secret-scan` job (#79), which must have merged before this PR opens. If it has not, wait.
+3. Push and open the PR:
+   - `git push -u origin docs/c8-restructure`;
+   - write the body to a scratch file;
+   - run `gh pr create --base main --title "<title>" --body-file <file>`. The body names Coolify and `deploy.sh`, so a `--body` on the command line would be refused by the production hook.
+4. Fill `#NN` into Task 3's four files in one commit: `docs(decisions): name the pull request that adds them`. Push it, and wait for CI green. The files carry no acceptance date, so nothing follows the owner's approval.
+5. The PR body:
    - a paragraph on what and why;
    - "Files changed";
-   - "For review": the sensitive file (`bootstrap/app.php`, comments only), migrations none, environment none, the three tests added, the red logs and the gate logs;
-   - "For the owner": the four proposed decisions as one list;
+   - "For review":
+     - the sensitive files: `bootstrap/app.php` (comments only) and `.github/workflows/ci.yml` (one more `node --test` file in `scripts`, so CI checks every documentation pointer);
+     - migrations none, environment none;
+     - the two tests added (`tests/Unit/ProvenanceCommentsTest.php`, `tools/docs/check-pointers.test.mjs`);
+     - the red logs and the gate logs;
+   - "For the owner": the four proposed decisions as one list, and the rest of the tail's "What needs the owner";
    - the backlog mapping, each entry to its row, file, closure or reason;
    - the sentences that remain only behind the HANDOVER permalink;
    - the further comment disagreements found;
@@ -447,10 +466,13 @@ The scratch negative test of 2026-11-15 caught every planted break: chained, wra
 
 ## Checks
 
-1. **Pointers.** `node tools/docs/check-pointers.mjs . > /tmp/links-task-G.log 2>&1; echo "rc=$?"` prints 0. The suite runs it too (Task 12).
+1. **Pointers.**
+   - `node tools/docs/check-pointers.mjs . > /tmp/links-task-G.log 2>&1; echo "rc=$?"` prints 0.
+   - `node --test tools/docs/check-pointers.test.mjs > /tmp/t-task-G-checker.log 2>&1; echo "rc=$?"` prints 0. This is what CI's `scripts` job runs (Task 12).
 2. **Backlog.**
-   - `test "$(wc -l < docs/superpowers/plans/backlog.md)" -lt 60`.
-   - `awk 'length > 400' docs/superpowers/plans/backlog.md` prints rows 6 and 28 only, each under 700 characters.
+   - `test "$(wc -l < docs/superpowers/plans/backlog.md)" -lt 60` (52 expected).
+   - `awk 'length > 400' docs/superpowers/plans/backlog.md` prints only the preamble's docblock line and rows 6 and 24. Each of the two rows is under 700 characters.
+   - `grep -c '| — |' docs/superpowers/plans/backlog.md` prints 0.
    - `sed 's/\\|//g' docs/superpowers/plans/backlog.md | awk -F'|' '/^\|/ && NF != 7'` prints nothing.
 3. **Quick procedures.** Each `### Q` section is under 40 lines and contains no fenced block (awk between the Q headings). The verbatim rule is part of check 1.
 4. **Nothing lost.**
@@ -477,25 +499,35 @@ The scratch negative test of 2026-11-15 caught every planted break: chained, wra
 2. **Dates that cannot be fully verified:**
    - port 22's 2026-09-25 first appears on 2026-11-06 (`303d6de`);
    - 0019 and 0020 carry no date of their own ("by 2026-09-11").
-3. **Restoring over production is not written down** (backlog row 41), although design section 11 lists "backup restore". Decide whether it is written before the walk-through.
-4. **F-1's "Coolify still clones with the deploy key"** rests on HANDOVER A1 and A8, not on a fresh check of the host.
-5. **Identifiers already in the public repository,** for the owner's call; this branch does not change them:
+3. **Restoring over production is not written down** (backlog row 36), although design section 11 lists "backup restore". Decide whether it is written before the walk-through.
+4. **Is a rollback an exception to the 48-hour rule?**
+   - Q2 c runs Q1 from its first step, and Q1 b refuses a deploy within 48 hours of an open conference's submission or review deadline (`CLAUDE.md`).
+   - So a bad release made earlier could not be reverted in the hours before a deadline. Until the owner decides, Q2 c says to stop and ask the owner when Q1 b blocks.
+5. **F-1's "Coolify still clones with the deploy key"** rests on HANDOVER A1 and A8, not on a fresh check of the host.
+6. **Identifiers already in the public repository,** for the owner's call; this branch does not change them:
    - the Coolify compose project id: runbook lines 16, 17, 1237, 1275 and 1325, and HANDOVER line 16, which also carries Coolify deployment ids;
    - a Windows user path in runbook "The key" and "Restore drill from the off-host copy" (1396, 1408, 1480, 1499, 1509);
    - personal email addresses in dated plans under `docs/superpowers/plans/`.
 
-## Choices a reviewer should challenge
+## Decided in review
 
-1. **The Pest test that runs the node checker** (Task 12) enforces pointers in CI without a `.github` change, at the cost of Node in the PHP suite.
-2. **The rows that merge several entries:**
-   - 1 (7, 82), 2 (8, 85, 101), 8 (19, 68), 9 (25, 83), 14 (34, 47, 49) and 26 (63, 64);
-   - 34 (106, 107), 37 (111-113), 39 (119, 120), 43 (123, 126, 130), 46 (14, 143), and the affiliation row among 47-51 (139, 140).
+The plan was reviewed twice; this is the record of what the reviews settled, so the implementer does not reopen it.
 
-   Each merged row keeps what its entries still leave open.
-3. **Rows for decided choices,** with Trigger and Change "—", keep their docblock findable from the backlog at about 8 lines of budget.
-4. **Task 5's edits to full sections,** made so that each quick-procedure command has a verbatim home:
+1. **Decision files.** Only the owner's decisions (Task 2), and four proposed for the owner's acceptance (Task 3). Engineering choices argued in a docblock get neither a file nor a row; the backlog's preamble names their docblocks. `docs/decisions/README.md` is unchanged.
+2. **The runbook's reasoning paragraphs stay where they are.** A paragraph moves one at a time, when its section is next edited, as the brief says.
+3. **(a) CI's `scripts` job runs the pointer checker** as one more `node --test` file: one line of `ci.yml`, a sensitive file, with Node built-ins only. There is no Pest wrapper.
+4. **(b) No "—" cell in the backlog.** Rows 1, 21 and 22 carry their sources' triggers.
+5. **(c) Task 5's additions stay:**
    - Rollback's known route;
-   - Health's "First move";
+   - Health's "First move", with C3's "Make room" sentence word for word;
    - two commands in "Every release" step 1;
    - one line in "Email triage".
-5. **Comment-only D8:** the redundant command list and the broad `{64}` invitation constraint both stay.
+
+   Q5 c links "Email triage" and "Secret rotation".
+6. **The merged rows:**
+   - 1 (7, 82), 2 (8, 85, 101), 7 (19, 68), 8 (25, 83), 13 (34, 47, 49);
+   - 29 (106, 107), 32 (111-113), 34 (119, 120), 38 (123, 126, 130), 41 (14, 143) and 45 (139, 140).
+
+   Each keeps what its entries still leave open.
+7. **Comment-only D8.** The redundant `withCommands` list and the broad `{64}` invitation constraint stay, and neither gets a backlog row.
+8. **Shell discipline.** No Bash command names Coolify or ssh: the Grep tool for those searches, and `--body-file` for the PR. The HANDOVER permalink uses a short SHA. The decision files use 0017's "accepted by the owner with the merge of #NN", so no commit follows the approval.
