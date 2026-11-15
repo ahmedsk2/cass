@@ -333,12 +333,19 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: false
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
       # What a merge commit's own diff left in the tree: on the schedule and a
-      # manual run, the full scans, the checked-out files too, read by the
-      # binary the action put on PATH, which skips .git/. It runs whatever
-      # the history scan above found, so a finding there cannot hide one here.
-      - name: gitleaks over the checked-out files (schedule and manual runs)
+      # manual run, the full scans, the tracked files too, read by the binary
+      # the action put on PATH. A copy of them, not the checkout: the step
+      # above writes its report, results.sarif, into the checkout, and with a
+      # finding in it every commit SHA it names reads as a token. It runs
+      # whatever the history scan found, so a finding there cannot hide one
+      # here.
+      - name: gitleaks over the tracked files (schedule and manual runs)
         if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
-        run: gitleaks detect --no-git --source . --redact --verbose
+        run: |
+          tree="$RUNNER_TEMP/tracked-files"
+          mkdir "$tree"
+          git ls-files -z | xargs -0 cp --parents -t "$tree"
+          gitleaks detect --no-git --source "$tree" --redact --verbose
 
   # Spec section 12's one end-to-end browser run. Its own job so the `test` job
   # stays fast and so a Playwright flake never hides a real unit failure. No
