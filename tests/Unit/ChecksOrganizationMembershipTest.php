@@ -139,12 +139,12 @@ it('asks the same of the current tenant', function () {
         ->and($this->check->managesCurrentTenant($this->otherOwner))->toBeTrue();
 });
 
-it('answers for a record reached through its conference', function () {
+it('answers for the organization a track reaches through its conference', function () {
     $conference = Conference::factory()->for($this->organization)->create();
     $track = Track::factory()->for($conference)->create()->fresh();
 
-    // The one-hop walk of the track, custom field, email template and reviewer
-    // invitation policies.
+    // The organization reached from a track through its conference, one hop:
+    // the check answers for it as for the organization itself.
     $organization = $track->conference->organization;
 
     expect($organization->is($this->organization))->toBeTrue()
@@ -154,12 +154,14 @@ it('answers for a record reached through its conference', function () {
         ->and($this->check->isMemberOf($this->otherOwner, $organization))->toBeFalse();
 });
 
-it('answers for a record reached through its submission', function () {
+it('answers for the organization a review reaches through its submission', function () {
     $conference = Conference::factory()->for($this->organization)->published()->create();
     $submission = Submission::factory()->for($conference)->submitted()->create();
     $review = Review::factory()->for($submission)->create()->fresh();
 
-    // The two-hop walk of the review, assignment and decision policies.
+    // The organization reached from a review through its submission and its
+    // conference, two hops: the check answers for it as for the organization
+    // itself.
     $organization = $review->submission->conference->organization;
 
     expect($organization->is($this->organization))->toBeTrue()

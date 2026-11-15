@@ -106,11 +106,11 @@ class ConferencePolicy
      */
     public function sendDecisions(User $user, Conference $conference): bool
     {
-        // canManage() is this file's own owner/admin check, the one shape in
-        // this codebase already proven clean at Larastan level 6 - it uses `->`
-        // and not `?->` on the organization, because Larastan types a BelongsTo
-        // accessor as non-nullable and reports a null check here as an
-        // always-true condition.
+        // canManage() is the owner/admin check archive, delete and restore ask
+        // too; it hands the organization to managesOrganization(), the check
+        // every policy shares. It walks there with `->` and not `?->` because
+        // Larastan types a BelongsTo accessor as non-nullable and reports a
+        // null check here as an always-true condition.
         return $this->canManage($user, $conference);
     }
 
