@@ -10,7 +10,7 @@ it('reads the free and total bytes of the filesystem holding a path', function (
 
     expect($reading)->toBeArray()->toHaveKeys(['free', 'total'])
         ->and($reading['total'])->toBeFloat()->toBeGreaterThan(0)
-        ->and($reading['free'])->toBeFloat()->toBeGreaterThanOrEqual(0)->toBeLessThanOrEqual($reading['total']);
+        ->and($reading['free'])->toBeFloat()->toBeGreaterThanOrEqual(0)->toBeLessThan($reading['total']);
 });
 
 it('answers null, rather than throwing, for a path it cannot measure', function () {
