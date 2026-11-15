@@ -1,7 +1,7 @@
 # CASS v2 Plan 11: Submissions Under Filament Tenancy (C5)
 
 > **Status: revised 2026-11-15 after the adversarial review (verdict: fix, then approve).** The coordinator chose open choice 1's alternative from the first version: no new column. The existing `Submission::organization()` HasOneThrough becomes Filament's ownership relation.
-> The first version planned a copied `submissions.organization_id` with its migration, model events and health row. It is commit `254b7c6` on this branch (`4285265` before the rebase onto #76). Its Tasks 1-3 and 6 are dropped; the remaining tasks keep their numbers, so logs and references stay stable.
+> The first version planned a copied `submissions.organization_id` with its migration, model events and health row; decision 0018's "To reverse" points at it. Its Tasks 1-3 and 6 are dropped; the remaining tasks keep their numbers, so logs and references stay stable.
 > Written against `test/d3-table-action-helpers` at `2d94284` (PR #76, approved, not merged). That branch edits three of the test files below, so this one is stacked on it.
 > Versions, from `composer.lock` and the installed `vendor/`: Laravel 13.40.0, Filament 5.11.1, Livewire 4.4.8.
 
@@ -346,12 +346,12 @@ it('creates a submission while the panel is booted for another tenant, and leave
 - [ ] **Step 1: The decision.** Write it in the folder's format (`docs/decisions/README.md`): a title line, then Context, Decision, Consequence and To reverse.
   - **Title:** "Submissions use Filament tenancy through their conference; no organization_id column".
   - **Context:** the organizer `SubmissionResource` was scoped by hand, with a `1 = 0` fallback, because a has-one-through ownership relation used to fail on creation under Filament's tenancy. The outside review asked for a copied `submissions.organization_id` instead, backfilled from `conferences`, after which "the policies simplify" (`docs/reviews/2026-10-16-expert-brief.md`, C5, and Question 6 point 1).
-  - **Decision:** "Proposed by engineering, accepted by the owner on <merge date> (#NN)."
+  - **Decision:** "Proposed by engineering on 2026-11-15 and accepted by the owner with the merge of #NN, which adds this file", as decision 0017 words it, so nothing changes after the merge.
     - There is no column. `Submission::organization()`, the existing has-one-through the conference, is the resource's ownership relation, which Filament 5.11.1 scopes with a whereHas. Its creating observer associates only a BelongsTo, and its created observer returns early for a has-one-or-many-through.
     - The column was not added because the copied value would become load-bearing for every organizer read of abstracts: `StartReviewing`, `MarkDecided`, `SendDecisionEmails`, `TrackPolicy`, `CustomFieldPolicy` and `UpdateConference` among them. A missing or wrong value would drop rows silently, and keeping it right would need a migration release and model events outside the Actions.
     - "The policies simplify" is dropped. The conference walk is what makes an abstract of a deleted conference answer no (`TrashedTenantPolicyTest`), and `ConferenceRanking::mayDecide()` asks `decide` with a probe that carries only its conference.
   - **Consequence:**
-    - Every Submission query in an organizer request carries a correlated EXISTS through `conferences`, which also requires the conference to be live.
+    - Every Submission query in an organizer request carries a correlated EXISTS through `conferences`, which also requires both the conference and the organization to be live (a deleted organization's tenant routes return 404 first).
     - Abstracts of a deleted conference are invisible to the organizer panel everywhere, not only in its list.
     - A query in that panel meant to see another organization's abstracts, or a deleted conference's, must leave the tenant first: tests do it with `withoutTenant()`.
   - **To reverse:** apply the dropped Tasks 1-3 of this plan's first version (`docs/superpowers/plans/2026-11-15-plan-11-native-submission-tenancy.md` at commit `254b7c6`): the column, the model events and the BelongsTo. Invert `tests/Feature/Organizer/SubmissionTenancyTest.php` accordingly.
@@ -370,13 +370,13 @@ it('creates a submission while the panel is booted for another tenant, and leave
     - "For review": no sensitive file, no migration, no environment variable; the tests added; the three tests adapted, and why; the bite-check log; the four gate logs with their `rc`;
     - the attribution line.
   - Open it with `gh pr create --base test/d3-table-action-helpers --title "feat: submissions use Filament tenancy through their conference" --body-file /tmp/pr-F.md`.
-- [ ] **Step 4: The PR number.** Replace `#NN` in decision 0018 with the new PR's number, commit with `docs(decisions): 0018 names its pull request`, and push. The merge date stays `<merge date>` until the record PR fills it in.
+- [ ] **Step 4: The PR number.** Replace `#NN` in decision 0018 with the new PR's number, commit with `docs(decisions): 0018 names its pull request`, and push. The decision then needs no edit after the merge.
 
 ## After merge: lines to record (not edited in this branch)
 
-- **Backlog, the entry at line 37** ("Decided: `SubmissionResource` sets `$isScopedToTenant = false` …"; C8 may move it, so find it by its text). It closes in the record PR: "Closed by C5 (#NN, date). `SubmissionResource` uses Filament tenancy on the existing has-one-through `organization()`: Filament 5.11.1 scopes it with a whereHas, its creating observer associates only a BelongsTo, and its created observer returns early for a has-one-or-many-through, so the fatal described here no longer happens. No column was added (decision 0018)."
+- **Backlog, the entry at line 37** ("Decided: `SubmissionResource` sets `$isScopedToTenant = false` …"; C8 may move it, so find it by its text). It closes in the record PR: "Closed by C5 (#80, date). `SubmissionResource` uses Filament tenancy on the existing has-one-through `organization()`: Filament 5.11.1 scopes it with a whereHas, its creating observer associates only a BelongsTo, and its created observer returns early for a has-one-or-many-through, so the fatal described here no longer happens. No column was added (decision 0018)."
 - **HANDOVER:**
-  - The phase-C list: C5 is done (#NN), not a migration release.
+  - The phase C sentence at `docs/HANDOVER.md:73-75` ("Phases C (CI audits, build once and deploy that image, disk check, seeder hardening, native submission tenancy, …) and D (on touch) are in the brief."): record native submission tenancy as done in #80, not a migration release.
   - "Plans 1–10" becomes "Plans 1–11".
   - The brief's C5 "done when" was met without its backfill clause (decision 0018).
 - **No runbook change**, because nothing changes for the deploy.
