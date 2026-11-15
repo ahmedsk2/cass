@@ -5,6 +5,71 @@ Host address, SSH user and key path live in the owner's private ops notes, not i
 Host: OCI `hosting-1`, `<ssh-user>@<origin-ip>` (key `<ssh-key>`), Coolify + Traefik, Cloudflare in front.
 App URL: https://cass.towardpcc.com. Repo: https://github.com/ahmedsk2/cass, branch `main`.
 
+## Quick procedures
+
+Each procedure is the shortest correct path; the section a step links holds the reasons, the edge cases and the incidents. When a section changes, its quick procedure changes in the same commit. Host steps run after `ssh -i <ssh-key> <ssh-user>@<origin-ip>` with the [`cass_container` helper](#finding-the-containers) pasted. A session reaches the host only while the owner has unlocked production.
+
+| When | Procedure |
+|---|---|
+| Shipping `main` | [Q1. Every release](#q1-every-release) |
+| A release broke production | [Q2. Roll back](#q2-roll-back) |
+| Proving a backup restores | [Q3. Restore check](#q3-restore-check) |
+| A red `cass:health` row, or a quiet heartbeat | [Q4. Health](#q4-health) |
+| Mail is late, or email-log rows sit at `queued` | [Q5. A stuck queue](#q5-a-stuck-queue) |
+| The off-host copy's alert or log line | [Q6. The off-host copy](#q6-the-off-host-copy) |
+
+### Q1. Every release
+
+- **a.** On the PC, the release's run and its `image` job ([Every release](#every-release) step 1): `gh run list --workflow ci.yml --branch main --commit "$(git rev-parse origin/main)" --json databaseId,conclusion --jq '.[0]'` prints `"conclusion":"success"`, and `gh run view <id> --json jobs --jq '.jobs[]|select(.name=="image").conclusion'` prints `success`. On `skipped`, `gh workflow run ci.yml --ref main` and wait for green.
+- **b.** No open conference is within 48 hours of its submission or review deadline (`CLAUDE.md`): `/admin/conferences` lists the first, each conference's page in it shows the second.
+- **c.** If the release changes the `mysql` digest, on the host: `sudo /usr/local/bin/cass-backup`, which ends `[cass-backup] /srv/backups/cass/cass-<date>-<time>.sql.gz (<n> bytes), keeping 14 days` ([Every release](#every-release) step 1).
+- **d.** Right before the deploy, `git fetch origin main`: `origin/main` must still be the commit of a, and nothing merges until the deploy ends ([Every release](#every-release) step 2).
+- **e.** The owner unlocks production, then on the PC: `ssh -i <ssh-key> <ssh-user>@<origin-ip> "CASS_COOLIFY_APP_UUID=<uuid> bash -s" < tools/claude/deploy.sh` ([Every release](#every-release) step 2). Its last line is `DEPLOY_DONE`. A line starting `DEPLOY_FAILED:` means stop: exit 2 is often the host ([When the host itself is slow](#when-the-host-itself-is-slow)), 4 a failed backup with nothing migrated, 7 a red `cass:health` row with the release live.
+- **f.** `/up` answers 200 and `/org/login` is styled ([Every release](#every-release) step 4).
+- **g.** The page timings: the loop in [Every release](#every-release) step 5, a median of 0.300 s or less.
+- **h.** Record the release in `docs/HANDOVER.md`'s Production row. Never Restart or Redeploy in Coolify, and never run `db:seed` on a release ([Every release](#every-release) steps 2 and 3).
+
+### Q2. Roll back
+
+- **a.** Did a release do it? `/up`, `sudo docker ps` and Coolify's deployment list ([When an alert fires](#when-an-alert-fires)).
+- **b.** On the PC, revert the release's merge ([Rollback](#rollback)): `git fetch origin && git switch -c revert-<sha> origin/main`, `git revert -m 1 <merge sha>`, `git push -u origin revert-<sha>`, then `gh pr create --base main --title "Revert <sha>" --body "<why>"`.
+- **c.** CI green, the owner's approval and the merge, then [Q1](#q1-every-release) from a. If Q1 b's 48-hour rule stops it, ask the owner whether a rollback is an exception.
+- **d.** Coolify's "redeploy the previous successful build" is unverified ([Rollback](#rollback)).
+- **e.** Never roll the schema back: migrations are additive.
+
+### Q3. Restore check
+
+- **a.** On the host: `C=$(cass_container mysql)`, then `NEWEST=$(sudo sh -c 'ls -1t /srv/backups/cass/cass-*.sql.gz | head -1')`, the newest dump: last night's 03:17 or a later hand run ([Verifying one on the host](#verifying-one-on-the-host)).
+- **b.** Run that section's block from its `DROP DATABASE IF EXISTS` line to its last: the load prints nothing, and each table's live and restored counts are close and neither is zero.
+- **c.** Monthly, the owner's and never in a Claude session: [Restore drill from the off-host copy](#restore-drill-from-the-off-host-copy--monthly-and-not-optional).
+- **d.** Restoring over production is not written down: stop and ask the engineer (backlog "Backups").
+
+### Q4. Health
+
+- **a.** `C=$(cass_container app)`, then `sudo docker exec "$C" su-exec app php artisan cass:health`: a Check, Status and Detail table, every Status `OK`, exit 0 ([Health](#health)).
+- **b.** A `FAIL` row: that row's First move in [Health](#health).
+- **c.** A quiet hourly heartbeat ([Heartbeats](#heartbeats)): `sudo docker exec "$C" grep WARNING storage/logs/cass-health.log | tail -n 5` shows failed pings, and `sudo docker logs --since 3h "$C" 2>&1 | grep 'cass:health'` shows each run as `DONE` or `FAIL`.
+
+### Q5. A stuck queue
+
+Mail is late, `cass:health` shows `queue` FAIL, or `/admin/email-logs` holds `queued` rows for hours.
+
+- **a.** `C=$(cass_container app)`, then `sudo docker exec "$C" su-exec app php artisan cass:health`: `queue` reads `oldest waiting job is <age> old`, FAIL past 15 minutes ([Health](#health)).
+- **b.** `sudo docker exec "$C" supervisorctl status`: `nginx`, `php-fpm`, `queue` and `scheduler` RUNNING; if `queue` is not, `sudo docker exec "$C" supervisorctl restart queue` ([Email triage](#email-triage)).
+- **c.** `sudo docker exec "$C" su-exec app php artisan queue:monitor database:default`: `[N] OK`, N falling; a bare `database` watches a queue nothing uses ([Email triage](#email-triage), [Secret rotation](#secret-rotation)).
+- **d.** `sudo docker exec "$C" su-exec app php artisan queue:failed`: no rows, or each failure. Fix the cause, then `sudo docker exec "$C" su-exec app php artisan queue:retry all`; judge it by the worker and the mailbox, not the log's status ([Sending decision emails](#sending-decision-emails)).
+- **e.** Reminders still unsent while the queue drains: `sudo docker exec -it "$C" su-exec app php artisan schedule:clear-cache` ([Reviewer reminders](#reviewer-reminders)).
+
+Never `cache:clear`: with the database cache store it empties the scheduler heartbeat and every rate limit too.
+
+### Q6. The off-host copy
+
+- **a.** On the host, `sudo tail -n 40 /var/log/cass-backup.log`: the last `[cass-backup-offsite]` line reads `OK: <n> uploaded, <m> already off-host; newest dump <file>, <h> h old; pinged` ([Heartbeats](#heartbeats)).
+- **b.** On `FAILED (exit N): …`, that exit's row in [Off-host copies](#off-host-copies), then `sudo /usr/local/bin/cass-backup-offsite` by hand.
+- **c.** After a hand-run `cass-backup`, `sudo /usr/local/bin/cass-backup-offsite` sends that dump at once ([Off-host copies](#off-host-copies)).
+- **d.** Kuma's `cass offsite copy` is up and the alarm `cass-offsite-filling` is quiet ([When an alert fires](#when-an-alert-fires)).
+- **e.** The monthly drill is the owner's: [Restore drill from the off-host copy](#restore-drill-from-the-off-host-copy--monthly-and-not-optional).
+
 ## Finding the containers
 
 Almost every block below starts by resolving a container name. **Paste this
