@@ -7,6 +7,7 @@ namespace Database\Seeders;
 use App\Actions\Users\ResetPlatformAdminPassword;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -37,7 +38,8 @@ class PlatformAdminSeeder extends Seeder
         } else {
             $password = (string) config('cass.admin_password');
 
-            if (strlen($password) < ResetPlatformAdminPassword::MIN_LENGTH) {
+            // Characters, not bytes, as the validator's min rule counts them for cass:admin-password.
+            if (mb_strlen($password) < ResetPlatformAdminPassword::MIN_LENGTH) {
                 throw new RuntimeException(sprintf(
                     'CASS_ADMIN_PASSWORD (%d+ characters) must be set to make [%s] the platform admin.',
                     ResetPlatformAdminPassword::MIN_LENGTH,
@@ -45,7 +47,11 @@ class PlatformAdminSeeder extends Seeder
                 ));
             }
 
-            $user->forceFill(['password' => $password]);
+            $user->forceFill([
+                'password' => $password,
+                // A browser the account's previous holder told to remember them is not signed back in by its cookie.
+                'remember_token' => Str::random(60),
+            ]);
         }
 
         $user->forceFill([

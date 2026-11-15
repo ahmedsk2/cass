@@ -6,6 +6,7 @@ namespace App\Actions\Users;
 
 use App\Exceptions\AdminPasswordRefused;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -18,9 +19,9 @@ use Illuminate\Validation\Rules\Password;
 class ResetPlatformAdminPassword
 {
     /**
-     * The length CASS_ADMIN_PASSWORD has always needed; PlatformAdminSeeder asks it of a new admin's password.
-     * Here it comes on top of Profile's rule, Password::defaults(), so a password set from the console is never
-     * weaker than one the admin could set in the panel.
+     * The fewest characters a platform admin's password set from the console may have: here on top of Profile's
+     * rule, Password::defaults(), so it is never weaker than one the admin could set in the panel, and in
+     * PlatformAdminSeeder for CASS_ADMIN_PASSWORD.
      */
     public const MIN_LENGTH = 12;
 
@@ -56,14 +57,17 @@ class ResetPlatformAdminPassword
             throw new AdminPasswordRefused($reasons);
         }
 
-        $admin->forceFill([
-            'password' => $password,
-            // A new token, as Laravel's own password reset sets: a browser remembered under the old password is
-            // not signed back in by its cookie. Open sessions end through AuthenticateSession, which compares the
-            // password hash each one was opened with.
-            'remember_token' => Str::random(60),
-        ])->save();
+        // One transaction, so no password changes without its activity row.
+        DB::transaction(function () use ($admin, $password): void {
+            $admin->forceFill([
+                'password' => $password,
+                // A new token, as Laravel's own password reset sets: a browser remembered under the old password
+                // is not signed back in by its cookie. Open sessions end through AuthenticateSession, which
+                // compares the password hash each one was opened with.
+                'remember_token' => Str::random(60),
+            ])->save();
 
-        activity()->performedOn($admin)->log('user.password_reset');
+            activity()->performedOn($admin)->log('user.password_reset');
+        });
     }
 }
