@@ -119,6 +119,7 @@ const quick = (command) => RUNBOOK.replace('## Every release', [
 ].join('\n'));
 passes('quick procedures', { 'docs/runbooks/deploy-production.md': quick('sudo docker exec "$C" su-exec app php artisan cass:health') });
 fails('quick procedures', { 'docs/runbooks/deploy-production.md': quick('sudo docker exec "$C" su-exec app php artisan cass:nope') }, /Q1\. Health: command not verbatim/);
+fails('quick procedures, a command cut short', { 'docs/runbooks/deploy-production.md': quick('sudo docker exec "$C" su-exec app php artisan cass:heal') }, /Q1\. Health: command not verbatim/);
 
 test('this repository has no broken pointer', () => {
     const { status, output } = check(repo);

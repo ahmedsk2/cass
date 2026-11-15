@@ -197,7 +197,15 @@ for (const file of codeFiles) {
 }
 
 // Quick procedures: a command in a step appears verbatim in a section that step links,
-// or anywhere in the runbook outside the quick procedures when the step links none.
+// or anywhere in the runbook outside the quick procedures when the step links none. The match
+// must end where the section's text has a backtick, a space or the end of a line, so that a
+// command cut short in a step does not pass as the start of the section's longer one.
+const verbatim = (text, command) => {
+    for (let i = text.indexOf(command); i !== -1; i = text.indexOf(command, i + 1)) {
+        if (/^(?:[` \r\n]|$)/.test(text.slice(i + command.length, i + command.length + 1))) return true;
+    }
+    return false;
+};
 const quick = rb.heads.filter((h) => /^Q\d+\. /.test(h.title));
 if (quick.length > 0) {
     const first = quick[0].line, last = quick[quick.length - 1].end;
@@ -207,7 +215,7 @@ if (quick.length > 0) {
         for (const step of steps) {
             const anchors = [...step.matchAll(/\]\(#([^)]+)\)/g)].map((m) => rb.slugs.get(m[1])).filter(Boolean);
             for (const m of step.matchAll(/`((?:sudo|ssh|gh|git|curl|C=|APP=|DB=|NEWEST=|docker)\b[^`]*)`/g)) {
-                const ok = anchors.length > 0 ? anchors.some((h) => h.raw.includes(m[1])) : outside.includes(m[1]);
+                const ok = anchors.length > 0 ? anchors.some((h) => verbatim(h.raw, m[1])) : verbatim(outside, m[1]);
                 if (!ok) report(RUNBOOK, q.line + 1, `${q.title}: command not verbatim in its linked section: ${m[1]}`);
             }
         }
