@@ -1,6 +1,6 @@
 # Decisions
 
-One short file per decision, numbered in the order made: `NNNN-short-slug.md`. Each one says, in a paragraph or a few bullets:
+One short file per decision, numbered in the order made: `NNNN-short-slug.md`. The exception is 0019 to 0027, filed on 2026-11-15 from the backlog and the rule book: they record decisions made between 2026-09-10 and 2026-10-16, most of them before 0010, and each names its own date. Each one says, in a paragraph or a few bullets:
 
 - **Context**: what forced a choice.
 - **Decision**: what was chosen and by whom (the owner, or the engineering default the owner accepted), with the date.
