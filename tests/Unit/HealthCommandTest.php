@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\DiskSpace;
+use App\Support\Monitoring\FakeDiskSpace;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,7 +24,20 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     Storage::fake('local');
     Cache::put('cass:scheduler-heartbeat', now()->toIso8601String(), 3600);
+    // A roomy disk, so that the free space of the machine running the suite
+    // decides no case; the disk-row cases install their own reading.
+    app()->instance(DiskSpace::class, FakeDiskSpace::reporting(60 * 1024 ** 3, 100 * 1024 ** 3));
 });
+
+/**
+ * The rows of one `cass:health --json` run, keyed by name.
+ *
+ * @return array<string, array{name: string, ok: bool, detail: string}>
+ */
+function healthRows(string $output): array
+{
+    return collect(json_decode(trim($output), true))->keyBy('name')->all();
+}
 
 it('passes when everything it checks is healthy', function () {
     artisan('cass:health')
@@ -77,6 +92,90 @@ it('fails when the private disk cannot be written', function () {
     artisan('cass:health')
         ->expectsOutputToContain('private disk')
         ->assertExitCode(1);
+});
+
+it('reports the free space of the filesystem holding the private disk', function () {
+    $disk = FakeDiskSpace::reporting(12.25 * 1024 ** 3, 45 * 1024 ** 3);
+    app()->instance(DiskSpace::class, $disk);
+
+    expect(Artisan::call('cass:health'))->toBe(0)
+        ->and(Artisan::output())->toContain('12.2 GiB free of 45.0 GiB (27%)')
+        ->and($disk->measuredPaths())->toBe([Storage::disk('local')->path('')]);
+});
+
+it('fails below either floor, whichever a filling disk reaches first, and names the floor', function (float $freeGib, float $totalGib, string $detail) {
+    app()->instance(DiskSpace::class, FakeDiskSpace::reporting($freeGib * 1024 ** 3, $totalGib * 1024 ** 3));
+
+    expect(Artisan::call('cass:health', ['--json' => true]))->toBe(1)
+        ->and(healthRows(Artisan::output())['disk'])->toBe(['name' => 'disk', 'ok' => false, 'detail' => $detail]);
+})->with([
+    // 15% of 100 GiB is 15 GiB, far above 2 GiB: a large disk crosses the share first.
+    'a large disk under 15% but over 2 GiB' => [10, 100, '10.0 GiB free of 100.0 GiB (10%) - below the 15% minimum'],
+    // 15% of 10 GiB is 1.5 GiB, under 2 GiB: a small disk crosses the absolute floor first.
+    'a small disk under 2 GiB but over 15%' => [1.75, 10, '1.7 GiB free of 10.0 GiB (17%) - below the 2 GiB minimum'],
+    'a disk under both' => [1, 100, '1.0 GiB free of 100.0 GiB (1%) - below the 15% minimum and the 2 GiB minimum'],
+    // Rounded to the nearest, these two would print 15% and 2.0 GiB beside "below".
+    'just under 15%, printed as 14%' => [14.75, 100, '14.7 GiB free of 100.0 GiB (14%) - below the 15% minimum'],
+    'just under 2 GiB, printed as 1.9' => [1.96875, 10, '1.9 GiB free of 10.0 GiB (19%) - below the 2 GiB minimum'],
+]);
+
+it('passes at exactly either floor', function (float $freeGib, float $totalGib, string $detail) {
+    app()->instance(DiskSpace::class, FakeDiskSpace::reporting($freeGib * 1024 ** 3, $totalGib * 1024 ** 3));
+
+    expect(Artisan::call('cass:health', ['--json' => true]))->toBe(0)
+        ->and(healthRows(Artisan::output())['disk'])->toBe(['name' => 'disk', 'ok' => true, 'detail' => $detail]);
+})->with([
+    'exactly 15% of a large disk' => [15, 100, '15.0 GiB free of 100.0 GiB (15%)'],
+    'exactly 2 GiB of a small disk' => [2, 10, '2.0 GiB free of 10.0 GiB (20%)'],
+]);
+
+it('reads both floors from configuration', function () {
+    app()->instance(DiskSpace::class, FakeDiskSpace::reporting(25 * 1024 ** 3, 100 * 1024 ** 3));
+
+    expect(Artisan::call('cass:health'))->toBe(0);
+
+    config()->set('cass.health.disk_min_percent', 30);
+
+    expect(Artisan::call('cass:health', ['--json' => true]))->toBe(1)
+        ->and(healthRows(Artisan::output())['disk']['detail'])->toBe('25.0 GiB free of 100.0 GiB (25%) - below the 30% minimum');
+
+    config()->set('cass.health.disk_min_percent', 15);
+    config()->set('cass.health.disk_min_gib', 30);
+
+    expect(Artisan::call('cass:health', ['--json' => true]))->toBe(1)
+        ->and(healthRows(Artisan::output())['disk']['detail'])->toBe('25.0 GiB free of 100.0 GiB (25%) - below the 30 GiB minimum');
+});
+
+it('fails, naming the path, when the free space cannot be measured', function () {
+    app()->instance(DiskSpace::class, FakeDiskSpace::failing());
+
+    expect(Artisan::call('cass:health', ['--json' => true]))->toBe(1)
+        ->and(healthRows(Artisan::output())['disk'])->toBe([
+            'name' => 'disk',
+            'ok' => false,
+            'detail' => 'could not measure the free space at ['.Storage::disk('local')->path('').']',
+        ]);
+});
+
+it('prints the disk row in --json after the private disk row, in the shape of every other row', function () {
+    app()->instance(DiskSpace::class, FakeDiskSpace::reporting(12.25 * 1024 ** 3, 45 * 1024 ** 3));
+
+    expect(Artisan::call('cass:health', ['--json' => true]))->toBe(0);
+    $rows = json_decode(trim(Artisan::output()), true);
+
+    expect(array_column($rows, 'name'))->toBe(['database', 'migrations', 'queue', 'scheduler', 'private disk', 'disk', 'mail'])
+        ->and($rows[5])->toBe(['name' => 'disk', 'ok' => true, 'detail' => '12.2 GiB free of 45.0 GiB (27%)']);
+});
+
+it('measures the real filesystem through the container binding', function () {
+    // Every other case runs on a fake so that the machine's own free space
+    // decides nothing; this one drops it. Green or red is then the machine's
+    // business, so only the reading's shape is checked.
+    app()->forgetInstance(DiskSpace::class);
+
+    Artisan::call('cass:health', ['--json' => true]);
+
+    expect(healthRows(Artisan::output())['disk']['detail'])->toMatch('/^\d+\.\d GiB free of \d+\.\d GiB \(\d+%\)/');
 });
 
 it('fails in production when the mailer delivers nowhere', function () {
@@ -157,7 +256,7 @@ it('pings the heartbeat URL once, with a GET, when every check passed, and print
     $lines = preg_split('/\R/', trim(Artisan::output())) ?: [];
     // The scheduled run is `--json --ping`: the ping adds nothing to stdout.
     expect($lines)->toHaveCount(1)
-        ->and(json_decode($lines[0], true))->toBeArray()->toHaveCount(6);
+        ->and(json_decode($lines[0], true))->toBeArray()->toHaveCount(7);
     Http::assertSentCount(1);
     Http::assertSent(fn (Request $request): bool => $request->method() === 'GET' && $request->url() === 'https://hc-ping.example/test-check');
 });
@@ -181,6 +280,20 @@ it('pings nothing when a check failed', function () {
     Cache::put('cass:scheduler-heartbeat', now()->subHour()->toIso8601String(), 3600);
 
     artisan('cass:health', ['--ping' => true])->assertExitCode(1);
+    Http::assertNothingSent();
+});
+
+it('pings nothing when the disk row is the only red one', function () {
+    // A filling disk silences the heartbeat like any other red row, so the
+    // alert arrives while the next uploads still fit.
+    Http::fake();
+    config()->set('cass.heartbeat_url', 'https://hc-ping.example/test-check');
+    app()->instance(DiskSpace::class, FakeDiskSpace::reporting(1 * 1024 ** 3, 100 * 1024 ** 3));
+
+    expect(Artisan::call('cass:health', ['--json' => true, '--ping' => true]))->toBe(1);
+    $red = array_keys(array_filter(healthRows(Artisan::output()), fn (array $row): bool => $row['ok'] === false));
+
+    expect($red)->toBe(['disk']);
     Http::assertNothingSent();
 });
 
