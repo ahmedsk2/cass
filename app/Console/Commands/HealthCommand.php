@@ -297,7 +297,8 @@ class HealthCommand extends Command
 
         $reading = $diskSpace->measure($root);
 
-        if ($reading === null) {
+        // A reading with no size is no reading: nothing is a share of nothing.
+        if ($reading === null || $reading['total'] <= 0) {
             return ['name' => 'disk', 'ok' => false, 'detail' => "could not measure the free space at [{$root}]"];
         }
 
