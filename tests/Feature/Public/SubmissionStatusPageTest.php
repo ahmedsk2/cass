@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 
 use function Pest\Laravel\get;
+use function Pest\Laravel\withServerVariables;
 use function Pest\Livewire\livewire;
 
 beforeEach(function () {
@@ -126,6 +127,17 @@ it('blocks the twenty-first request from one address in a minute', function () {
     }
 
     get('/s/'.$this->token)->assertStatus(429);
+});
+
+it('counts an IPv6 client on its /64, so a fresh address inside it is no fresh budget', function () {
+    config()->set('cass.status_page_rate_limit', 2);
+
+    withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2::1'])->get('/s/'.$this->token)->assertOk();
+    withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2:ffff:ffff:ffff:ffff'])->get('/s/'.$this->token)->assertOk();
+    withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2::3'])->get('/s/'.$this->token)->assertStatus(429);
+
+    // The next /64 is another client, with a budget of its own.
+    withServerVariables(['REMOTE_ADDR' => '2001:db8:1:3::1'])->get('/s/'.$this->token)->assertOk();
 });
 
 it('opens the form prefilled when the author chooses to edit', function () {

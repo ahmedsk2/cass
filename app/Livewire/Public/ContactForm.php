@@ -28,7 +28,7 @@ class ContactForm extends Component
 
     public function send(): void
     {
-        $key = 'contact:'.ClientIp::from(request());
+        $key = 'contact:'.ClientIp::limiterKey(request());
 
         if ($this->website_confirm !== '') {
             RateLimiter::hit($key, 600);

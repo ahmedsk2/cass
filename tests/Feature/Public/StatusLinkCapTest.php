@@ -123,6 +123,40 @@ it('keys the IP cap on the Cloudflare client address, not the proxy in front of 
         ->and(RateLimiter::attempts('status-link:127.0.0.1'))->toBe(0);
 });
 
+it('keys the IP cap on the /64 of an IPv6 client, so a fresh address inside it is no fresh budget', function () {
+    config()->set('cass.status_link.per_ip_per_day', 2);
+    // Raised so that only the IP cap can refuse: every send below goes to one author.
+    config()->set('cass.status_link.per_address_per_day', 10);
+    ($this->saveDraft)('sara@example.org');
+    $submission = Submission::query()->firstOrFail();
+    $send = fn (string $clientIp) => app(SendSubmissionStatusLink::class)->handleForAuthor($submission, null, $clientIp);
+
+    expect($send('2001:db8:1:2::a'))->not->toBeNull()
+        ->and($send('2001:db8:1:2:ffff:ffff:ffff:ffff'))->not->toBeNull()
+        // A third address in the same /64 is the same client, which has had its two.
+        ->and($send('2001:db8:1:2::b'))->toBeNull()
+        // The next /64 is another client.
+        ->and($send('2001:db8:1:3::a'))->not->toBeNull()
+        ->and(RateLimiter::attempts('status-link:2001:db8:1:2::/64'))->toBe(2)
+        ->and(RateLimiter::attempts('status-link:2001:db8:1:3::/64'))->toBe(1);
+});
+
+it('keys the IP cap on the /64 of an IPv6 client that saves through the proxy', function () {
+    $proxies = Request::getTrustedProxies();
+    $headerSet = Request::getTrustedHeaderSet();
+    Request::setTrustedProxies(['127.0.0.1'], Request::HEADER_X_FORWARDED_FOR);
+    app()->rebinding('request', fn ($app, Request $request) => $request->headers->set('CF-Connecting-IP', '2001:db8:1:2::a'));
+
+    try {
+        ($this->saveDraft)('sara@example.org');
+    } finally {
+        Request::setTrustedProxies($proxies, $headerSet);
+    }
+
+    expect(RateLimiter::attempts('status-link:2001:db8:1:2::/64'))->toBe(1)
+        ->and(RateLimiter::attempts('status-link:2001:db8:1:2::a'))->toBe(0);
+});
+
 it('still says no link was emailed when the first save stopped at a refused file', function () {
     Storage::fake('local');
     EmailLog::factory()->count(3)->create(['to_email' => 'sara@example.org', 'template_key' => 'submission_draft_saved']);

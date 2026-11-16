@@ -62,7 +62,7 @@ class RegisterOrganization extends Component
     {
         $this->email = mb_strtolower(trim($this->email));
 
-        $key = 'register:'.ClientIp::from(request());
+        $key = 'register:'.ClientIp::limiterKey(request());
 
         if ($this->website_confirm !== '') {
             RateLimiter::hit($key, 600);

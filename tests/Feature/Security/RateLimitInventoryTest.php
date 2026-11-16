@@ -153,3 +153,56 @@ it('still stops one address spraying many accounts', function () {
         ->assertNotified()
         ->assertHasNoFormErrors();
 });
+
+it('keys the four named limiters on the /64 of an IPv6 guest', function (string $limiter) {
+    $keyFor = fn (string $address): string => RateLimiter::limiter($limiter)(
+        Request::create('/', server: ['REMOTE_ADDR' => $address]),
+    )->key;
+
+    expect($keyFor('2001:db8:1:2::1'))->toBe($keyFor('2001:db8:1:2:ffff:ffff:ffff:ffff'))
+        ->and($keyFor('2001:db8:1:2::1'))->not->toBe($keyFor('2001:db8:1:3::1'))
+        ->and($keyFor('203.0.113.7'))->not->toBe($keyFor('203.0.113.8'));
+})->with(['conference-assets', 'file-download', 'submission-status', 'invitation-accept']);
+
+it('stops one IPv6 client spraying many accounts from fresh addresses in its /64', function () {
+    config()->set('cass.security.login_ip_limit', 2);
+    Filament::setCurrentPanel('organizer');
+    // Livewire's test requests skip the middleware, so each one is given its
+    // client here, at the moment the kernel binds it.
+    $client = '2001:db8:1:2::1';
+    app()->rebinding('request', function ($app, Request $request) use (&$client): void {
+        $request->server->set('REMOTE_ADDR', $client);
+    });
+    $attempt = fn (string $email) => livewire(Login::class)
+        ->fillForm(['email' => $email, 'password' => 'Password123!'])
+        ->call('authenticate');
+
+    foreach (['2001:db8:1:2::1', '2001:db8:1:2::2'] as $n => $address) {
+        $client = $address;
+        $attempt("victim{$n}@example.org")->assertHasFormErrors();
+    }
+
+    // A third address in the same /64 is the same client, and its bucket is full.
+    $client = '2001:db8:1:2:ffff:ffff:ffff:ffff';
+    $attempt('victim9@example.org')->assertNotified()->assertHasNoFormErrors();
+
+    // The next /64 is another client: its attempt is checked, and fails as a wrong password.
+    $client = '2001:db8:1:3::1';
+    $attempt('victim9@example.org')->assertHasFormErrors();
+});
+
+it('keys the email bucket on the /64 of an IPv6 client', function () {
+    Filament::setCurrentPanel('organizer');
+
+    $keyFrom = function (string $address): string {
+        app()->instance('request', Request::create('/org/login', server: ['REMOTE_ADDR' => $address]));
+        $login = new Login;
+        $login->data = ['email' => 'a@example.org'];
+
+        return (fn (): string => $this->getRateLimitKey('authenticate'))->call($login);
+    };
+
+    expect($keyFrom('2001:db8:1:2::1'))->toBe($keyFrom('2001:db8:1:2:ffff:ffff:ffff:ffff'))
+        ->and($keyFrom('2001:db8:1:2::1'))->toBe((new Login)->rateLimitKeyFor('a@example.org', '2001:db8:1:2::/64'))
+        ->and($keyFrom('2001:db8:1:2::1'))->not->toBe($keyFrom('2001:db8:1:3::1'));
+});

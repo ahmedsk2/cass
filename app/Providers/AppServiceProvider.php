@@ -80,13 +80,13 @@ class AppServiceProvider extends ServiceProvider
         // serves every tenant's public pages and panels, and nothing caches
         // the result. Cap how often one account can ask for a download.
         RateLimiter::for('conference-assets', fn (Request $request): Limit => Limit::perMinute(10)
-            ->by('user:'.($request->user()?->getAuthIdentifier() ?? ClientIp::from($request))));
+            ->by('user:'.($request->user()?->getAuthIdentifier() ?? ClientIp::limiterKey($request))));
 
         // A signed URL is a bearer capability with a 30-minute life. If one
         // leaks, this is what keeps it from being used to stream a 10 MB PDF a
         // thousand times off a four-worker pool.
         RateLimiter::for('file-download', fn (Request $request): Limit => Limit::perMinute(60)
-            ->by(ClientIp::from($request)));
+            ->by(ClientIp::limiterKey($request)));
 
         // The author status page: CASS_STATUS_PAGE_RATE_LIMIT a minute per client
         // address, 20 by default (the design names no limit for this page). The
@@ -94,14 +94,14 @@ class AppServiceProvider extends ServiceProvider
         // tokens counts against one budget instead of getting a fresh one per guess.
         RateLimiter::for('submission-status', fn (Request $request): Limit => Limit::perMinute(
             (int) config('cass.status_page_rate_limit')
-        )->by(ClientIp::from($request)));
+        )->by(ClientIp::limiterKey($request)));
 
         // Spec section 9: invitation accept, 10/min/IP. Keyed on the address
         // only - not the token - so guessing tokens counts against one budget
         // instead of getting a fresh one per guess, exactly as on /s/{token}.
         RateLimiter::for('invitation-accept', fn (Request $request): Limit => Limit::perMinute(
             (int) config('cass.invitations.accept_rate_limit')
-        )->by(ClientIp::from($request)));
+        )->by(ClientIp::limiterKey($request)));
 
         // Registered by hand rather than by Laravel 13's listener discovery:
         // discovery matches one class to one event by the type hint of a

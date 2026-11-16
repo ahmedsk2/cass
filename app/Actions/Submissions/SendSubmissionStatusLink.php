@@ -10,6 +10,7 @@ use App\Enums\SubmissionStatus;
 use App\Exceptions\SubmissionNotAcceptable;
 use App\Models\EmailLog;
 use App\Models\Submission;
+use App\Support\ClientIp;
 use App\Support\Tokens\SubmissionToken;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -77,10 +78,12 @@ class SendSubmissionStatusLink
      * never capped. Null, with nothing written, once the address has had its
      * day's links (counted in email_logs, which survive a deploy) or the client
      * IP has sent its day's worth (counted in the rate limiter, sends only).
+     * $clientIp is the full address; the cap counts it as ClientIp::limiterKey()
+     * does, so an IPv6 client's whole /64 shares one day's worth.
      */
     public function handleForAuthor(Submission $submission, ?string $plainToken, string $clientIp): ?EmailLog
     {
-        $ipKey = 'status-link:'.$clientIp;
+        $ipKey = 'status-link:'.ClientIp::limiterKeyFor($clientIp);
         $sentToAddress = EmailLog::query()
             ->where('to_email', (string) $submission->correspondingAuthor()?->email)
             ->whereIn('template_key', [EmailTemplateKey::SubmissionDraftSaved->value, EmailTemplateKey::SubmissionReceived->value])

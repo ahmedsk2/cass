@@ -11,6 +11,7 @@ use App\Models\OrganizationInvitation;
 use App\Models\ReviewerInvitation;
 use App\Models\User;
 use App\Support\Tokens\InvitationToken;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -373,6 +374,41 @@ it('throttles the sign-in attempt separately, per email and address', function (
         ->set('password', 'correct-horse-99')
         ->call('signIn')
         ->assertHasNoErrors();
+});
+
+it('counts an IPv6 client on its /64 in both budgets of the page', function () {
+    User::factory()->create(['email' => 'new@example.org', 'password' => 'correct-horse-99']);
+    $limit = (int) config('cass.invitations.login_rate_limit');
+    // Livewire's test requests skip the middleware, so each one is given its
+    // client here, at the moment the kernel binds it.
+    $client = '2001:db8:1:2::1';
+    app()->rebinding('request', function ($app, Request $request) use (&$client): void {
+        $request->server->set('REMOTE_ADDR', $client);
+    });
+    $signIn = fn (string $password) => livewire(AcceptInvitation::class, ['token' => $this->plain])
+        ->set('password', $password)
+        ->call('signIn');
+
+    foreach (range(1, $limit) as $i) {
+        $client = '2001:db8:1:2::'.$i;
+        $signIn('wrong-password-11')->assertHasErrors(['password'])->assertSee(__('members.invite.wrong_password'));
+    }
+
+    // A fresh address in the same /64 is the same client: even the right
+    // password is refused rather than checked.
+    $client = '2001:db8:1:2:ffff:ffff:ffff:ffff';
+    $signIn('correct-horse-99')->assertHasErrors(['password'])->assertSee(__('members.invite.too_many_attempts'));
+
+    // The next /64 is another client, whose guess is checked.
+    $client = '2001:db8:1:3::1';
+    $signIn('wrong-password-11')->assertHasErrors(['password'])->assertSee(__('members.invite.wrong_password'));
+
+    // Both keys of the page are the /64: the sign-in budget, and the accept
+    // budget every one of these calls spent first.
+    expect(RateLimiter::attempts('invite-login:new@example.org|2001:db8:1:2::/64'))->toBe($limit)
+        ->and(RateLimiter::attempts('invitation-accept|2001:db8:1:2::/64'))->toBe($limit + 1)
+        ->and(RateLimiter::attempts('invitation-accept|2001:db8:1:3::/64'))->toBe(1)
+        ->and($this->invitation->fresh()?->accepted_at)->toBeNull();
 });
 
 it('refuses a reviewer invitation minted by somebody who has since left the organization', function () {
