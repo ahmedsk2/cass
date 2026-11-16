@@ -39,8 +39,8 @@ it('leaves the release and the deployed commit out of the compose file', functio
 });
 
 it('passes the disk row floors to the application container, each with its default', function () {
-    // Without these lines the two settings cannot change in production. The defaults are explicit because
-    // ${VAR:-} would hand env() an empty string, which (int) reads as 0, and 0 turns that floor off.
+    // The defaults are explicit because ${VAR:-} would hand env() an empty string, which (int) reads as 0,
+    // and 0 turns that floor off.
     $compose = (string) file_get_contents(base_path('docker-compose.production.yml'));
     preg_match('/^  app:\R(.*?)^  mysql:/ms', $compose, $app);
 
@@ -89,10 +89,14 @@ it('names the release after the deployed commit when SENTRY_RELEASE is empty or 
     expect($releaseUnder($release, $commit))->toBe($commit);
 })->with(['empty' => [''], 'unset' => [null]]);
 
-it('sends no release when the deployment has no commit to report', function (?string $release) use ($releaseUnder) {
-    // Every such deployment would share the one release 'unknown'.
-    expect($releaseUnder($release, 'unknown'))->toBeNull();
-})->with(['empty' => [''], 'unset' => [null]]);
+it('sends no release when the deployment has no commit to report', function (?string $release, string $commit) use ($releaseUnder) {
+    // Coolify's stand-ins for a commit it could not name: every such deployment would share one release.
+    expect($releaseUnder($release, $commit))->toBeNull();
+})->with([
+    'unknown, release empty' => ['', 'unknown'],
+    'unknown, release unset' => [null, 'unknown'],
+    'HEAD, release unset' => [null, 'HEAD'],
+]);
 
 it('sends no release when neither variable holds one', function (?string $release, ?string $commit) use ($releaseUnder) {
     expect($releaseUnder($release, $commit))->toBeNull();
