@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\ShortLinks;
 
 use App\Models\ShortLink;
+use App\Support\ClientIp;
 use Illuminate\Support\Facades\RateLimiter;
 
 class RecordShortLinkVisit
@@ -26,11 +27,13 @@ class RecordShortLinkVisit
      * writes an unbounded number of rows into short_link_visits, which the
      * organizer sharing page then has to read back. The second key drops the
      * IP, so a link's rows can only grow at a fixed rate however many
-     * addresses are claimed.
+     * addresses are claimed. The first counts the client as
+     * ClientIp::limiterKeyFor() keys it, so one IPv6 client rotating through
+     * its /64 cannot fill the second alone and starve the real scans.
      */
     public function handle(ShortLink $shortLink, string $clientIp): void
     {
-        $perClient = 'short-link-count:'.$shortLink->id.':'.$clientIp;
+        $perClient = 'short-link-count:'.$shortLink->id.':'.ClientIp::limiterKeyFor($clientIp);
         $perLink = 'short-link-count:'.$shortLink->id;
 
         if (RateLimiter::tooManyAttempts($perClient, max(1, (int) config('cass.short_link_rate_limit')))) {
