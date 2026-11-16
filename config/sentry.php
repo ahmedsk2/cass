@@ -17,9 +17,10 @@ return [
     // A secret, set only in the deployment's environment. Unset or empty: nothing is sent.
     'dsn' => env('SENTRY_LARAVEL_DSN'),
 
-    // Optional, for grouping events by release: in production, the deployed commit (docker-compose.production.yml).
-    // Unset or empty, as when no commit reached the container: no release, rather than an empty one.
-    'release' => env('SENTRY_RELEASE') ?: null,
+    // Optional, for grouping events by release. SENTRY_RELEASE when it is set; otherwise SOURCE_COMMIT, which Coolify
+    // sets in the container to the commit it deployed, or to 'unknown' or 'HEAD' when it could not name one: either
+    // would put every such deployment in one release, so it counts as none. Neither: no release, rather than an empty one.
+    'release' => env('SENTRY_RELEASE') ?: (in_array(env('SOURCE_COMMIT'), [null, '', 'unknown', 'HEAD'], true) ? null : env('SOURCE_COMMIT')),
 
     // Unset: APP_ENV.
     'environment' => env('SENTRY_ENVIRONMENT'),
