@@ -1,0 +1,6 @@
+# A rollback may deploy inside the 48-hour window before a deadline
+
+- **Context.** `CLAUDE.md` forbids a deploy within 48 hours of any open conference's submission or review deadline, so that a release cannot break the platform while authors or reviewers are at their busiest. Runbook "Q2. Roll back" needs a deploy to undo a release that broke production, and until now it told the session to ask the owner whether a rollback is an exception.
+- **Decision.** The owner, on 2026-11-16, on the session's recommendation: a rollback is the one exception, and only in its narrow form: a pull request that reverts the culprit merge (or every merge of the broken release, newest first, when the culprit is unknown) and changes nothing else, with CI green and the owner's approval, deployed through `tools/claude/deploy.sh` as any release. A forward fix, a revert bundled with other changes, or a release that was merely waiting stays forbidden inside the window.
+- **Consequence.** A broken release inside the window is undone within one CI run and one deploy rather than left live for two days; the session still asks the owner before the rollback itself, as for every deploy.
+- **To reverse.** Delete the exception from `CLAUDE.md`'s rule and from runbook "Q2. Roll back" step c, which then returns to asking the owner.

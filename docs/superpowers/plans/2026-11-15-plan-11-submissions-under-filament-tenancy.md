@@ -113,12 +113,12 @@ Read at `2d94284`, Laravel 13.40.0, Filament 5.11.1. Vendor paths are under `ven
 
 ## Environment and conventions for every task
 
-- **`$REPO`** is `/c/Users/khawl/Desktop/Ahmed/claude/projects/CASS/.claude/worktrees/agent-a2e7a488411e31c3f`, on branch `feat/c5-native-submission-tenancy`, stacked on `origin/test/d3-table-action-helpers`, with no upstream until Task 7. Write the path itself at the start of every Bash call. If `php -v` fails: `export PATH="/c/Users/khawl/Desktop/Ahmed/claude/tools/php84:/c/Users/khawl/Desktop/Ahmed/claude/tools/composer:$PATH"`.
+- **`$REPO`** is `/c/Users/<user>/Desktop/Ahmed/claude/projects/CASS/.claude/worktrees/agent-a2e7a488411e31c3f`, on branch `feat/c5-native-submission-tenancy`, stacked on `origin/test/d3-table-action-helpers`, with no upstream until Task 7. Write the path itself at the start of every Bash call. If `php -v` fails: `export PATH="/c/Users/<user>/Desktop/Ahmed/claude/tools/php84:/c/Users/<user>/Desktop/Ahmed/claude/tools/composer:$PATH"`.
 - **Setup, already done:**
   - `vendor/` and `public/build/` copied from the main checkout, whose `vendor/` matches the lock;
   - `.env` created from the example, and a key generated;
   - the baseline run, `php artisan test > /tmp/t-task-F-baseline.log 2>&1`.
-- **Logs.** Filter runs go to `/tmp/t-task-F-N-red.log` and `/tmp/t-task-F-N-green.log`, where N is the task. The final gates, in Task 7, are `/tmp/t-task-F.log`, `/tmp/stan-task-F.log` and `/tmp/pint-task-F.log`, plus `git diff --check`. Judge each by `rc=` alone. Git Bash's `/tmp` is `C:\Users\khawl\AppData\Local\Temp` for the Read and Write tools.
+- **Logs.** Filter runs go to `/tmp/t-task-F-N-red.log` and `/tmp/t-task-F-N-green.log`, where N is the task. The final gates, in Task 7, are `/tmp/t-task-F.log`, `/tmp/stan-task-F.log` and `/tmp/pint-task-F.log`, plus `git diff --check`. Judge each by `rc=` alone. Git Bash's `/tmp` is `C:\Users\<user>\AppData\Local\Temp` for the Read and Write tools.
 - **Commits.** Imperative subjects, `git add` by name, and the trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never commit with a gate red.
 - **Code and tests.**
   - Comments explain the code and never carry a plan, task, brief-item or fact number. When you touch a comment that has one, replace it with the fact itself.
@@ -364,7 +364,7 @@ it('creates a submission while the panel is booted for another tenant, and leave
   All four must give `rc=0`.
 - [ ] **Step 3: Commit, push and open the pull request.**
   - Commit the decision with `docs(decisions): 0018, submissions under Filament tenancy`, and push with `git push -u origin feat/c5-native-submission-tenancy`.
-  - Write the PR body with the Write tool to `C:\Users\khawl\AppData\Local\Temp\pr-F.md`, in the common brief's format:
+  - Write the PR body with the Write tool to `C:\Users\<user>\AppData\Local\Temp\pr-F.md`, in the common brief's format:
     - a paragraph of what and why, saying that the PR is stacked on #76 (`test/d3-table-action-helpers`) and will be retargeted to `main` once #76 merges;
     - "Files changed";
     - "For review": no sensitive file, no migration, no environment variable; the tests added; the three tests adapted, and why; the bite-check log; the four gate logs with their `rc`;

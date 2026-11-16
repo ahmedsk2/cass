@@ -23,7 +23,7 @@ Engineering
 
 Security-sensitive changes
 
-- These paths are sensitive: `app/Policies`, `app/Support/Tokens`, `app/Support/Turnstile.php`, `app/Support/ClientIp.php`, `app/Http/Middleware`, `app/Filament/Auth`, `bootstrap/app.php`, `config/`, `database/migrations`, `docker/`, `Dockerfile`, `docker-compose.*.yml`, `.github/`, `.claude/`, `tools/backup/`. A PR that touches one lists each such file with one line of why, and the owner approves that list before merge.
+- These paths are sensitive: `app/Policies`, `app/Support/Tokens`, `app/Support/Turnstile.php`, `app/Support/ClientIp.php`, `app/Http/Middleware`, `app/Filament/Auth`, `bootstrap/app.php`, `config/`, `database/migrations`, `docker/`, `Dockerfile`, `docker-compose.*.yml`, `.github/`, `.claude/`, `tools/backup/`, `.gitleaks.toml`, `.gitleaksignore`. A PR that touches one lists each such file with one line of why, and the owner approves that list before merge.
 - A Filament bump re-publishes the three nonce'd views and updates their digests in the same commit. Never update a digest alone.
 
 Dependencies
@@ -34,7 +34,7 @@ Production
 
 - A session never holds production credentials and never acts on the host, Coolify, Cloudflare or OCI unattended. A deploy happens only when the owner asks for it in that session, from CI-green `main`, through `tools/claude/deploy.sh`.
 - Migrations never run at container boot. They are additive (expand now, contract in a later release) and the owner runs them. A migration release begins with a hand-run `cass-backup` and ends with `migrate:status` and `cass:health` both clean.
-- No deploy within 48 hours of any open conference's submission or review deadline. `db:seed` ran once at first deploy and never runs again.
+- No deploy within 48 hours of any open conference's submission or review deadline, except a rollback that reverts the culprit of a broken release and nothing else (`docs/decisions/0030-a-rollback-may-deploy-inside-the-48-hour-window.md`). `db:seed` ran once at first deploy and never runs again.
 
 Data
 

@@ -33,7 +33,7 @@ Each procedure is the shortest correct path; the section a step links holds the 
 
 - **a.** Did a release do it? `/up`, `sudo docker ps` and Coolify's deployment list ([When an alert fires](#when-an-alert-fires)).
 - **b.** On the PC ([Rollback](#rollback)): `git fetch origin && git switch -c revert-<sha> origin/main`; then, newest first, `git revert -m 1 <merge sha>` for each merge `git log --first-parent --merges <running>..origin/main` lists, or only the culprit's when it is known; then `git push -u origin revert-<sha>` and `gh pr create --base main --title "Revert <sha>" --body "<why>"`.
-- **c.** CI green, the owner's approval and the merge, then [Q1](#q1-every-release) from a. If Q1 b's 48-hour rule stops it, ask the owner whether a rollback is an exception.
+- **c.** CI green, the owner's approval and the merge, then [Q1](#q1-every-release) from a. Q1 b's 48-hour rule does not stop a rollback that reverts the culprit and nothing else (decision 0030); it stops any other release.
 - **d.** Coolify's "redeploy the previous successful build" is unverified ([Rollback](#rollback)).
 - **e.** Never roll the schema back: migrations are additive.
 
@@ -1479,10 +1479,10 @@ One file's failure does not stop the others; the exit is the first failure's. Ev
 
 #### The key
 
-Made, stored and checked on the PC, in the tools folder, in Git Bash or in Windows PowerShell; never on the host:
+Made, stored and checked on the PC, in the tools folder (`<tools>` below, the folder `docs/dev-setup.md` names), in Git Bash or in Windows PowerShell; never on the host:
 
 ```bash
-cd /c/Users/khawl/Desktop/Ahmed/claude/tools
+cd <tools>
 curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-windows-amd64.zip
 echo 'f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7  age-v1.3.2-windows-amd64.zip' | sha256sum -c -
 powershell -NoProfile -Command "Expand-Archive age-v1.3.2-windows-amd64.zip -DestinationPath . -Force"
@@ -1494,7 +1494,7 @@ read -rs -p 'AGE-SECRET-KEY line: ' K; echo; printf '%s\n' "$K" | ./age/age.exe 
 Windows PowerShell 5.1, where the owner made the key, does not run those lines as written: `curl` there is an alias of `Invoke-WebRequest`, `&&` is not a statement separator, and there is no `sha256sum`, `read -s` or `printf`. The same seven lines, from the same URL against the same digest:
 
 ```powershell
-cd C:\Users\khawl\Desktop\Ahmed\claude\tools
+cd <tools>
 curl.exe -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-windows-amd64.zip
 (Get-FileHash .\age-v1.3.2-windows-amd64.zip -Algorithm SHA256).Hash -eq 'f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7'   # True
 Expand-Archive .\age-v1.3.2-windows-amd64.zip -DestinationPath . -Force
@@ -1568,7 +1568,7 @@ Prove the alert as for the other monitors, without the URL on a command line: `f
 
 ### Restore drill from the off-host copy — monthly, and not optional
 
-The owner, on the PC in Git Bash with Docker Desktop running, and on the host in their own terminal; never in a Claude session, and in a folder outside every repository. It restores the copy the host's manifest names, not whichever object is newest: anything uploaded after it, junk or forgery, is never picked. It proves the copy is the host's file byte for byte, then that it restores. The decrypted data exists only in pipes and in a container held in memory, or on the PC's encrypted disk where MySQL spills over; the private key is pasted at a prompt. At every third drill, type the key from the paper copy instead of pasting it, and ask the session to re-run the audit (**Installing the off-host copy**). Once per PC, the CLI: `python -m venv <tools>/oci-cli && <tools>/oci-cli/Scripts/pip install --only-binary :all: 'oci-cli==3.96.0'`, `<tools>` being `/c/Users/khawl/Desktop/Ahmed/claude/tools`. Once, too: check that Windows device encryption is on (Settings, Privacy and security, Device encryption).
+The owner, on the PC in Git Bash with Docker Desktop running, and on the host in their own terminal; never in a Claude session, and in a folder outside every repository. It restores the copy the host's manifest names, not whichever object is newest: anything uploaded after it, junk or forgery, is never picked. It proves the copy is the host's file byte for byte, then that it restores. The decrypted data exists only in pipes and in a container held in memory, or on the PC's encrypted disk where MySQL spills over; the private key is pasted at a prompt. At every third drill, type the key from the paper copy instead of pasting it, and ask the session to re-run the audit (**Installing the off-host copy**). Once per PC, the CLI: `python -m venv <tools>/oci-cli && <tools>/oci-cli/Scripts/pip install --only-binary :all: 'oci-cli==3.96.0'`, `<tools>` being the tools folder and `<repo>` the clone of this repository, both named in `docs/dev-setup.md`. Once, too: check that Windows device encryption is on (Settings, Privacy and security, Device encryption).
 
 First on the host, with `cass_container` pasted. The first command reads the manifest's last `db/` and `storage/` rows and prints the region, then two lines to paste as they are, here and on the PC: `F=… DB=…` and `G=… ST=…`, the file and its object, each followed after a `#` by the object's bytes, MD5 and upload time. Then the two files' digests, the dump's completion time, and two counts per table: the rows created up to five minutes before the dump finished, and those created before it finished.
 
@@ -1587,7 +1587,7 @@ sudo grep -F "$G (" /var/log/cass-backup.log | tail -n 1                     # t
 Then on the PC, the two objects of those rows, by name, signed in for at most an hour; `<region>` is the one the host printed:
 
 ```bash
-set -o pipefail; T=/c/Users/khawl/Desktop/Ahmed/claude/tools; OCI=$T/oci-cli/Scripts/oci.exe; AGE=$T/age/age.exe
+set -o pipefail; T=<tools>; OCI=$T/oci-cli/Scripts/oci.exe; AGE=$T/age/age.exe
 "$OCI" session authenticate --region <region> --profile-name cass-drill --config-location ~/.oci/cass-drill.config
 X=(--config-file ~/.oci/cass-drill.config --profile cass-drill --auth security_token)
 mkdir -p ~/cass-drill && cd ~/cass-drill && NS=$("$OCI" os ns get "${X[@]}" --query data --raw-output)
@@ -1597,7 +1597,7 @@ mkdir -p ~/cass-drill && cd ~/cass-drill && NS=$("$OCI" os ns get "${X[@]}" --qu
 for p in "db.age $DB" "st.age $ST"; do set -- $p
   [ "$(sha256sum < "$1" | cut -d' ' -f1)" = "$(sed -E 's/.*\.([0-9a-f]{64})\.age$/\1/' <<< "$2")" ] && echo "$1: name hash OK"
   echo "$1: $(wc -c < "$1") bytes, MD5 $(openssl dgst -md5 -binary "$1" | base64)"; done   # as the host printed after its #
-IMG=$(grep -oE 'mysql:8\.4@sha256:[0-9a-f]{64}' /c/Users/khawl/Desktop/Ahmed/claude/projects/CASS/docker-compose.production.yml)
+IMG=$(grep -oE 'mysql:8\.4@sha256:[0-9a-f]{64}' <repo>/docker-compose.production.yml)
 docker rm -f -v cass-drill > /dev/null 2>&1
 docker run -d --name cass-drill --network none --tmpfs /var/lib/mysql:rw,size=1g --tmpfs /tmp:rw,size=256m -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=cass_restore "$IMG" --skip-log-bin
 for i in $(seq 60); do docker exec cass-drill mysql -h127.0.0.1 -uroot -e 'SELECT 1' > /dev/null 2>&1 && break; sleep 3; done
