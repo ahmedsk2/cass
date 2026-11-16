@@ -35,11 +35,13 @@ final class ClientIp
 
     /**
      * The key a rate limit counts this client under: its address for IPv4, and
-     * the /64 its address sits in for IPv6. One IPv6 subscriber is routed a whole
-     * /64 and can take a fresh address in it for every request, so a limit keyed
-     * on the full address would never fill; the /64 is what one subscriber
-     * holds, as the single address is for IPv4. Clients that share a /64, like
-     * clients behind one IPv4 NAT address, share a budget.
+     * the /64 its address sits in for IPv6. One IPv6 subscriber is routed at
+     * least a /64 and can take a fresh address in it for every request, so a
+     * limit keyed on the full address would never fill. The /64 is the smallest
+     * block a subscriber holds, as the single address is for IPv4, not always
+     * the whole of it: one delegated a /56 or a /48 still has 256 or 65,536
+     * budgets. Clients that share a /64, like clients behind one IPv4 NAT
+     * address, share a budget.
      *
      * Only for limiter keys: from() stays the full address, for anything that
      * sends, stores or logs one (Turnstile's remoteip, for one).
