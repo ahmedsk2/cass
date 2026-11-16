@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 use App\Enums\OrganizationRole;
 use App\Filament\Auth\Login;
+use App\Livewire\Public\AcceptInvitation;
+use App\Livewire\Public\ContactForm;
+use App\Livewire\Public\RegisterOrganization;
+use App\Livewire\Public\SubmissionForm;
+use App\Models\Conference;
 use App\Models\Organization;
+use App\Models\OrganizationInvitation;
 use App\Models\User;
 use App\Support\ClientIp;
+use App\Support\Tokens\InvitationToken;
 use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -163,6 +170,44 @@ it('keys the four named limiters on the /64 of an IPv6 guest', function (string 
         ->and($keyFor('2001:db8:1:2::1'))->not->toBe($keyFor('2001:db8:1:3::1'))
         ->and($keyFor('203.0.113.7'))->not->toBe($keyFor('203.0.113.8'));
 })->with(['conference-assets', 'file-download', 'submission-status', 'invitation-accept']);
+
+it('keys each public form on the /64 of an IPv6 client', function (string $prefix, Closure $spend) {
+    // Livewire's test requests skip the middleware, so each one is given its
+    // client here, at the moment the kernel binds it.
+    app()->rebinding('request', fn ($app, Request $request) => $request->server->set('REMOTE_ADDR', '2001:db8:1:2::a'));
+
+    $spend();
+
+    expect(RateLimiter::attempts($prefix.'2001:db8:1:2::/64'))->toBe(1)
+        ->and(RateLimiter::attempts($prefix.'2001:db8:1:2::a'))->toBe(0);
+})->with([
+    // Each call spends its key once. A filled honeypot reaches a form's key
+    // before anything else is checked, and it is the only way to the
+    // submission's penalty key here, where the suite's minimum fill time is 0.
+    'contact' => ['contact:', fn () => livewire(ContactForm::class)->set('website_confirm', 'x')->call('send')],
+    'registration' => ['register:', fn () => livewire(RegisterOrganization::class)->set('website_confirm', 'x')->call('register')],
+    'submission' => ['submission:', function (): void {
+        $organization = Organization::factory()->approved()->create(['primary_color' => '#0F4C8A', 'accent_color' => '#B45309']);
+        livewire(SubmissionForm::class, ['organization' => $organization, 'conference' => Conference::factory()->for($organization)->published()->create()])
+            ->call('submit');
+    }],
+    'submission penalty' => ['submission-penalty:', function (): void {
+        $organization = Organization::factory()->approved()->create(['primary_color' => '#0F4C8A', 'accent_color' => '#B45309']);
+        livewire(SubmissionForm::class, ['organization' => $organization, 'conference' => Conference::factory()->for($organization)->published()->create()])
+            ->set('website_confirm', 'x')
+            ->call('submit');
+    }],
+    'invitation accept' => ['invitation-accept|', function (): void {
+        $plain = InvitationToken::generate();
+        OrganizationInvitation::factory()->create(['email' => 'new@example.org', 'token_hash' => InvitationToken::hash($plain)]);
+        livewire(AcceptInvitation::class, ['token' => $plain])->call('accept');
+    }],
+    'invitation sign-in' => ['invite-login:new@example.org|', function (): void {
+        $plain = InvitationToken::generate();
+        OrganizationInvitation::factory()->create(['email' => 'new@example.org', 'token_hash' => InvitationToken::hash($plain)]);
+        livewire(AcceptInvitation::class, ['token' => $plain])->set('password', 'wrong-password-11')->call('signIn');
+    }],
+]);
 
 it('stops one IPv6 client spraying many accounts from fresh addresses in its /64', function () {
     config()->set('cass.security.login_ip_limit', 2);
