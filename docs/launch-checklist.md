@@ -205,6 +205,8 @@ On 2026-11-14 at 18:17 UTC the deploy of `4a2ca15` (no hand backup: the MySQL di
 change) re-ran the same two lines, nothing pending and `cass:health` OK, beside its eight probes;
 page timings after it: not recorded.
 
+On 2026-11-16 the deploy of `bbb2287` (20:32 UTC; no hand backup: no migration and the MySQL digest unchanged) re-ran the same two lines, 36 applied with nothing pending and seven rows OK, beside its eight probes; the public conference page answered in 34 ms and the submission form in 37 ms, medians over five samples each; supervisor's four programs RUNNING; `queue:failed` empty; `about` production, debug off, config, events, routes and views cached. The deploy of `6cc6b5b` earlier that day (02:57 UTC) is in `docs/HANDOVER.md`'s Production row.
+
 - [x] `curl -sI https://cass.towardpcc.com/up` → `200`.
 - [ ] `curl -sI https://cass.towardpcc.com/ | grep -i content-security-policy`
       → an **enforcing** header, not `-Report-Only`. Deploy with
