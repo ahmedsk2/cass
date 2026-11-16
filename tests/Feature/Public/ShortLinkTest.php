@@ -110,6 +110,30 @@ it('caps counting per client ip but never refuses the redirect', function () {
         ->and(ShortLinkVisit::count())->toBe(3);
 });
 
+it('counts an IPv6 client on its /64, so a fresh address inside it is no fresh budget', function () {
+    // Through the proxy tier, as above. Keyed on the full address, one IPv6
+    // client could fill the link's whole per-link budget alone and leave real
+    // scans uncounted behind it.
+    config(['cass.short_link_rate_limit' => 2, 'cass.short_link_rate_limit_per_link' => 60]);
+
+    $conference = Conference::factory()->for(Organization::factory()->approved())->published()->create();
+    $link = ShortLink::forTarget($conference);
+
+    foreach (['2001:db8:1:2::1', '2001:db8:1:2::2', '2001:db8:1:2:ffff:ffff:ffff:ffff'] as $client) {
+        withServerVariables(['REMOTE_ADDR' => '10.0.0.5'])
+            ->get('/q/'.$link->code, ['CF-Connecting-IP' => $client])
+            ->assertRedirect($conference->publicUrl())->assertStatus(302);
+    }
+
+    // The next /64 is another client, with a budget of its own.
+    withServerVariables(['REMOTE_ADDR' => '10.0.0.5'])
+        ->get('/q/'.$link->code, ['CF-Connecting-IP' => '2001:db8:1:3::1'])
+        ->assertRedirect($conference->publicUrl())->assertStatus(302);
+
+    expect($link->fresh()?->clicks)->toBe(3)
+        ->and(ShortLinkVisit::count())->toBe(3);
+});
+
 it('gives a direct caller no extra budget however it forges CF-Connecting-IP', function () {
     // The header is only trusted from the proxy tier, so a peer talking to the
     // origin directly spends one budget - its own address - whatever it claims.

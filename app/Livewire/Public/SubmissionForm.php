@@ -675,7 +675,7 @@ class SubmissionForm extends Component
      */
     private function passesBotChecks(): bool
     {
-        $key = 'submission:'.ClientIp::from(request());
+        $key = 'submission:'.ClientIp::limiterKey(request());
 
         // A separate key for the penalties. RateLimiter::hit() sets the decay
         // only on the *first* hit for a key (Illuminate\Cache\RateLimiter::
@@ -683,7 +683,7 @@ class SubmissionForm extends Component
         // 60-second budget on one key would make the limit five per ten minutes
         // for everyone behind that address - not the 5/min/IP spec section 9
         // gives real authors, who on a conference NAT share one IP.
-        $penaltyKey = 'submission-penalty:'.ClientIp::from(request());
+        $penaltyKey = 'submission-penalty:'.ClientIp::limiterKey(request());
 
         if ($this->website_confirm !== '') {
             RateLimiter::hit($penaltyKey, 600);

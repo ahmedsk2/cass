@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Notifications\NewSubmissionNotice;
 use App\Support\Turnstile;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -809,6 +810,50 @@ it('blocks the sixth save or submit from one address in a minute', function () {
     ]))->call('submit')->assertHasErrors();
 
     expect(Submission::query()->count())->toBe(5);
+});
+
+it('counts an IPv6 author on the /64, so a fresh address inside it is no fresh budget', function () {
+    // Livewire's test requests skip the middleware, so each one is given its
+    // client here, at the moment the kernel binds it.
+    $client = '2001:db8:1:2::1';
+    app()->rebinding('request', function ($app, Request $request) use (&$client): void {
+        $request->server->set('REMOTE_ADDR', $client);
+    });
+    $form = fn () => fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]));
+
+    foreach (range(1, 5) as $i) {
+        $client = '2001:db8:1:2::'.$i;
+        $form()->call('saveDraft')->assertHasNoErrors();
+    }
+
+    $client = '2001:db8:1:2:ffff:ffff:ffff:ffff';
+    $form()->call('submit')->assertHasErrors(['title']);
+    expect(Submission::query()->count())->toBe(5);
+
+    // The next /64 is another client, with a budget of its own.
+    $client = '2001:db8:1:3::1';
+    $form()->call('submit')->assertHasNoErrors();
+    expect(Submission::query()->count())->toBe(6);
+});
+
+it('sends turnstile the full IPv6 address, not the /64 the limits count', function () {
+    config()->set('cass.turnstile.site_key', 'site-key');
+    config()->set('cass.turnstile.secret_key', 'secret-key');
+    Http::fake([Turnstile::VERIFY_URL => Http::response(['success' => true], 200)]);
+    app()->rebinding('request', fn ($app, Request $request) => $request->server->set('REMOTE_ADDR', '2001:db8:1:2::a'));
+
+    fillForm(livewire(SubmissionForm::class, [
+        'organization' => $this->organization,
+        'conference' => $this->conference,
+    ]))
+        ->set('turnstileToken', 'a-token')
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    Http::assertSent(fn ($request): bool => $request['remoteip'] === '2001:db8:1:2::a');
 });
 
 it('renders the turnstile widget only when both keys are configured', function () {

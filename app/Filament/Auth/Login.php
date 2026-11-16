@@ -20,10 +20,11 @@ use Illuminate\Support\Facades\RateLimiter;
  * (vendor/danharrin/livewire-rate-limiting/src/WithRateLimiting.php:27) — which
  * is neither half of what the spec asks. It omits the email, so five wrong
  * passwords from one address lock every account behind that address; and it
- * reads request()->ip() rather than App\Support\ClientIp::from(), which is the
- * only reader in this application that ignores CF-Connecting-IP. Behind
- * Cloudflare that second point is the serious one: without the real client
- * address, every login attempt on the platform shares one bucket.
+ * reads request()->ip(), which ignores CF-Connecting-IP. Behind Cloudflare that
+ * second point is the serious one: without the real client address, every login
+ * attempt on the platform shares one bucket. Both buckets below key the client
+ * on App\Support\ClientIp::limiterKey(), which reads that header: the client's
+ * address for IPv4, its /64 for IPv6.
  *
  * getRateLimitKey() is protected, so this subclass is the whole fix, and all
  * three panel providers point ->login() at it.
@@ -36,7 +37,8 @@ class Login extends BaseLogin
      *
      * The address is lower-cased: an attacker retrying with a capital letter
      * must not get a fresh budget, and users.email is stored lower-cased
-     * anyway.
+     * anyway. $ip is the client as ClientIp::limiterKey() keys it, so an IPv6
+     * client spends one budget across its /64.
      */
     public function rateLimitKeyFor(string $email, string $ip): string
     {
@@ -68,7 +70,7 @@ class Login extends BaseLogin
         // getRateLimitKey() twice (itself, then hitRateLimiter()), so a hit
         // inside it would burn two attempts per submit.
         $ip = ClientIp::from(request());
-        $key = $this->ipRateLimitKey($ip);
+        $key = $this->ipRateLimitKey(ClientIp::limiterKeyFor($ip));
         $limit = max(1, (int) config('cass.security.login_ip_limit'));
 
         if (RateLimiter::tooManyAttempts($key, $limit)) {
@@ -100,6 +102,6 @@ class Login extends BaseLogin
         // email from being unmetered.
         $email = is_string($this->data['email'] ?? null) ? $this->data['email'] : '';
 
-        return $this->rateLimitKeyFor($email, ClientIp::from(request()));
+        return $this->rateLimitKeyFor($email, ClientIp::limiterKey(request()));
     }
 }

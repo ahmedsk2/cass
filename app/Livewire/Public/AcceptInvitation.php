@@ -95,7 +95,7 @@ class AcceptInvitation extends Component
         // address cannot spend another account's budget and one attacker cannot
         // get a fresh budget per guessed address. Kept even though nothing here
         // signs anybody in: the password check below is still an oracle.
-        $key = 'invite-login:'.$invitation->invitedEmail().'|'.ClientIp::from(request());
+        $key = 'invite-login:'.$invitation->invitedEmail().'|'.ClientIp::limiterKey(request());
 
         if (RateLimiter::tooManyAttempts($key, (int) config('cass.invitations.login_rate_limit'))) {
             $this->addError('password', __('members.invite.too_many_attempts'));
@@ -231,7 +231,7 @@ class AcceptInvitation extends Component
      */
     private function withinRateLimit(): bool
     {
-        $key = 'invitation-accept|'.ClientIp::from(request());
+        $key = 'invitation-accept|'.ClientIp::limiterKey(request());
 
         if (RateLimiter::tooManyAttempts($key, (int) config('cass.invitations.accept_rate_limit'))) {
             $this->addError('token', __('members.invite.too_many_attempts'));
