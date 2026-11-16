@@ -116,4 +116,7 @@ tools/claude/workflow-args.test.mjs` (also run by CI's `scripts` job).
   verbatim, then `composer update <packages> --with-all-dependencies`), so the lock is resolved
   once rather than merged textually. #60 did this for 5.11.1 on 2026-11-05 (sidebar and base
   layout views changed; `EditProfile::content()` and TipTap's stylesheet did not); Dependabot's
-  #47 and #61 were closed with a reason.
+  #47 and #61 were closed with a reason. Missed once: on 2026-11-16 #85 (5.11.1 to 5.11.2) merged from
+  Dependabot's PR at the owner's word, the session reading this rule only afterwards; the digest test was
+  green on the PR and against the merged lock, `composer validate --strict` passed on that lock, and the
+  pins on `EditProfile::content()` and the TipTap styles held, so nothing was due. The rule stands.
