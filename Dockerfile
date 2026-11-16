@@ -12,7 +12,7 @@
 # .github/dependabot.yml raises a weekly pull request when any of these moves.
 # Do not "unpin to get the security fix" - let Dependabot open the PR, so the
 # change is reviewed and the digest stays recorded.
-FROM composer:2@sha256:af98f42dfff7c68ba8d53c2164fd9fde1087b7d449514baa38c418b1f6bc4bac AS vendor
+FROM composer:2@sha256:ca11f643d7791ebdd90a34fc20caf11380d434007ae539a9ea75cd9212e13dca AS vendor
 WORKDIR /build
 COPY composer.json composer.lock ./
 # intl and gd are installed in the runtime stage; the platform check is waived only here.
@@ -28,7 +28,7 @@ RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-p
 # resources/css/app.css, app/Filament for the theme.
 # tests/Unit/DockerAssetsStageTest.php holds this list to the @source lines.
 # npm ci runs before any of it, so its layer survives a PHP-only change.
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS assets
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS assets
 WORKDIR /build
 COPY package*.json vite.config.js ./
 RUN npm ci
@@ -39,7 +39,7 @@ COPY app/Livewire ./app/Livewire
 COPY --from=vendor /build/vendor/filament ./vendor/filament
 RUN npm run build
 
-FROM php:8.4-fpm-alpine@sha256:15462d03828e68ae806c552403360edc5269a830d358646a9564dbebe632b787 AS runtime
+FROM php:8.4-fpm-alpine@sha256:511af6fa3ef55c4ea0c68bb47096ba4b81771ab4949bde7813807bf177efda11 AS runtime
 RUN apk add --no-cache nginx supervisor su-exec icu-libs libpng libjpeg-turbo freetype libzip mysql-client tzdata \
  && apk add --no-cache --virtual .build icu-dev libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
  && docker-php-ext-configure gd --with-freetype --with-jpeg \
