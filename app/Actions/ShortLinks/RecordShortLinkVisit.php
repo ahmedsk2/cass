@@ -21,15 +21,13 @@ class RecordShortLinkVisit
      * still stops a script inflating the total, and the visitor always reaches
      * the page.
      *
-     * There are two ceilings because the client IP comes from a header the
-     * client controls (CF-Connecting-IP, see App\Support\ClientIp): with only
-     * the per-client one, a single host mints a fresh budget per request and
-     * writes an unbounded number of rows into short_link_visits, which the
-     * organizer sharing page then has to read back. The second key drops the
-     * IP, so a link's rows can only grow at a fixed rate however many
-     * addresses are claimed. The first counts the client as
-     * ClientIp::limiterKeyFor() keys it, so one IPv6 client rotating through
-     * its /64 cannot fill the second alone and starve the real scans.
+     * There are two ceilings. CF-Connecting-IP is trusted only from the proxy
+     * tier (App\Support\ClientIp::from()), so a client cannot forge the address
+     * it is counted under, and the first key counts that client as
+     * ClientIp::limiterKeyFor() keys it, so one IPv6 subscriber rotating
+     * through its /64 spends one budget. The second key drops the address, so
+     * however many clients scan a link, its rows in short_link_visits, which
+     * the organizer sharing page reads back, can only grow at a fixed rate.
      */
     public function handle(ShortLink $shortLink, string $clientIp): void
     {
