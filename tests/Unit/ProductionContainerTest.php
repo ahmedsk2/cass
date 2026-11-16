@@ -18,15 +18,24 @@ it('keeps argument values out of every trace the image records', function () {
         ->and($ini['zend.exception_ignore_args'] ?? null)->toBeTrue();
 });
 
-it('passes the former application keys and the deployed commit to the application container', function () {
-    // A variable set in Coolify reaches the container only through ${...} in this file. Without
-    // APP_PREVIOUS_KEYS an APP_KEY rotation leaves every stored second factor unreadable.
+it('passes the former application keys to the application container', function () {
+    // Without APP_PREVIOUS_KEYS an APP_KEY rotation leaves every stored second factor unreadable.
     $compose = (string) file_get_contents(base_path('docker-compose.production.yml'));
     preg_match('/^  app:\R(.*?)^  mysql:/ms', $compose, $app);
 
-    expect($app[1] ?? '')
-        ->toMatch('/^ {6}APP_PREVIOUS_KEYS: \$\{APP_PREVIOUS_KEYS:-\}$/m')
-        ->toMatch('/^ {6}SENTRY_RELEASE: \$\{SOURCE_COMMIT:-\}$/m');
+    expect($app[1] ?? '')->toMatch('/^ {6}APP_PREVIOUS_KEYS: \$\{APP_PREVIOUS_KEYS:-\}$/m');
+});
+
+it('leaves the release and the deployed commit out of the compose file', function () {
+    // Coolify creates an application variable for every ${...} this file names, empty unless set, and adds its
+    // own SOURCE_COMMIT, the deployed commit, to the container only while the application has no variable of
+    // that name; a SENTRY_RELEASE line here would override the one set in Coolify. config/sentry.php reads
+    // SENTRY_RELEASE when it is set and the commit otherwise.
+    $compose = (string) file_get_contents(base_path('docker-compose.production.yml'));
+
+    expect($compose)
+        ->not->toContain('SOURCE_COMMIT')
+        ->not->toContain('SENTRY_RELEASE');
 });
 
 it('passes the disk row floors to the application container, each with its default', function () {
@@ -41,29 +50,55 @@ it('passes the disk row floors to the application container, each with its defau
 });
 
 /**
- * config/sentry.php read again under the given SENTRY_RELEASE, as the application reads it at boot. The compose
- * file sets the variable from SOURCE_COMMIT, so a deploy where Coolify passes no commit sets it to an empty
- * string, which env() returns as '' rather than null.
+ * config/sentry.php read again under the given SENTRY_RELEASE and SOURCE_COMMIT, as the application reads it at
+ * boot; null leaves a variable unset. Coolify sets SOURCE_COMMIT in the container to the deployed commit, or to
+ * 'unknown' when the deployment has none. An empty variable is one env() returns as '' rather than null.
  */
-$releaseUnder = function (string $release): mixed {
-    $_SERVER['SENTRY_RELEASE'] = $_ENV['SENTRY_RELEASE'] = $release;
-    putenv("SENTRY_RELEASE={$release}");
+$releaseUnder = function (?string $release, ?string $commit): mixed {
+    foreach (['SENTRY_RELEASE' => $release, 'SOURCE_COMMIT' => $commit] as $name => $value) {
+        if ($value === null) {
+            unset($_SERVER[$name], $_ENV[$name]);
+            putenv($name);
+
+            continue;
+        }
+
+        $_SERVER[$name] = $_ENV[$name] = $value;
+        putenv("{$name}={$value}");
+    }
+
     config(['sentry' => require config_path('sentry.php')]);
 
     return config('sentry.release');
 };
 
 afterEach(function () {
-    unset($_SERVER['SENTRY_RELEASE'], $_ENV['SENTRY_RELEASE']);
-    putenv('SENTRY_RELEASE');
+    foreach (['SENTRY_RELEASE', 'SOURCE_COMMIT'] as $name) {
+        unset($_SERVER[$name], $_ENV[$name]);
+        putenv($name);
+    }
 });
 
-it('sends no release when the deployed commit arrives empty', function () use ($releaseUnder) {
-    expect($releaseUnder(''))->toBeNull();
+it('names the release after SENTRY_RELEASE when it is set, whatever the commit', function () use ($releaseUnder) {
+    expect($releaseUnder('cass-2026.11', '0123456789abcdef0123456789abcdef01234567'))->toBe('cass-2026.11');
 });
 
-it('passes the deployed commit through as the release', function () use ($releaseUnder) {
+it('names the release after the deployed commit when SENTRY_RELEASE is empty or unset', function (?string $release) use ($releaseUnder) {
     $commit = '0123456789abcdef0123456789abcdef01234567';
 
-    expect($releaseUnder($commit))->toBe($commit);
-});
+    expect($releaseUnder($release, $commit))->toBe($commit);
+})->with(['empty' => [''], 'unset' => [null]]);
+
+it('sends no release when the deployment has no commit to report', function (?string $release) use ($releaseUnder) {
+    // Every such deployment would share the one release 'unknown'.
+    expect($releaseUnder($release, 'unknown'))->toBeNull();
+})->with(['empty' => [''], 'unset' => [null]]);
+
+it('sends no release when neither variable holds one', function (?string $release, ?string $commit) use ($releaseUnder) {
+    expect($releaseUnder($release, $commit))->toBeNull();
+})->with([
+    'both empty' => ['', ''],
+    'both unset' => [null, null],
+    'release empty, commit unset' => ['', null],
+    'release unset, commit empty' => [null, ''],
+]);
