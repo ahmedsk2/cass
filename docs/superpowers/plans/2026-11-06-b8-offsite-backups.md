@@ -10,7 +10,7 @@ Three steps and nothing else; the session does the rest with you present ("After
 
 1. **Generate the age key pair on your PC.** First turn clipboard history off (Settings, System, Clipboard, and its cloud sync), or clear it after step 2. Then, in Git Bash:
    ```bash
-   cd /c/Users/khawl/Desktop/Ahmed/claude/tools
+   cd /c/Users/<user>/Desktop/Ahmed/claude/tools
    curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-windows-amd64.zip
    echo 'f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7  age-v1.3.2-windows-amd64.zip' | sha256sum -c -
    powershell -NoProfile -Command "Expand-Archive age-v1.3.2-windows-amd64.zip -DestinationPath . -Force"
@@ -39,10 +39,10 @@ Three steps and nothing else; the session does the rest with you present ("After
 **Spec and brief:** `docs/reviews/2026-10-16-expert-brief.md`, phase-B row B8 (its "Done when" is this plan's acceptance), "Question 4, operations" (the rows "Survive losing the host" and "Know the backup is a backup") and its point 4 on backups readable at rest; `docs/superpowers/specs/2026-09-10-cass-v2-design.md` section 8 (the NAS sync that was never connected); `docs/decisions/0015-error-tracking-and-heartbeats.md` (pings on success, ping URLs in root-only files); `docs/decisions/0011-repository-public-for-ci.md` (so no namespace, OCID or address goes into a file here).
 
 **Environment facts for every command below**
-- `$REPO` is the tree you implement in: the worktree the run gives you, branch `plan-10-b8-offsite-backups` from `main` at `d417c8a`, or your task's own `CASS-wt-N` worktree and branch. Shell variables do not survive between Bash calls: begin every call with `REPO=<that path>;` or write the path itself, and `cd $REPO`. Git Bash, after `export PATH="/c/Users/khawl/Desktop/Ahmed/claude/tools/php84:/c/Users/khawl/Desktop/Ahmed/claude/tools/composer:$PATH"`.
-- A fresh worktree has no `vendor/`, `node_modules/`, `public/build` or `.env`. Before the first PHP gate: `php /c/Users/khawl/Desktop/Ahmed/claude/tools/composer/composer.phar install --no-interaction --no-progress`, `npm ci`, `npm run build`, then `cp .env.example .env && php artisan key:generate --force`. Never `composer.bat`, and never with `npm run dev` running.
+- `$REPO` is the tree you implement in: the worktree the run gives you, branch `plan-10-b8-offsite-backups` from `main` at `d417c8a`, or your task's own `CASS-wt-N` worktree and branch. Shell variables do not survive between Bash calls: begin every call with `REPO=<that path>;` or write the path itself, and `cd $REPO`. Git Bash, after `export PATH="/c/Users/<user>/Desktop/Ahmed/claude/tools/php84:/c/Users/<user>/Desktop/Ahmed/claude/tools/composer:$PATH"`.
+- A fresh worktree has no `vendor/`, `node_modules/`, `public/build` or `.env`. Before the first PHP gate: `php /c/Users/<user>/Desktop/Ahmed/claude/tools/composer/composer.phar install --no-interaction --no-progress`, `npm ci`, `npm run build`, then `cp .env.example .env && php artisan key:generate --force`. Never `composer.bat`, and never with `npm run dev` running.
 - **The production hook** (fact 4) refuses a Bash command holding lowercase `oci` followed by a space, the release script's file name, the deployment platform's name, or a remote-shell command. Search such text with the Grep tool, write it with Write and Edit, run the harness by its path, and pass commit messages and the PR body as files. The project's read rule on `Legacy/` also covers `app/Actions/Legacy/`; this plan needs neither.
-- Git Bash's `/tmp` is `C:\Users\khawl\AppData\Local\Temp`; the Write and Read tools turn `/tmp/...` into `C:\tmp\...`, which git never reads. Write message files at the Windows path; read gate logs with `tail -n 60 /tmp/<log>` in Bash or at the Windows path.
+- Git Bash's `/tmp` is `C:\Users\<user>\AppData\Local\Temp`; the Write and Read tools turn `/tmp/...` into `C:\tmp\...`, which git never reads. Write message files at the Windows path; read gate logs with `tail -n 60 /tmp/<log>` in Bash or at the Windows path.
 - **The gates**, N being the task number, each judged by its exit code alone:
   ```bash
   cd $REPO && bash -n tools/backup/cass-backup-offsite.sh > /tmp/syntax-task-N.log 2>&1; echo "syntax rc=$?"
@@ -53,7 +53,7 @@ Three steps and nothing else; the session does the rest with you present ("After
   ./vendor/bin/pint --test > /tmp/pint-task-N.log 2>&1; echo "pint rc=$?"
   ```
   Task 1 runs the last four only: the script does not exist yet, and its harness run is the red proof. Baseline is the count `php artisan test` reports on the fresh branch (`/tmp/t-plan10-baseline.log`); Tasks 1 to 5 end at the baseline, Tasks 6 and 7 at baseline + 1 (Task 6's test).
-- **Commits:** the message with the Write tool at `C:\Users\khawl\AppData\Local\Temp\commit-plan10-task-N.txt`, ending with the `Co-Authored-By:` trailer of the model that writes the commit, as the run's brief gives it; `git add` the task's files by name (the two scripts with `git add --chmod=+x`, fact 3), then `test -s /tmp/commit-plan10-task-N.txt && git commit -F /tmp/commit-plan10-task-N.txt`. Never with a gate red.
+- **Commits:** the message with the Write tool at `C:\Users\<user>\AppData\Local\Temp\commit-plan10-task-N.txt`, ending with the `Co-Authored-By:` trailer of the model that writes the commit, as the run's brief gives it; `git add` the task's files by name (the two scripts with `git add --chmod=+x`, fact 3), then `test -s /tmp/commit-plan10-task-N.txt && git commit -F /tmp/commit-plan10-task-N.txt`. Never with a gate red.
 - **Order.** Stages `[[1],[2],[3,4],[5,6],[7]]`. Task 2 needs Task 1's harness; Tasks 3 and 4, and Tasks 5 and 6, touch disjoint files and run as pairs; Task 5 extends the runbook after Task 4; Task 7 runs last and opens the pull request.
 - New shell is bash, `#!/usr/bin/env bash`, four-space indents as in `tools/claude/deploy.sh`. Comments explain the code, never its provenance: no "Plan 10", "Task N", "B8" or "fact N" in either script.
 - `$SCRATCH` is the scratch directory the run gives you, outside the repository. Task 2's mutants live there and are never committed.
@@ -414,7 +414,7 @@ One file's failure does not stop the others; the exit is the first failure's. Ev
 Made, stored and checked on the PC, in Git Bash, in the tools folder; never on the host:
 
 ```bash
-cd /c/Users/khawl/Desktop/Ahmed/claude/tools
+cd /c/Users/<user>/Desktop/Ahmed/claude/tools
 curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-windows-amd64.zip
 echo 'f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7  age-v1.3.2-windows-amd64.zip' | sha256sum -c -
 powershell -NoProfile -Command "Expand-Archive age-v1.3.2-windows-amd64.zip -DestinationPath . -Force"
@@ -488,7 +488,7 @@ Prove the alert as for the other monitors, without the URL on a command line: `f
 
 ### Restore drill from the off-host copy — monthly, and not optional
 
-The owner, on the PC in Git Bash with Docker Desktop running, and on the host in their own terminal; never in a Claude session, and in a folder outside every repository. It restores the copy the host's manifest names, not whichever object is newest: anything uploaded after it, junk or forgery, is never picked. It proves the copy is the host's file byte for byte, then that it restores. The decrypted data exists only in pipes and in a container held in memory, or on the PC's encrypted disk where MySQL spills over; the private key is pasted at a prompt. At every third drill, type the key from the paper copy instead of pasting it, and ask the session to re-run the audit (**Installing the off-host copy**). Once per PC, the CLI: `python -m venv <tools>/oci-cli && <tools>/oci-cli/Scripts/pip install --only-binary :all: 'oci-cli==3.96.0'`, `<tools>` being `/c/Users/khawl/Desktop/Ahmed/claude/tools`. Once, too: check that Windows device encryption is on (Settings, Privacy and security, Device encryption).
+The owner, on the PC in Git Bash with Docker Desktop running, and on the host in their own terminal; never in a Claude session, and in a folder outside every repository. It restores the copy the host's manifest names, not whichever object is newest: anything uploaded after it, junk or forgery, is never picked. It proves the copy is the host's file byte for byte, then that it restores. The decrypted data exists only in pipes and in a container held in memory, or on the PC's encrypted disk where MySQL spills over; the private key is pasted at a prompt. At every third drill, type the key from the paper copy instead of pasting it, and ask the session to re-run the audit (**Installing the off-host copy**). Once per PC, the CLI: `python -m venv <tools>/oci-cli && <tools>/oci-cli/Scripts/pip install --only-binary :all: 'oci-cli==3.96.0'`, `<tools>` being `/c/Users/<user>/Desktop/Ahmed/claude/tools`. Once, too: check that Windows device encryption is on (Settings, Privacy and security, Device encryption).
 
 First on the host, with `cass_container` pasted. The first command reads the manifest's last `db/` and `storage/` rows and prints the region, then two lines to paste as they are, here and on the PC: `F=… DB=…` and `G=… ST=…`, the file and its object, each followed after a `#` by the object's bytes, MD5 and upload time. Then the two files' digests, the dump's completion time, and two counts per table: the rows created up to five minutes before the dump finished, and those created before it finished.
 
@@ -507,7 +507,7 @@ sudo grep -F "$G (" /var/log/cass-backup.log | tail -n 1                     # t
 Then on the PC, the two objects of those rows, by name, signed in for at most an hour; `<region>` is the one the host printed:
 
 ```bash
-set -o pipefail; T=/c/Users/khawl/Desktop/Ahmed/claude/tools; OCI=$T/oci-cli/Scripts/oci.exe; AGE=$T/age/age.exe
+set -o pipefail; T=/c/Users/<user>/Desktop/Ahmed/claude/tools; OCI=$T/oci-cli/Scripts/oci.exe; AGE=$T/age/age.exe
 "$OCI" session authenticate --region <region> --profile-name cass-drill --config-location ~/.oci/cass-drill.config
 X=(--config-file ~/.oci/cass-drill.config --profile cass-drill --auth security_token)
 mkdir -p ~/cass-drill && cd ~/cass-drill && NS=$("$OCI" os ns get "${X[@]}" --query data --raw-output)
@@ -517,7 +517,7 @@ mkdir -p ~/cass-drill && cd ~/cass-drill && NS=$("$OCI" os ns get "${X[@]}" --qu
 for p in "db.age $DB" "st.age $ST"; do set -- $p
   [ "$(sha256sum < "$1" | cut -d' ' -f1)" = "$(sed -E 's/.*\.([0-9a-f]{64})\.age$/\1/' <<< "$2")" ] && echo "$1: name hash OK"
   echo "$1: $(wc -c < "$1") bytes, MD5 $(openssl dgst -md5 -binary "$1" | base64)"; done   # as the host printed after its #
-IMG=$(grep -oE 'mysql:8\.4@sha256:[0-9a-f]{64}' /c/Users/khawl/Desktop/Ahmed/claude/projects/CASS/docker-compose.production.yml)
+IMG=$(grep -oE 'mysql:8\.4@sha256:[0-9a-f]{64}' /c/Users/<user>/Desktop/Ahmed/claude/projects/CASS/docker-compose.production.yml)
 docker rm -f -v cass-drill > /dev/null 2>&1
 docker run -d --name cass-drill --network none --tmpfs /var/lib/mysql:rw,size=1g --tmpfs /tmp:rw,size=256m -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=cass_restore "$IMG" --skip-log-bin
 for i in $(seq 60); do docker exec cass-drill mysql -h127.0.0.1 -uroot -e 'SELECT 1' > /dev/null 2>&1 && break; sleep 3; done
@@ -596,7 +596,7 @@ it('says how long backups keep deleted data, and where they are kept', function 
 ```
 - [ ] **Step 4: HANDOVER, with `#NN` for the pull request.** The Backups row gains, before its closing `|`, " Nothing is off the host yet: the off-host copy is in #NN, not installed (B8)." The B3 Status cell becomes "Not started. A second item, from Plan 10 (decided by the owner on 2026-11-14): a `DOCKER-USER` rule refusing the container networks' traffic to 169.254.169.254, so that only host processes can use the instance's OCI rights; never a rule on the host's own traffic, which the OCI CLI and the Oracle Cloud Agent need (decision 0016)." The B8 Status cell becomes: "Engineer part done (#NN): `tools/backup/cass-backup-offsite.sh`, nightly at 04:17 from its own root cron line, encrypts each new dump and weekly archive with age to the owner's public key and uploads it to a private, create-only OCI Object Storage bucket, verified, recorded and with its own heartbeat; tested in CI's `scripts` job against fakes; runbook "Off-host copies", "Installing the off-host copy" and "Restore drill from the off-host copy"; decision 0016, which records the owner's approval of the plan and its seven defaults on 2026-11-14. Owner next: its three owner steps (the age key pair, the private key in the password manager and on paper, the Kuma push monitor `cass offsite copy`); then, with the session, Plan 10's "After merge": the audit, the bucket, quota, alarm, dynamic group and policies, the host install and first run, the first drill, the retention lock. Done when that drill matches production and its date and the next one are in the Backups row." In the paragraph after the phase-B table, the text "B1, B3, B4, B8, B12" at the end of one line and "and B13 not started" at the start of the next (one Edit across the line break) become "B8's engineer part is in #NN, its owner part open; B1, B3, B4, B12" and "and B13 not started". Under "How the work is done", "Plans 1–9 and the backlog" becomes "Plans 1–10 and the backlog".
 - [ ] **Step 5: The final gates (N=7), commit.** All six gates exit 0, `test rc=0` at baseline + 1. Commit the five files with the subject `docs: decision 0016, the backups backlog, HANDOVER for plan 10` (the number follows in Step 7).
-- [ ] **Step 6: Push and open the pull request.** Write `C:\Users\khawl\AppData\Local\Temp\pr-plan10.md` (Write tool) with the body below, then:
+- [ ] **Step 6: Push and open the pull request.** Write `C:\Users\<user>\AppData\Local\Temp\pr-plan10.md` (Write tool) with the body below, then:
 ```bash
 cd $REPO && git push -u origin plan-10-b8-offsite-backups > /tmp/push-task-7.log 2>&1; echo "push rc=$?"
 gh pr create --base main --head plan-10-b8-offsite-backups --title "Plan 10: off-host encrypted backups and the restore drill (B8)" --body-file /tmp/pr-plan10.md > /tmp/pr-task-7.log 2>&1; echo "pr rc=$?"
