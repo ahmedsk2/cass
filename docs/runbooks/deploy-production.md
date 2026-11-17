@@ -17,6 +17,7 @@ Each procedure is the shortest correct path; the section a step links holds the 
 | A red `cass:health` row, or a quiet heartbeat | [Q4. Health](#q4-health) |
 | Mail is late, or email-log rows sit at `queued` | [Q5. A stuck queue](#q5-a-stuck-queue) |
 | The off-host copy's alert or log line | [Q6. The off-host copy](#q6-the-off-host-copy) |
+| Data lost or damaged, or the host gone | [Q7. Restore production](#q7-restore-production) |
 
 ### Q1. Every release
 
@@ -35,14 +36,14 @@ Each procedure is the shortest correct path; the section a step links holds the 
 - **b.** On the PC ([Rollback](#rollback)): `git fetch origin && git switch -c revert-<sha> origin/main`; then, newest first, `git revert -m 1 <merge sha>` for each merge `git log --first-parent --merges <running>..origin/main` lists, or only the culprit's when it is known; then `git push -u origin revert-<sha>` and `gh pr create --base main --title "Revert <sha>" --body "<why>"`.
 - **c.** CI green, the owner's approval and the merge, then [Q1](#q1-every-release) from a. Q1 b's 48-hour rule does not stop a rollback that reverts the culprit and nothing else (decision 0030); it stops any other release.
 - **d.** Coolify's "redeploy the previous successful build" is unverified ([Rollback](#rollback)).
-- **e.** Never roll the schema back: migrations are additive.
+- **e.** Never roll the schema back by hand: migrations are additive, and the one way back is the dump the release took just before it migrated, restored once the revert is live ([Q7](#q7-restore-production)).
 
 ### Q3. Restore check
 
 - **a.** On the host: `C=$(cass_container mysql)`, then `NEWEST=$(sudo sh -c 'ls -1t /srv/backups/cass/cass-*.sql.gz | head -1')`, the newest dump: last night's 03:17 or a later hand run ([Verifying one on the host](#verifying-one-on-the-host)).
 - **b.** Run that section's block from its `DROP DATABASE IF EXISTS` line to its last: the load prints nothing, and each table's live and restored counts are close, and zero only where production's is (`email_logs` is empty as of 2026-11-15).
 - **c.** Monthly, the owner's and never in a Claude session: [Restore drill from the off-host copy](#restore-drill-from-the-off-host-copy--monthly-and-not-optional).
-- **d.** Restoring over production is not written down: stop and ask the engineer (backlog "Backups").
+- **d.** Restoring a backup over production, or onto a new host: [Q7](#q7-restore-production).
 
 ### Q4. Health
 
@@ -69,6 +70,15 @@ Never `cache:clear`: with the database cache store it empties the scheduler hear
 - **c.** After a hand-run `cass-backup`, `sudo /usr/local/bin/cass-backup-offsite` sends that dump at once ([Off-host copies](#off-host-copies)).
 - **d.** Kuma's `cass offsite copy` is up and the alarm `cass-offsite-filling` is quiet ([When an alert fires](#when-an-alert-fires)).
 - **e.** The monthly drill is the owner's: [Restore drill from the off-host copy](#restore-drill-from-the-off-host-copy--monthly-and-not-optional).
+
+### Q7. Restore production
+
+- **a.** Data lost or damaged, or the host gone; a release that broke production is [Q2](#q2-roll-back), unless its rollback must take the schema back. Every step is the owner's, in their own terminal, and none has been run over production yet ([Restoring production](#restoring-production)).
+- **b.** Date the damage, then take the newest dump and the newest archive from before it, `sudo sh -c 'ls -lt /srv/backups/cass/cass-*.sql.gz | head'`, or from the off-host copy through the PC; each whole ([Before: picking the dump and the archive](#before-picking-the-dump-and-the-archive)).
+- **c.** `APP=$(cass_container app)` and `MYSQL=$(cass_container mysql)`, then `sudo docker exec "$APP" su-exec app php artisan down`, `sudo docker exec "$APP" supervisorctl stop queue scheduler` and, before a database half on this host, `sudo /usr/local/bin/cass-backup /srv/backups/cass/pre-restore` ([Stopping the writers](#stopping-the-writers)).
+- **d.** The database half when the database is damaged: re-created, loaded (`load rc=0`), `jobs`, `cache`, `cache_locks` and `sessions` emptied, `migrate:status` clean ([The database half](#the-database-half)). The storage half when files are missing or changed, alone while the database is sound: the archive that holds them, over the volume ([The storage half](#the-storage-half)).
+- **e.** `sudo docker exec "$APP" supervisorctl start queue scheduler`, then `sudo docker exec "$APP" su-exec app php artisan up`; five minutes later the checks ([Starting the writers, and the checks](#starting-the-writers-and-the-checks)), then [After a restore](#after-a-restore).
+- **f.** A new host: **One-time setup** steps 2 to 5 and the backup scripts first, the DNS record of step 1 only after the restore, and never step 6 ([On a new host](#on-a-new-host)).
 
 ## Finding the containers
 
@@ -1286,7 +1296,7 @@ When the first touch of pages, syscalls and plain compute are normal and only th
 
 ## Rollback
 
-Coolify -> Deployments -> redeploy the previous successful build. **Unverified:** no rollback has been recorded, and for this application Coolify's Restart and Redeploy build `main`'s head of that moment (**Every release** step 2), so that redeploy may build the head again rather than the previous release. Migrations are additive; do not roll back the schema without a backup restore.
+Coolify -> Deployments -> redeploy the previous successful build. **Unverified:** no rollback has been recorded, and for this application Coolify's Restart and Redeploy build `main`'s head of that moment (**Every release** step 2), so that redeploy may build the head again rather than the previous release. Migrations are additive; do not roll back the schema without a backup restore: when the rollback must take it back, the dump the release's `cass-backup` took just before it migrated comes back through **Restoring production** once the revert below is live, and everything written since that dump is lost.
 
 The route known to work is a revert, made like any other change, then a deploy through the script. A release is `main`'s head, so it carries every merge since the commit production runs (`<running>`, in `docs/HANDOVER.md`'s Production row): revert them newest first, each merge the second line lists, or only the culprit's merge when it is known.
 
@@ -1632,7 +1642,217 @@ Tick each box; one left empty is a failed drill.
 - [ ] The archive lists as many entries as the host's log line for it.
 - [ ] The container is gone, the session terminated, `KEY` unset, the terminal closed, the clipboard history cleared, and the two files are on the external drive.
 
-A failed box: do not wait a month; see **Off-host copies** and tell the engineer. The session writes the date, both objects with their SHA-256, the result and the next date into `docs/HANDOVER.md`'s Backups row. What a drill cannot tell: a compromised host can fill the quota with junk that nobody can delete for 30 days, upload forged copies that decrypt cleanly, and ping Kuma while sending nothing (**Off-host copies**). Picking by the manifest keeps junk out of a restore, but root could have forged both a copy and its manifest row; the byte-for-byte match with the host's file, the counts and the drills already recorded are what speak for a copy, and after a suspected compromise only a copy made before it is restored. A restore of production must also re-apply every erasure made since the copy's date (**Erasing one person's data**).
+A failed box: do not wait a month; see **Off-host copies** and tell the engineer. The session writes the date, both objects with their SHA-256, the result and the next date into `docs/HANDOVER.md`'s Backups row. What a drill cannot tell: a compromised host can fill the quota with junk that nobody can delete for 30 days, upload forged copies that decrypt cleanly, and ping Kuma while sending nothing (**Off-host copies**). Picking by the manifest keeps junk out of a restore, but root could have forged both a copy and its manifest row; the byte-for-byte match with the host's file, the counts and the drills already recorded are what speak for a copy, and after a suspected compromise only a copy made before it is restored. A restore of production (**Restoring production**) must also re-apply every erasure made since the copy's date (**Erasing one person's data**).
+
+## Restoring production
+
+**Unverified:** no restore over production has been recorded; the monthly drill proves only that a copy decrypts and loads on the PC (**Restore drill from the off-host copy**).
+
+For data lost or damaged in the database or in the uploads volume, or a host that is gone. A release that broke production is **Rollback** ([Q2](#q2-roll-back)), not a restore, unless that rollback must take the schema back: then the dump the release's `cass-backup` took just before it migrated (**Every release** step 2) comes back through this section once the revert is live, and everything written since that dump is lost. A restore puts back the whole database as the dump found it; one organization cannot be restored alone.
+
+Which halves run depends on what is damaged:
+
+- **The database.** Rows gone or wrong, a red `database` or `migrations` row in `cass:health`, or the host gone: the database half, then the storage half if its check finds files missing or changed. Lost by design: everything written after the dump, up to a day with the nightly one, and, when the storage half runs, every upload after the archive that the volume no longer holds.
+- **The uploads alone.** Files missing or changed while the database is sound: the storage half alone, with the writers stopped all the same. Lost by design: only the uploads after the archive that the volume no longer holds.
+
+To tell them apart, before anything is stopped and with `APP=$(cass_container app)` set first: `cass:health` (Q4 a); the check at the head of **The storage half**, which only reads; and **Verifying one on the host**'s block, whose live counts sit close to the newest dump's in every table when the database is sound, lower only by rows deleted since for a reason you can name. Damage to both is the database case. A mysql container that no longer starts has a damaged volume of its own, which this section does not cover yet: stop and ask the engineer (backlog "A mysql container that no longer starts is not covered by the restore").
+
+Every step is the owner's, run on the host with the [`cass_container` helper](#finding-the-containers) pasted unless it names the PC (**What a session may do**). Not across 03:17, nor 03:47 on a Sunday: the nightly dump or the weekly archive would copy a half-restored state and rotate it in as the newest; if it must, comment out the `cass-backup` and `cass-storage-backup` lines first (`sudo crontab -e`) and put them back after. Never Restart or Redeploy in Coolify meanwhile: either builds `main`'s head into a new container, live and with its writers running (**Every release** step 2); the writers come back with `supervisorctl` and `up` below.
+
+### Before: picking the dump and the archive
+
+Date the damage first: the hourly rows of `storage/logs/cass-health.log` (**Heartbeats**), its first event in the error tracker, the `activity_log` row of a purge, or when somebody saw it. The dump is the newest made before then. The archive is the newest made before the files went: the weekly `[cass-storage-backup]` lines in `/var/log/cass-backup.log` show the week their count of entries fell, and no archive older than a file's row (its `created_at`) holds that file. An older archive may be the right one, kept 56 days on the host and 90 off it: **The storage half** counts which archive holds the missing files. On the host:
+
+```bash
+sudo sh -c 'ls -lt /srv/backups/cass/cass-*.sql.gz | head'                # the dumps, newest first: 03:17 nightly, and any taken by hand
+sudo sh -c 'ls -lt /srv/backups/cass/cass-storage-*.tar.gz | head -n 9'   # the weekly archives, 56 days of them
+R=/srv/backups/cass; F=cass-<date>-<time>.sql.gz; G=cass-storage-<date>.tar.gz
+for x in "$F" "$G"; do sudo awk -F '\t' -v f="$x" '$3 == f { print f, $4, $5 }' /srv/backups/cass/offsite-manifest.tsv | tail -n 1; sudo stat -c '%n %s %Y' "$R/$x"; done   # bytes and mtime when sent off-host, then now: the same
+```
+
+The manifest holds each file's bytes and mtime, not its digest. A file with no row there has not gone off-host: one under a day old, one that fails every night (**Off-host copies**, exits 2 to 4), or one already past 7 days when it could first go, at the copy's first run, after a re-send or after a long outage.
+
+With the host's copies gone, the off-host copy instead, on the PC in Git Bash, the drill's way and with its tools (**Restore drill from the off-host copy**). The private key never reaches the host, so each file is decrypted on the PC straight into a pipe to the host, and no plain text lands on the PC's disk. While the host's manifest is readable, its row for a file names that file's object (the drill's first command prints the last two); otherwise the bucket's listing does, and an object that fails to decrypt is junk: take the one before it. After a suspected compromise of the host, only an object uploaded before it, such as one a drill recorded in `docs/HANDOVER.md`'s Backups row (**Off-host copies**). With the tenancy lost as well, the copy that survives it is the newest drill folder on the external drive (decision 0016): that drill's `db.age` and `st.age`, as old as the drill. Copy them into `~/cass-drill`, then run the block's first line, then `cd ~/cass-drill`, then the block from its `DB=` line, with `DB` and `ST` the object names that drill recorded in the Backups row and without the two `object get` lines; there is no session to sign in to or end.
+
+```bash
+set -o pipefail; T=<tools>; OCI=$T/oci-cli/Scripts/oci.exe; AGE=$T/age/age.exe
+"$OCI" session authenticate --region <region> --profile-name cass-drill --config-location ~/.oci/cass-drill.config   # the bucket's region, Riyadh (decision 0016)
+X=(--config-file ~/.oci/cass-drill.config --profile cass-drill --auth security_token)
+mkdir -p ~/cass-drill && cd ~/cass-drill && NS=$("$OCI" os ns get "${X[@]}" --query data --raw-output)
+for p in db/ storage/; do "$OCI" os object list "${X[@]}" -ns "$NS" -bn cass-offsite --prefix "$p" --all --fields name,size,timeCreated --query 'data[-3:]'; done   # the last three of each; the names sort by date
+DB=db/<object>; ST=storage/<object>; F=$(basename "${DB%.*.age}"); G=$(basename "${ST%.*.age}")
+"$OCI" os object get "${X[@]}" -ns "$NS" -bn cass-offsite --name "$DB" --file db.age
+"$OCI" os object get "${X[@]}" -ns "$NS" -bn cass-offsite --name "$ST" --file st.age
+for p in "db.age $DB" "st.age $ST"; do set -- $p
+  if [ "$(sha256sum < "$1" | cut -d' ' -f1)" = "$(sed -E 's/.*\.([0-9a-f]{64})\.age$/\1/' <<< "$2")" ]; then echo "$1: name hash OK"; else echo "$1: name hash WRONG, stop"; fi; done
+read -rs -p 'AGE-SECRET-KEY line: ' KEY; echo
+for f in db.age st.age; do printf '%s\n' "$KEY" | "$AGE" -d -i - "$f" | sha256sum; done          # the two digests the host must print
+ssh -i <ssh-key> <ssh-user>@<origin-ip> 'sudo install -d -m 700 /srv/backups/cass /srv/backups/cass/restore'
+printf '%s\n' "$KEY" | "$AGE" -d -i - db.age | ssh -i <ssh-key> <ssh-user>@<origin-ip> "sudo sh -c 'umask 077; cat > /srv/backups/cass/restore/$F'"; echo "db rc=$?"
+printf '%s\n' "$KEY" | "$AGE" -d -i - st.age | ssh -i <ssh-key> <ssh-user>@<origin-ip> "sudo sh -c 'umask 077; cat > /srv/backups/cass/restore/$G'"; echo "st rc=$?"
+unset KEY; rm -f db.age st.age; "$OCI" session terminate --config-file ~/.oci/cass-drill.config --profile cass-drill
+```
+
+Then close the terminal and clear the clipboard history, as the drill's last box asks. On the host, `R=/srv/backups/cass/restore` with the PC's `F` and `G`, and `sudo sha256sum "$R/$F" "$R/$G"` prints the PC's two digests. The off-host copy reads no subfolder, so these two are never sent again, and the backups' own rotation removes them after 14 and 56 days.
+
+Either way, then; the dump's lines only when the database half runs:
+
+```bash
+sudo gzip -t "$R/$G" && echo 'archive whole'                              # gzip reads it through
+sudo tar -tzf "$R/$G" | wc -l                                             # ./, ./private/, ./public/ and the files: on this host, the count its line below gives
+sudo grep -F "$G (" /var/log/cass-backup.log | tail -n 1                  # [cass-storage-backup] … (<bytes> bytes, <n> entries), keeping 56 days
+sudo gzip -t "$R/$F" && echo 'dump whole'
+sudo sh -c "gzip -dc '$R/$F' | tail -n 1"                                 # -- Dump completed on <date> <time>, mysqldump's last line
+APP=$(cass_container app)
+comm -23 <(sudo gzip -dc "$R/$F" | grep '^INSERT INTO `migrations`' | grep -oE "'[0-9]{4}_[0-9]{2}_[0-9]{2}_[0-9]{6}_[a-z0-9_]+'" | tr -d "'" | sort -u) \
+         <(sudo docker exec "$APP" ls database/migrations | sed 's/\.php$//' | sort -u)   # migrations the dump ran that this image does not ship
+```
+
+A name from the last command is a migration the dump ran that this release does not ship: the dump is newer than the release, which only a rollback leaves behind (Q2 e). Migrations are additive (`CLAUDE.md`), so the running code reads that schema as it read the live one before the damage: load the dump as it is, and the names stay Ran for the release that brings them back. Only one that drops, renames or tightens something the running code still reads (on the PC, in a clone of this repository, `git log -p --all -- database/migrations/<name>.php` shows it) needs a release that ships it deployed first (**Every release**). Within 48 hours of an open conference's deadline `CLAUDE.md` allows no deploy but a rollback (decision 0030), so there it waits for the owner (backlog "May a restore deploy inside the 48-hour window?"). A migration the image ships and the dump lacks is normal: `migrate:status` lists it after the load.
+
+### Stopping the writers
+
+`down` first, so the worker takes no new job and the scheduler starts nothing, then both stopped outright. nginx and php-fpm stay up for the maintenance page, and `/up` goes on answering 200, so the container stays healthy and the uptime probes stay quiet (**Uptime**).
+
+```bash
+APP=$(cass_container app)
+MYSQL=$(cass_container mysql)
+sudo docker exec "$APP" su-exec app php artisan down                     # every page 503 but /up
+sudo docker exec "$APP" supervisorctl stop queue scheduler               # the two writers that run by themselves
+sudo docker exec "$APP" supervisorctl status                             # nginx and php-fpm RUNNING, queue and scheduler STOPPED
+sudo /usr/local/bin/cass-backup /srv/backups/cass/pre-restore            # before a database half on this host: the database as it is now
+```
+
+The last line keeps what is there, damaged or not, for 14 days beside the backups and out of the off-host copy's reach: the only copy of what was written after the dump, which **After a restore** reads. On a database too damaged to dump it ends with `mysqldump failed`: go on without the copy. With the scheduler stopped nothing pings `cass hourly health`, so Kuma alerts after 80 minutes (**Heartbeats**).
+
+### The database half
+
+When the database is damaged, and always on a new host. The dump drops and re-creates each table it holds (mysqldump's `DROP TABLE IF EXISTS`; `docker/backup.sh` leaves no table out), but leaves alone one it lacks, such as a table a later migration made, which `migrate` would then fail to create: so the database is emptied first, inside one chain that a failed `test -f` at its head stops before anything else runs. The `cass` user's rights are granted on the database's name and outlast the drop; `migrate:status`, which reads as that user, shows they did. While the load runs, each request's trusted-host lookup fails softly (**Trusted proxies**) and may reach the error tracker.
+
+```bash
+sudo test -f "$R/$F" && sudo test -f "$R/$G" &&                          # both are files, or nothing below runs: R, F and G are not set in this shell
+  sudo docker exec "$MYSQL" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE IF EXISTS cass; CREATE DATABASE cass;"' &&
+  ( set -o pipefail; sudo gzip -dc "$R/$F" | sudo docker exec -i "$MYSQL" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass' ) &&
+  sudo docker exec "$MYSQL" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass -e "TRUNCATE jobs; TRUNCATE cache; TRUNCATE cache_locks; TRUNCATE sessions;"'; echo "load rc=$?"   # load rc=0 and nothing else; 1 with nothing printed is the guard, and nothing was dropped
+sudo docker exec "$APP" su-exec app php artisan migrate:status          # nothing Pending, or the by-hand block below
+```
+
+The queue, the cache and the sessions are in the database as well (`docker-compose.production.yml`), so the load brings back the dump's moment of each, and the `TRUNCATE` line empties all four tables (decision 0034). A job in `jobs` was waiting when the dump ran and has, in the normal course, run since: a worker started on it sends its mail a second time. The cache holds that moment's rate-limit counts, the scheduler's heartbeat and any overlap lock a task held then, which can stop that task for up to a day; this is the one place the runbook empties the cache, and Q5's warning is about the live one. Every session ends, so everybody signs in again, except in a browser that ticked Remember me: its cookie still matches the restored `users.remember_token` and signs it straight back in (**After a restore** says when to end those too). `failed_jobs` stays.
+
+A Pending line is a migration the release ships and the dump lacks: the by-hand block of **Every release** step 3, whose `cass-backup` first backs up the restored database, ending in `migrate:status` with nothing Pending.
+
+Then the counts, the writers still stopped: **Verifying one on the host**'s block, with `NEWEST="$R/$F"` for its first line, loads the same dump into a scratch database, and every pair it prints is equal.
+
+### The storage half
+
+When files are missing or changed: after the database half, or alone while the database is sound; on a new host every file is missing, its volume being new. The check reads every row that points at a file, and the file: a logo must exist, and a submission file's bytes must still match its row's `sha256`, which `StoreSubmissionFile` takes from the stored bytes, for every upload and for the demo seed. The legacy import's test says it copies each file with its digest (`tests/Unit/ImportLegacyTest.php`) but never compares the two, so an imported row whose digest is of something else would be counted as changed, at every run and after every archive. Confirm on the host, once after the legacy import and while nothing is wrong: the check counts nothing missing or changed; a file it counts then is that case, judged by opening it rather than by this count. It prints two counts, then the path inside the volume of each file missing or changed:
+
+```bash
+L=$(sudo docker exec "$APP" su-exec app php artisan tinker --execute='
+$local = Illuminate\Support\Facades\Storage::disk("local");
+$files = App\Models\SubmissionFile::query()->get(["path", "sha256"]);
+$bad = $files->reject(fn ($f) => $local->exists($f->path) && hash_file("sha256", $local->path($f->path)) === $f->sha256)->map(fn ($f) => "./private/".$f->path);
+$logos = App\Models\Organization::withTrashed()->whereNotNull("logo_path")->pluck("logo_path");
+$gone = $logos->reject(fn ($p) => Illuminate\Support\Facades\Storage::disk("branding")->exists($p))->map(fn ($p) => "./public/branding/".$p);
+printf("submission_files: %d rows, %d missing or changed\nlogos: %d rows, %d missing\n", $files->count(), $bad->count(), $logos->count(), $gone->count());
+$bad->merge($gone)->each(function ($p) { echo $p, PHP_EOL; });'); echo "$L" | grep -v '^\./'
+```
+
+Both counts at 0: the volume is whole, and this half ends here. Otherwise, which archive holds them: each archive on the host and in `/srv/backups/cass/restore`, newest first by the date in its name (a copy in `restore/` carries the day it was copied as its mtime), with how many of the listed files it holds. Take the newest that holds them all; when none does, each that holds some, the oldest first. An archive from the off-host copy comes to `/srv/backups/cass/restore` as in **Before: picking the dump and the archive**.
+
+```bash
+for a in $(sudo sh -c 'ls -1 /srv/backups/cass/cass-storage-*.tar.gz /srv/backups/cass/restore/cass-storage-*.tar.gz 2>/dev/null' | awk -F/ '{ print $NF, $0 }' | sort -r | cut -d' ' -f2); do echo "$a: $(sudo tar -tzf "$a" | grep -cxFf <(echo "$L" | grep '^\./')) of $(echo "$L" | grep -c '^\./')"; done
+```
+
+The archive goes over what the volume holds, never into an emptied volume: a file of the same name is the same bytes, the paths being content-addressed (**Author uploads and private storage**), and a file the archive lacks may be one the restored rows need. The volume is found as `docker/storage-backup.sh` finds it, from the container's mounts, since a bare `-v cass-storage:/data` makes a new, empty volume; the archive's paths are relative to that volume's root, as the script's `tar czf … -C /data .` wrote them; and the owner is the image's `app` user by number, which the `Dockerfile`'s `adduser -S` leaves unfixed.
+
+```bash
+VOLUME=$(sudo docker inspect "$APP" --format '{{range .Mounts}}{{if eq .Destination "/var/www/html/storage/app"}}{{.Name}}{{end}}{{end}}'); echo "volume: $VOLUME"
+OWNER=$(sudo docker exec "$APP" sh -c 'echo "$(id -u app):$(id -g app)"'); echo "owner: $OWNER"
+sudo test -f "$R/$G" && [ -n "$VOLUME" ] && [ -n "$OWNER" ] &&           # the archive is a file and both were found, or nothing below runs
+  sudo docker run --rm -v "$VOLUME":/data -v "$R":/backup:ro alpine:3 sh -c "tar -xzf '/backup/$G' -C /data && chown -R '$OWNER' /data"; echo "extract rc=$?"
+sudo tar -tzf "$R/$G" | grep -vc '/$'                                    # the files in the archive ...
+sudo docker exec "$APP" sh -c 'find storage/app -type f | wc -l'         # ... and in the volume: at least as many
+```
+
+Then the check again. A file still missing or changed is in none of the archives extracted: one that an older archive holds goes back the same way, and one that none holds is lost by design.
+
+### Starting the writers, and the checks
+
+```bash
+sudo docker exec "$APP" supervisorctl start queue scheduler
+sudo docker exec "$APP" su-exec app php artisan up
+```
+
+Then, five minutes after `up`, since the scheduler ran nothing while the site was down and writes its first heartbeat then:
+
+```bash
+sudo docker exec "$APP" su-exec app php artisan cass:health             # every Status OK, exit 0
+for p in /=200 /org/login=200 /review/login=200 /admin/login=200 /vendor/livewire/livewire.min.js=200 /c/nonexistent/none=404 /q/NOPE=404 /up=200; do   # the eight probes of tools/claude/deploy.sh, through Traefik
+  echo "${p%=*} -> $(curl -sk --max-time 30 -o /dev/null -w '%{http_code}' --resolve cass.towardpcc.com:443:127.0.0.1 "https://cass.towardpcc.com${p%=*}") (expected ${p##*=})"; done
+sudo docker exec "$APP" su-exec app php artisan queue:failed            # what had failed before the dump
+```
+
+Retry nothing from `queue:failed` before reading the mailbox: a job that was retried after the dump has gone out already. In a browser, once the name points at this host (on a new host, after the DNS step in **On a new host**): sign in at `/admin` with the second factor (a 500 there means an `APP_KEY` other than the old one, **Platform admin second factor**), and open one abstract's PDF from its submission's page (`/files/{ulid}`).
+
+### After a restore
+
+First, while the pre-restore copy is there (14 days, **Stopping the writers**): it holds what was written after the dump, if the damage left it. Load it beside the restored database and read what it holds after the dump's time before any organization is told what is gone; its `activity_log` names each purge and each other action since. What can be carried back, row by row, is the engineer's to judge.
+
+```bash
+C=$(cass_container mysql); P=$(sudo sh -c 'ls -1t /srv/backups/cass/pre-restore/cass-*.sql.gz | head -1')
+sudo docker exec "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE IF EXISTS cass_pre_restore; CREATE DATABASE cass_pre_restore;"'
+sudo gunzip -c "$P" | sudo docker exec -i "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass_pre_restore'
+sudo docker exec "$C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "DROP DATABASE cass_pre_restore;"'   # once it has been read
+```
+
+Then re-apply every erasure and every purge made since the dump in the database, and since the archive in the volume (**Erasing one person's data**): the archive brings back each file deleted after it, as an orphan that no row points at when its row went before the dump. The uploads made after the dump are orphans now too, so remove orphans only once nothing in the pre-restore copy is to be carried back. This counts them, and with `$remove = true` deletes them. It runs with the site live, perhaps days after `up`, since it waits for that reading, so it lists the files before it reads the rows and leaves every file written in the last hour: an upload in flight writes its file before its row (`StoreSubmissionFile`), and a younger file may be one whose row is still to come. Not while an archive is being extracted or a legacy import is running: both write files that carry old modification times before their rows exist.
+
+```bash
+sudo docker exec "$APP" su-exec app php artisan tinker --execute='
+$remove = false; $young = time() - 3600;
+$local = Illuminate\Support\Facades\Storage::disk("local"); $branding = Illuminate\Support\Facades\Storage::disk("branding");
+$files = collect($local->allFiles())->reject(fn ($p) => str_starts_with($p, "livewire-tmp/") || str_starts_with($p, "legacy/") || $local->lastModified($p) > $young);
+$images = collect($branding->allFiles())->reject(fn ($p) => $branding->lastModified($p) > $young);
+$rows = App\Models\SubmissionFile::query()->pluck("path")->flip(); $logos = App\Models\Organization::withTrashed()->whereNotNull("logo_path")->pluck("logo_path")->flip();
+$files = $files->reject(fn ($p) => isset($rows[$p])); $images = $images->reject(fn ($p) => isset($logos[$p]));
+printf("%d upload files and %d logo files that no row points at\n", $files->count(), $images->count());
+if ($remove) { $local->delete($files->all()); $branding->delete($images->all()); echo "removed", PHP_EOL; }'
+```
+
+- Every password and second factor changed since the dump, the admin's and every member's and reviewer's, is the old one again, and a factor removed since is back. Tell each organization that its members and reviewers set theirs again, at once where one was changed because somebody else knew it; the admin changes theirs under Profile (**Platform admin password**). A browser that ticked Remember me before the dump signs back in on the old password: `sudo docker exec "$MYSQL" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass -e "UPDATE users SET remember_token = NULL;"'` ends every one.
+- Tell each organization the dump's time: what they did since is gone, and an author who submitted since holds a status link that opens nothing. Who was mailed since is in the mailbox's log, not in `email_logs`.
+- `/admin/email-logs`, filtered to `queued`, lists the messages whose jobs the restore emptied: the mailbox says which went out (`X-CASS-Log` carries the row's `ulid`, **Email triage**).
+- Reviewer reminders sent since the dump go once more at the next hourly run: `reviewer_reminders` holds the dump's rows (**Reviewer reminders**).
+- The session records the restore, with the dump and the archive used, in `docs/HANDOVER.md`'s Production and Backups rows.
+
+### On a new host
+
+Put `APP_KEY`, any `APP_PREVIOUS_KEYS` and the two database passwords into the password manager now, while the old host lives: `docs/HANDOVER.md` keeps `cass-secrets.env` on the host and on no PC (launch checklist [section 2](../launch-checklist.md#2-owner-actions-on-services-this-repository-does-not-control)). Without the old key the restore still runs, under a new one (**Under a new key**). In this order, each step done before the next:
+
+1. A host with Coolify and its Traefik running, its OCI security list admitting only Cloudflare on 80 and 443 (**Trusted proxies**). On it, the two helpers **One-time setup** step 4 calls, `~/bin/cass-set-env` and `~/bin/coolify-api`, and a Coolify API token in `~/.coolify-token`, mode 0600, which `tools/claude/deploy.sh` reads and without which every deploy through it stops at exit 1. None of the three is in this repository. Confirm on the host: all three are there and work.
+2. **One-time setup** steps 2 to 4. A new deploy key, made as step 2 says: the old private half was in the old host's Coolify, so delete its public half on GitHub. Every variable of step 4, with the old host's `APP_KEY` and any `APP_PREVIOUS_KEYS`, which encrypt the second factors and the queued and failed jobs (**Secret rotation**); without them, or after a suspected compromise, a new key (**Under a new key**). `CASS_ADMIN_PASSWORD` is the placeholder `removed` from the start, since the seed never runs again (step 6); the database passwords may be new, since the dump holds no MySQL account; `CASS_HEARTBEAT_URL` and `SENTRY_LARAVEL_DSN` stay empty, no ping and nothing reported, until step 8 rebuilds their services. Auto Deploy off (**Every release** step 2).
+3. **One-time setup** step 5, the first deploy, from the Coolify UI as that step says: `tools/claude/deploy.sh` stops on an empty database, whose `migrate:status` answers `Migration table not found.` (exit 5). It builds `main`'s head, which may be newer than the release the old host ran: first `git log --oneline <running>..origin/main`, with `<running>` from `docs/HANDOVER.md`'s Production row, and Q1 a's checks, as for any release. Within 48 hours of an open conference's deadline `CLAUDE.md` allows no deploy but a rollback (decision 0030), and this is not one: there it waits for the owner (backlog "May a restore deploy inside the 48-hour window?"). It makes both containers and both volumes, empty. Never step 6, neither its `migrate` on the empty database nor `db:seed`: the dump brings the schema and the admin.
+4. The two backup scripts: **Installing it**'s block and the archive script's in **What is NOT backed up by this**, each without its last line, the hand run, so that **Every release** step 3's by-hand block finds `cass-backup` when a Pending line sends you there. No hand run and no cron line yet: on the empty store one script would refuse the database and the other archive an empty volume.
+5. This section from **Before: picking the dump and the archive**, the off-host way, with both halves and no pre-restore copy; when step 2 took a new key, **Under a new key**'s two lines run after the database half and before `up`.
+6. The DNS record, **One-time setup** step 1 with the new origin's address. A 526 from Cloudflare means Traefik has no certificate for the name yet. Confirm on the host: Traefik obtains one once the record points there. The zone's settings belong to the zone, not the origin, so check them against the launch checklist's [section 2](../launch-checklist.md#2-owner-actions-on-services-this-repository-does-not-control) rather than redo them. Every verified custom domain goes back on the application's domain list beside `https://cass.towardpcc.com:8080` (**Custom domain for an organization**), or its certificate is never requested: `sudo docker exec "$APP" su-exec app php artisan tinker --execute='echo implode(",", App\Support\Domains\CustomDomains::verifiedHosts()), PHP_EOL;'` lists them. Then the browser checks of **Starting the writers, and the checks**, which wait for this record.
+7. The backups: the two hand runs, the two ping files and both cron lines of **Installing it** and **What is NOT backed up by this**; then **Installing the off-host copy** with its three root-only files, the namespace, bucket, region and recipient unchanged, and the instance's new OCID in `cass-backup-host`'s rule an hour before the canary (that section says why). Nobody can delete the canary's object for 30 days, since `keep-30-days` now stands; the lifecycle removes it at 90. Then `sudo /usr/local/bin/cass-backup-offsite` by hand. Until step 8 the ping files hold no URL: each cron line's ping fails after a good backup, with curl's error the last line of `/var/log/cass-backup.log`, and the off-host copy ends `FAILED (exit 6)` with every backup sent (**Off-host copies**).
+8. Kuma and GlitchTip ran on the old host (**Monitoring**). Rebuild them, write the three ping files with their new push URLs, and set `CASS_HEARTBEAT_URL` and `SENTRY_LARAVEL_DSN` (**One-time setup** step 4) with a deploy through the script like any release (Q1). Then [Q6](#q6-the-off-host-copy) reads `pinged`; check that the tenancy's instance alarms (**Uptime**) watch the new instance.
+
+### Under a new key
+
+When the old `APP_KEY` is lost with the host, or the host is suspected compromised. Whoever took the host may hold the key, and with it forges a signed link (`/files/{ulid}`, an email verification), a cookie (a remembered sign-in among them, which asks for no second factor, **Platform admin second factor**) or a Livewire component snapshot, and reads every second factor and every queued job in a dump. So a new key, generated as **One-time setup** step 4 says, and no `APP_PREVIOUS_KEYS`: a leaked key stays out (**Secret rotation**). Then, after the database half and before `up`, with `$APP` and `$MYSQL` set as **Stopping the writers** sets them:
+
+```bash
+sudo docker exec "$APP" su-exec app php artisan tinker --execute='echo App\Models\User::query()->whereNotNull("app_authentication_secret")->update(["app_authentication_secret" => null, "app_authentication_recovery_codes" => null]), " second factors cleared", PHP_EOL;'
+sudo docker exec "$MYSQL" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot cass -e "TRUNCATE failed_jobs; UPDATE users SET remember_token = NULL;"'
+```
+
+The first line clears every enrolled second factor, every platform admin's among them, since the new key reads none of them; the second empties `failed_jobs`, which that key cannot read or retry either, and ends every remembered browser. Each platform admin then enrols again at the next sign-in, which the admin panel requires, and in that same session changes the password under Profile (**Platform admin second factor**); every other user who had enrolled is told to enrol again. After a suspected compromise, also: only a backup made before it (**Off-host copies**), every other secret of **One-time setup** step 4 new (**Secret rotation**), and a new password asked of every user, since the dump holds every password hash.
+
+### What a session may do
+
+The steps are the owner's, in their own terminal: they write to production, which a session never does unattended (`CLAUDE.md`), and the off-host way needs the private key, which never enters a session (**Restore drill from the off-host copy**). Afterwards, while the owner has unlocked production (**Every release** step 2), a session may run the read-only checks, the check at the head of **The storage half**, `cass:health`, the eight probes and `queue:failed`, and records the restore in `docs/HANDOVER.md`.
 
 ## Secret rotation
 

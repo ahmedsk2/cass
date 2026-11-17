@@ -182,6 +182,10 @@ answer a plan author happened to choose. The answers are recorded in
       week's eight dumps (`db/`) and the weekly archive (`storage/`) (HANDOVER
       B8 and Backups row). The 21 backups already older than 7 days at that
       run stay on the host only.
+- [ ] **A copy of `APP_KEY` off the host.** `APP_KEY`, any `APP_PREVIOUS_KEYS`
+      and the two database passwords go into the password manager: their only
+      copies are on the host (`docs/HANDOVER.md`), and a new host without the
+      old key loses every second factor (runbook **Under a new key**).
 
 ## 3. Production readiness, on the deployed site
 
