@@ -258,9 +258,13 @@ On 2026-11-16 the deploy of `f7df81e` (23:55 UTC; docs only on top of `bbb2287`,
 - [ ] Restore that dump into a scratch database and count rows against
       production (the procedure is in the runbook under **Backups**). **A
       backup nobody has restored is not a backup.**
-- [ ] Restore the off-host copy on the PC and compare it with production
+- [x] Restore the off-host copy on the PC and compare it with production
       (runbook **Restore drill from the off-host copy**); its date and the
       next one go into `docs/HANDOVER.md`.
+      **Done (2026-11-18):** the first drill was good on every box but the
+      last, which closes when its two encrypted files reach the external
+      drive (HANDOVER, Backups row); `keep-30-days` is locked, effective
+      2026-12-03; the next drill is due by 2026-12-18.
       **Open (2026-11-14):** the copy is installed and its first run sent nine
       backups (HANDOVER B8). The first drill is not before 2026-11-15; the
       bucket's retention rule `keep-30-days` stays unlocked until it is good.
