@@ -182,10 +182,12 @@ answer a plan author happened to choose. The answers are recorded in
       week's eight dumps (`db/`) and the weekly archive (`storage/`) (HANDOVER
       B8 and Backups row). The 21 backups already older than 7 days at that
       run stay on the host only.
-- [ ] **A copy of `APP_KEY` off the host.** `APP_KEY`, any `APP_PREVIOUS_KEYS`
+- [x] **A copy of `APP_KEY` off the host.** `APP_KEY`, any `APP_PREVIOUS_KEYS`
       and the two database passwords go into the password manager: their only
       copies are on the host (`docs/HANDOVER.md`), and a new host without the
       old key loses every second factor (runbook **Under a new key**).
+      **Done (owner, 2026-11-18):** `APP_KEY`, `APP_PREVIOUS_KEYS`, `DB_PASSWORD`
+      and `DB_ROOT_PASSWORD` are in the owner's password manager.
 
 ## 3. Production readiness, on the deployed site
 
@@ -262,6 +264,10 @@ On 2026-11-16 the deploy of `f7df81e` (23:55 UTC; docs only on top of `bbb2287`,
       **Open (2026-11-14):** the copy is installed and its first run sent nine
       backups (HANDOVER B8). The first drill is not before 2026-11-15; the
       bucket's retention rule `keep-30-days` stays unlocked until it is good.
+      **Key rotated (2026-11-18):** no copy of the 2026-11-14 private key could
+      be found, so a new pair was made and proved from both copies, and the
+      week's backups were sent again under it at 02:04 UTC (HANDOVER, Backups
+      row). The drill reads those copies; everything sent before is unreadable.
 - [x] `APP=$(cass_container app)`,
       `DB=$(cass_container mysql)`,
       then `docker stats --no-stream "$APP" "$DB"` → the app container's steady
