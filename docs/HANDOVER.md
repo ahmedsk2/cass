@@ -1,4 +1,4 @@
-# Handover — start here (open as of 2026-11-17)
+# Handover — start here (open as of 2026-11-18)
 
 The single state document. A new session reads this first, then `docs/launch-checklist.md` and
 `docs/superpowers/plans/backlog.md`. Keep this file current: every line under "Open" is either
@@ -53,7 +53,7 @@ Phase A is complete: A1 to A9 are done, A8 last, on 2026-10-17. The Open rows we
 | B5 | External uptime monitor on `/up` | Owner and engineer | Done 2026-11-05 (runbook "Uptime"); still to do once: one probe of `/up-missing` to see the alarm's email arrive |
 | B6 | Dead-man heartbeats: hourly `cass:health`, both backup crons | Engineer; owner creates the checks | Done 2026-11-05 (#57; runbook "Heartbeats") |
 | B7 | Error tracking | Engineer; owner picks the service | Live 2026-11-14: GlitchTip ([0015](decisions/0015-error-tracking-and-heartbeats.md)); left: the new-issue email, the owner's to confirm. The release is proved since the deploy of `bbb2287`: `printenv SOURCE_COMMIT` and `config('sentry.release')` in the new container both print `bbb22878b5406ffec2abe02bd265011387c3068e` (#92, [0032](decisions/0032-the-release-is-the-commit-the-platform-reports.md), runbook "Error tracker") |
-| B8 | Off-host backups and a restore drill | Owner, with the engineer | Installed 2026-11-14 (#71; decisions [0016](decisions/0016-offsite-backups.md), 0017); the restore of production, on this host or a new one, is written and unverified, never run over production (runbook "Restoring production", decision [0034](decisions/0034-a-restore-empties-the-queue-the-cache-and-the-sessions.md)); left: the first drill, then the lock, and the Kuma monitor, not checked by a session (backlog "Backups") |
+| B8 | Off-host backups and a restore drill | Owner, with the engineer | Installed 2026-11-14 (#71; decisions [0016](decisions/0016-offsite-backups.md), 0017); the restore of production, on this host or a new one, is written and unverified, never run over production (runbook "Restoring production", decision [0034](decisions/0034-a-restore-empties-the-queue-the-cache-and-the-sessions.md)); the owner's password manager holds `APP_KEY`, `APP_PREVIOUS_KEYS` and both database passwords since 2026-11-18, so a new host can carry the old key ([checklist section 2](launch-checklist.md#2-owner-actions-on-services-this-repository-does-not-control)); left: the first drill, then the lock, and the Kuma monitor, not checked by a session (backlog "Backups") |
 | B9 | Suspended organisations cannot send invitations or reminders | Engineer | Done (#41) |
 | B10 | Cap status-link emails per address and per IP | Engineer | Done (#41; [0014](decisions/0014-status-link-caps-on-the-public-form.md)) |
 | B11 | Lock `review_mode` and `blind_review` from `reviewing`; no deleting referenced tracks or custom fields; log deadline edits | Engineer | Done (#41; [0013](decisions/0013-review-settings-lock-and-referenced-rows.md)) |
